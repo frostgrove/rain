@@ -1,0 +1,103 @@
+# The helpdesk's stand: PostgreSQL, Redis, and one image run as four processes — migrate and seed once, then the api
+# and the worker. PostgreSQL and Redis are reached by the processes only; the api answers on 127.0.0.1:18080 and the
+# worker's probes on 127.0.0.1:18081. See README.md for the walk-through.
+name: rain-sample
+
+x-sample: &sample
+  image: rain-sample:local
+  build:
+    context: .
+  environment: &sample-environment
+    RAIN_DEPLOYMENT_STAGE: dev
+    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/helpdesk
+    SPRING_DATASOURCE_USERNAME: helpdesk
+    SPRING_DATASOURCE_PASSWORD: helpdesk
+    SPRING_DATA_REDIS_HOST: redis
+    SPRING_DATA_REDIS_PORT: "6379"
+    # A development key: 32 bytes, base64. A prod deployment states its own, from its secret store.
+    RAIN_ACCESS_TOKEN_SIGNINGKEY: "base64:ZGV2ZWxvcG1lbnQtb25seS1zaWduaW5nLWtleS0zMmI="
+
+# The processes answer /ready once every required check passes; wget and curl are not in the runtime image, so the probe
+# is one request written by bash.
+x-ready: &ready
+  test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
+  interval: 5s
+  timeout: 3s
+  retries: 30
+  start_period: 20s
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: helpdesk
+      POSTGRES_USER: helpdesk
+      POSTGRES_PASSWORD: helpdesk
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "helpdesk", "-d", "helpdesk"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  redis:
+    image: redis:8
+    # rain-access's revocation list and attempt counters must never be evicted; the api and the worker check this.
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  sample-migrate:
+    <<: *sample
+    environment:
+      <<: *sample-environment
+      RAIN_RUNTIME_COMMAND: migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  sample-seed:
+    <<: *sample
+    environment:
+      <<: *sample-environment
+      RAIN_RUNTIME_COMMAND: seed
+      # The password every seeded agent starts with; read by the seed command only.
+      SAMPLE_SEED_INITIALPASSWORD: correct horse battery staple
+    restart: "no"
+    depends_on:
+      sample-migrate:
+        condition: service_completed_successfully
+
+  sample-api:
+    <<: *sample
+    environment:
+      <<: *sample-environment
+      RAIN_RUNTIME_ROLES: api
+    ports:
+      - "127.0.0.1:18080:8080"
+    healthcheck: *ready
+    depends_on:
+      sample-seed:
+        condition: service_completed_successfully
+
+  sample-worker:
+    <<: *sample
+    environment:
+      <<: *sample-environment
+      RAIN_RUNTIME_ROLES: worker
+    ports:
+      - "127.0.0.1:18081:8080"
+    healthcheck: *ready
+    depends_on:
+      sample-seed:
+        condition: service_completed_successfully
+
+volumes:
+  postgres:
