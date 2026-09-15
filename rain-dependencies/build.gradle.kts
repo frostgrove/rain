@@ -28,5 +28,15 @@ dependencies {
         api(libs.otel.logback.appender)
         api(libs.archunit.junit5)
         api(libs.mockk)
+
+        // rain's own modules, so an application imports one platform and names modules without versions.
+        api(project(":rain-core"))
+        api(project(":rain-boot"))
+        api(project(":rain-test"))
+        api(project(":rain-observability"))
+        api(project(":rain-persistence"))
+        api(project(":rain-data-jdbc"))
+        api(project(":rain-web"))
+        api(project(":rain-audit"))
     }
 }
