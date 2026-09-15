@@ -109,28 +109,28 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `config/SigningKey.kt` | rain-access | pending | entropy heuristic removed (gap 21) |
 | main | `config/StorageProperties.kt` | dropped | pending | product configuration |
 | main | `config/WorkspaceProperties.kt` | dropped | pending | product configuration |
-| main | `crud/BulkDeleteRequest.kt` | rain-crud | pending |  |
-| main | `crud/CrudAccessTable.kt` | rain-crud | pending |  |
-| main | `crud/CrudConfiguration.kt` | rain-crud | pending |  |
-| main | `crud/CrudMounted.kt` | rain-crud | pending |  |
-| main | `crud/CrudResource.kt` | rain-crud | pending |  |
-| main | `crud/CrudRouteRegistrar.kt` | rain-crud | pending |  |
-| main | `crud/CrudStore.kt` | rain-crud | pending |  |
-| main | `crud/Operations.kt` | rain-crud | pending |  |
-| main | `crud/PaginatedResponse.kt` | rain-crud | pending |  |
-| main | `crud/ResourcePolicy.kt` | rain-crud | pending |  |
-| main | `crud/persistence/JooqResourceStore.kt` | rain-crud | pending |  |
-| main | `crud/persistence/QueryStatements.kt` | rain-crud | pending |  |
-| main | `crud/persistence/Row.kt` | rain-crud | pending |  |
-| main | `crud/query/Coerce.kt` | rain-crud | pending |  |
-| main | `crud/query/FieldFold.kt` | rain-crud | pending |  |
-| main | `crud/query/FilterNode.kt` | rain-crud | pending |  |
-| main | `crud/query/QueryCompiler.kt` | rain-crud | pending |  |
-| main | `crud/query/QueryConfig.kt` | rain-crud | pending |  |
-| main | `crud/query/QueryDialectParser.kt` | rain-crud | pending |  |
-| main | `crud/query/QueryDocument.kt` | rain-crud | pending |  |
-| main | `crud/query/QueryRequest.kt` | rain-crud | pending |  |
-| main | `crud/query/ResourceSchema.kt` | rain-crud | pending |  |
+| main | `crud/BulkDeleteRequest.kt` | rain-crud | ported | CrudResource.bulkDelete + CrudMvc.bulkDelete (strict {"ids":[…]}) |
+| main | `crud/CrudAccessTable.kt` | rain-crud | ported | web/MountedResource.declarations derived from the policy |
+| main | `crud/CrudConfiguration.kt` | rain-crud | ported | autoconfigure/RainCrudAutoConfiguration; SpEL accessPolicies bean not ported |
+| main | `crud/CrudMounted.kt` | rain-crud | dropped | Go body-reader parity marker; rain renders malformed_body uniformly |
+| main | `crud/CrudResource.kt` | rain-crud | ported | CrudResource (authorize, scope, keyset pages, capped count) |
+| main | `crud/CrudRouteRegistrar.kt` | rain-crud | ported | web/MountedResource + CrudRoute |
+| main | `crud/CrudStore.kt` | rain-crud | ported | CrudStore SPI with required RowScope; GuardedResource folded into CrudResource |
+| main | `crud/Operations.kt` | rain-crud | ported | Action + web/CrudOperation; RESTORE, QUERY, COUNT_QUERY, CrudRules dropped |
+| main | `crud/PaginatedResponse.kt` | rain-crud | ported | Page/PageWindow/CappedCount + web PageBody v1; RestoredResponse dropped |
+| main | `crud/ResourcePolicy.kt` | rain-crud | ported | ResourcePolicy/ActionAccess/ScopeRule + CallerLookup SPI; SecurityContextHolder removed |
+| main | `crud/persistence/JooqResourceStore.kt` | rain-crud | ported | persistence/JooqResourceStore |
+| main | `crud/persistence/QueryStatements.kt` | rain-crud | ported | merged into JooqResourceStore; Cursors -> query/CursorCodec v1 |
+| main | `crud/persistence/Row.kt` | rain-crud | ported | persistence/Row exact labels, required* + RowShapeException |
+| main | `crud/query/Coerce.kt` | rain-crud | ported | query/WireValues (one spelling per kind) |
+| main | `crud/query/FieldFold.kt` | rain-crud | dropped | fold matching removed; FieldGrant replaces allowed() |
+| main | `crud/query/FilterNode.kt` | rain-crud | ported | query/Predicate + Operator (v1 set) + Order |
+| main | `crud/query/QueryCompiler.kt` | rain-crud | ported | query/QueryCompiler |
+| main | `crud/query/QueryConfig.kt` | rain-crud | ported | query/QueryRules + Pagination + QueryLimits |
+| main | `crud/query/QueryDialectParser.kt` | rain-crud | ported | query/DialectV1 |
+| main | `crud/query/QueryDocument.kt` | rain-crud | dropped | JSON query document not part of dialect v1 |
+| main | `crud/query/QueryRequest.kt` | rain-crud | ported | query/QueryParameters + ListPlan/Window |
+| main | `crud/query/ResourceSchema.kt` | rain-crud | ported | query/ResourceSchema (schema-qualified TableName) |
 | main | `http/Access.kt` | rain-web | ported | rain-web com.gd.rain.web.route (Access, EndpointDeclaration, DeclaresItsOwnAccess, MountsItsOwnSurface) |
 | main | `http/ApiPaths.kt` | dropped | dropped | product constant |
 | main | `http/CrossOriginFilter.kt` | rain-web | dropped | Spring CorsFilter + ProblemCorsProcessor over rain.web.cors |
@@ -259,13 +259,13 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `config/SigningKeyTest.kt` | rain-access | pending | entropy heuristic removed (gap 21) |
 | test | `config/TransportConfigurationTest.kt` | rain-web | pending |  |
 | test | `config/WorkspaceConfigurationTest.kt` | dropped | pending | product configuration |
-| test | `crud/CrudAccessTableTest.kt` | rain-crud | pending |  |
-| test | `crud/CrudResourceTest.kt` | rain-crud | pending |  |
-| test | `crud/GuardedResourceTest.kt` | rain-crud | pending |  |
-| test | `crud/MemoryStore.kt` | rain-crud | pending |  |
-| test | `crud/PaginationArithmeticTest.kt` | rain-crud | pending |  |
-| test | `crud/query/ContractQueryFixture.kt` | dropped | pending | Lease schema; replaced by a sample fixture |
-| test | `crud/query/QueryDialectTest.kt` | rain-crud | pending |  |
+| test | `crud/CrudAccessTableTest.kt` | rain-crud | ported | web/MountedResourceTest |
+| test | `crud/CrudResourceTest.kt` | rain-crud | ported | web/CrudHttpTest + dialect HTTP refusal tests |
+| test | `crud/GuardedResourceTest.kt` | rain-crud | ported | CrudResourcePolicyTest |
+| test | `crud/MemoryStore.kt` | rain-crud | ported | MemoryStore + CrudStoreContract (memory and jOOQ) |
+| test | `crud/PaginationArithmeticTest.kt` | rain-crud | ported | rewritten as CursorPageAssemblyTest for v1 page shapes |
+| test | `crud/query/ContractQueryFixture.kt` | dropped | dropped | Lease schema; replaced by neutral Books fixture |
+| test | `crud/query/QueryDialectTest.kt` | rain-crud | ported | query/DialectV1Test; heuristic cases rewritten as gap 29 tests |
 | test | `http/CredentialGateOnTomcatTest.kt` | rain-web | pending |  |
 | test | `http/CrossOriginFilterTest.kt` | rain-web | dropped | filter dropped; replaced by rain-web CorsTest |
 | test | `http/Refusals.kt` | rain-web | ported | rain-web WebTestSupport problem()/problemCode() |
@@ -332,7 +332,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `workq/WorkQueueAdminTest.kt` | rain-jobs | dropped | DOCUMENT_SCOPED Lease vocabulary; CancelBySubjectIT covers cancelBySubject |
 | test | `workq/WorkqWiringTest.kt` | rain-jobs | ported | JobsAutoConfigurationTest, JobTopologyTest |
 | lease-it | `access/CredentialRepositoryIT.kt` | rain-access | pending |  |
-| lease-it | `access/DirectoryStoreIT.kt` | rain-access | pending |  |
+| lease-it | `access/DirectoryStoreIT.kt` | rain-access | pending | store SQL part ported as rain-crud JooqResourceStoreIT; service parts remain for rain-access |
 | lease-it | `access/RefreshRotationIT.kt` | rain-access | pending |  |
 | lease-it | `access/RevocationListIT.kt` | rain-access | pending |  |
 | lease-it | `access/SessionRepositoryIT.kt` | rain-access | pending |  |

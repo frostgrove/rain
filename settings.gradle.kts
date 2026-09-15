@@ -28,6 +28,7 @@ include(
     "rain-persistence",
     "rain-data-jdbc",
     "rain-web",
+    "rain-crud",
     "rain-audit",
     "rain-realtime",
     "rain-jobs",

@@ -37,6 +37,7 @@ dependencies {
         api(project(":rain-persistence"))
         api(project(":rain-data-jdbc"))
         api(project(":rain-web"))
+        api(project(":rain-crud"))
         api(project(":rain-audit"))
         api(project(":rain-realtime"))
         api(project(":rain-jobs"))
