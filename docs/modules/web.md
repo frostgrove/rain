@@ -56,6 +56,7 @@ beans exist in every process, so a command such as `config-check` refuses a brok
 |---|---|---|
 | `probeController` | no other `ProbeController` bean | reads the `HealthRegistry` |
 | `probeRoutes` | — | functional routes at `rain.web.probes.live-path` and `ready-path` |
+| `probeSurface` | — | a `MountsItsOwnSurface` declaring `GET` on both probe paths public, so rain-access's surface verification finds the probes declared |
 | `probeOnlyFilterRegistration` | the `api` role is not active | filter `rainProbeOnlyFilter`: everything except the probes and `management.endpoints.web.base-path` (`/actuator`) is `404 not_found` |
 
 A process started as a command has no web server, so none of the servlet contributions exist in it — including
@@ -235,11 +236,13 @@ it holds keep being admitted.
 |---|---|
 | `@Access(permissions, authenticated, public, why)` | what a route needs: named permissions, an authenticated caller, or nothing; `why` is mandatory for the last two |
 | `EndpointDeclaration` | one entry of the HTTP surface; `problems()` names every invalid combination, including a route that declares nothing |
-| `DeclaresItsOwnAccess` | a controller whose routes are derived from a table |
-| `MountsItsOwnSurface` | a route mounted outside request mappings (a WebSocket upgrade) that checks its own access |
+| `DeclaresItsOwnAccess` | a controller whose routes are derived from a table and answers their declarations itself |
+| `MountsItsOwnSurface` | routes mounted outside request mappings, with their declarations: a functional `RouterFunction` route is verified and enforced from its declaration; a route of any other handler mapping (a WebSocket upgrade) checks what it declares itself |
 | `RequestPrincipal` | who a request authenticated as, for the request log |
 
-rain-web declares these types so every module's controllers can use them; it does not enforce `@Access` itself.
+rain-web declares these types so every module's controllers can use them, and declares its own probes through
+`probeSurface`; it does not enforce `@Access` itself. [rain-access](access.md) verifies the surface and enforces every
+declaration.
 
 ## Error codes
 
@@ -264,7 +267,7 @@ None of its own. It serves the readiness composed by [rain-observability](observ
 
 ## What it does not do
 
-- It does not authenticate or authorise.
+- It does not authenticate or authorise; [rain-access](access.md) does.
 - It does not mount a throttle on any route.
 - It does not believe a forwarding header on its own; the server does, when the deployment says a proxy is trusted.
 - It does not configure the container's connection timeouts.

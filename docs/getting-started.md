@@ -8,8 +8,8 @@ were run against this revision of rain.
 
 - JDK 25. The build declares a Java 25 toolchain.
 - Gradle 9.7.1, the version rain's own wrapper pins.
-- For the second half: a PostgreSQL server, and Docker. Building rain-jobs (and rain-audit, rain-llm) generates jOOQ code
-  from the module's migrations on a throwaway PostgreSQL container, or on a server named by `JOOQ_CODEGEN_SERVER_URL`,
+- For the second half: a PostgreSQL server, and Docker. Building rain-jobs (and rain-access, rain-audit, rain-llm) generates
+  jOOQ code from the module's migrations on a throwaway PostgreSQL container, or on a server named by `JOOQ_CODEGEN_SERVER_URL`,
   `JOOQ_CODEGEN_SERVER_USER` and `JOOQ_CODEGEN_SERVER_PASSWORD`.
 
 rain's build does not publish artifacts. An application consumes it as an included build: Gradle substitutes
@@ -469,6 +469,155 @@ scheduler; its start logs that the `jobs` entry names a check it does not run (`
 configuration serves every role. With `RAIN_RUNTIME_ROLES=worker` the process runs the schedulers and serves only the
 probes. `config-check` runs with no role, so it reports the same `not_evaluated` line and exits 0.
 
+## Adding access
+
+```kotlin
+implementation("com.gd.rain:rain-access")
+```
+
+rain-access brings rain-audit and Spring Security. From now on every route declares who may call it: in a process with
+the `api` role, a request mapping without `@Access` refuses the start. Declare who signs in, the directory that owns them,
+and what there is to grant:
+
+```kotlin
+package com.example.greeter
+
+import com.gd.rain.access.ModuleGrants
+import com.gd.rain.access.MountedSubject
+import com.gd.rain.access.PermissionDef
+import com.gd.rain.access.Profile
+import com.gd.rain.access.SubjectDirectory
+import com.gd.rain.access.SubjectType
+import com.gd.rain.access.SystemRoleDeclaration
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.jdbc.core.JdbcTemplate
+import java.sql.Timestamp
+import java.time.Instant
+import java.util.UUID
+
+@Configuration(proxyBeanMethods = false)
+class GreeterAccess {
+    @Bean
+    fun membersMounted(): MountedSubject = MountedSubject(MEMBER) { it.trim().lowercase() }
+
+    @Bean
+    fun members(jdbc: JdbcTemplate): SubjectDirectory = MemberDirectory(jdbc)
+
+    @Bean
+    fun greeterGrants(): ModuleGrants = ModuleGrants("greeter", listOf(PermissionDef("greeting.send", "Send greetings")))
+
+    @Bean
+    fun administrator(): SystemRoleDeclaration = SystemRoleDeclaration("administrator", "Administrator", grantsEveryPermission = true)
+
+    companion object {
+        val MEMBER = SubjectType("member")
+    }
+}
+
+class MemberDirectory(
+    private val jdbc: JdbcTemplate,
+) : SubjectDirectory {
+    override val subjectType = GreeterAccess.MEMBER
+
+    override fun isActive(id: UUID): Boolean =
+        jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM member WHERE id = ? AND active)", Boolean::class.java, id) == true
+
+    override fun describe(id: UUID): Profile? =
+        jdbc.query("SELECT name, email FROM member WHERE id = ?", { row, _ -> Profile(row.getString(1), row.getString(2)) }, id).firstOrNull()
+
+    override fun signedIn(
+        id: UUID,
+        at: Instant,
+    ) {
+        jdbc.update("UPDATE member SET last_signed_in_at = ? WHERE id = ?", Timestamp.from(at), id)
+    }
+}
+```
+
+`member` is a table of the application's own; rain-access stores credentials, sessions and grants in `rain_access` and
+refers to a member only by type and id. The controller states what a greeting needs:
+
+```kotlin
+@Access(permissions = ["greeting.send"])
+@PostMapping
+fun greet(
+    @RequestBody request: GreetingRequest,
+): Greeting
+```
+
+Add to `application.yml`:
+
+```yaml
+resilience4j:
+  bulkhead:
+    instances:
+      rain-access-hashing:
+        max-concurrent-calls: 2
+        max-wait-duration: 2s
+rain:
+  access:
+    web:
+      base-path: /v1
+      delivery: body
+    token:
+      issuer: greeter
+      audience: greeter-api
+      access-ttl: 5m
+    session:
+      ttl: 30d
+      idle-ttl: 7d
+      retention:
+        keep-for: 7d
+        interval: 1h
+    password:
+      revoke-other-sessions-on-change: true
+    hashing:
+      queue: 16
+    attempts:
+      store: memory
+      memory:
+        maximum-keys: 10000
+    revocation:
+      store: none
+    gate:
+      throttle:
+        per-minute: 120
+        burst: 60
+        callers: 20000
+    grants:
+      max-roles-per-subject: 16
+  jobs:
+    required-recurring: [access.session-retention]
+```
+
+| Property | Why it is stated |
+|---|---|
+| `rain.access.web.delivery` | `body` answers both credentials in the body and authenticates with `Authorization: Bearer`; `cookies` puts them in `HttpOnly` cookies instead |
+| `rain.access.attempts.store` | `memory` counts failed sign-ins in this process; a `prod` deployment is refused it and states `redis` |
+| `rain.access.revocation.store` | `none` lets a closed session's access token answer until it expires; `redis` announces every closed session |
+| `resilience4j.bulkhead.instances.rain-access-hashing` | how many password hashes are derived at once, and how long a caller waits for a turn |
+| `rain.jobs.required-recurring` | a worker runs `access.session-retention`, which deletes old sessions; it is also one more connection in the worker's demand, 22 of the 24 here |
+
+The signing key differs per deployment and is stated in the environment; generate one with `openssl rand -base64 32`:
+
+| Variable | Value |
+|---|---|
+| `RAIN_ACCESS_TOKEN_SIGNINGKEY` | `base64:<key>`, or `file:<absolute path>` of a file holding it |
+
+`migrate` now applies `rain_access` and `rain_audit` as well. Nobody can sign in until a member has a password: a
+`Seeder` calls `AccessProvisioning.enrolPassword` and `grantRole`, and `usableHolderOf("administrator")` tells it whether
+somebody can already sign in and administer. Then:
+
+```sh
+curl -s -X POST -H 'Content-Type: application/json' -d '{"identifier":"ada@example.com","password":"…"}' \
+  http://127.0.0.1:8080/v1/auth/member/login
+```
+
+answers `accessToken` and `refreshToken`; a greeting is posted with `Authorization: Bearer <accessToken>`, and `POST
+/v1/auth/refresh` with `{"refreshToken": …}` rotates the pair. The routes, the delivery modes, Redis and everything a
+production deployment states are on [rain-access](modules/access.md).
+
 ## A health check of your own
 
 Any `HealthCheck` bean joins readiness at the importance the application states:
@@ -506,4 +655,4 @@ process in rotation; a failing `required` check makes it `not_ready` (503).
 - Module pages: [core](modules/core.md), [boot](modules/boot.md), [web](modules/web.md),
   [observability](modules/observability.md), [persistence](modules/persistence.md), [data-jdbc](modules/data-jdbc.md),
   [crud](modules/crud.md), [audit](modules/audit.md), [jobs](modules/jobs.md), [realtime](modules/realtime.md),
-  [resilience](modules/resilience.md), [llm](modules/llm.md), [test](modules/test.md).
+  [resilience](modules/resilience.md), [llm](modules/llm.md), [access](modules/access.md), [test](modules/test.md).
