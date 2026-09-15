@@ -30,6 +30,8 @@ include(
     "rain-web",
     "rain-crud",
     "rain-audit",
+    "rain-resilience",
     "rain-realtime",
     "rain-jobs",
+    "rain-llm",
 )

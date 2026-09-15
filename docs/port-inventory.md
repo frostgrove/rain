@@ -86,12 +86,12 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `audit/AuditLogRepository.kt` | rain-audit | ported | schema rain_audit via rain.jooq-schema; actor (type, id) with no foreign key (gap 17 part) |
 | main | `audit/AuditRecorder.kt` | rain-audit | ported | JooqAuditRecorder: record inside the caller's transaction (refused outside), recordIndependently in its own; keyset reads with a bounded page |
 | main | `audit/SignInAuditRecorder.kt` | rain-access | pending | breaks the access↔audit cycle |
-| main | `cli/OneShotReports.kt` | split | pending | LlmSmokeCheck → rain-llm; RedlineReport dropped (product) |
+| main | `cli/OneShotReports.kt` | split | ported | split: LlmSmokeCheck -> rain-llm SmokeLlmCommand; RedlineReport dropped (product) |
 | main | `cli/SeedStep.kt` | rain-boot | ported | rain-boot Seeder + seed command (ordered by order then name, names checked) |
 | main | `config/AccessProperties.kt` | rain-access | pending |  |
 | main | `config/AppProperties.kt` | rain-boot | dropped | spring.application.name is required instead; shutdown budget moves to rain-jobs with spring.lifecycle |
 | main | `config/CasebankProperties.kt` | dropped | pending | product configuration |
-| main | `config/ClientProperties.kt` | split | pending | LlmProperties → rain-llm; BreakerProperties → rain-resilience (r4j config); WpsProperties dropped |
+| main | `config/ClientProperties.kt` | split | ported | split: LlmProperties -> rain-llm rain.llm; BreakerProperties -> resilience4j instances config checked by rain-resilience; WpsProperties dropped |
 | main | `config/ConfigurationBinding.kt` | rain-boot | ported | rebuilt as rain-boot SectionBinder (missing leaves, unknown keys, file-borne secrets) |
 | main | `config/ConfigurationProblems.kt` | rain-core | ported | typed ConfigurationProblem + ConfigurationProblemsException in rain-core |
 | main | `config/ConfigurationPropertiesWiring.kt` | dropped | dropped | @EnableConfigurationProperties per auto-configuration |
@@ -162,15 +162,15 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `http/limit/CredentialGateFilter.kt` | rain-access | pending |  |
 | main | `http/limit/JsonOnlyFilter.kt` | rain-web | pending |  |
 | main | `http/limit/TokenBucketThrottle.kt` | rain-web | ported | rain-web TokenBucketThrottle |
-| main | `llm/LlmConfiguration.kt` | rain-llm | pending |  |
-| main | `llm/LlmErrors.kt` | rain-llm | pending |  |
-| main | `llm/LlmGateway.kt` | rain-llm | pending |  |
-| main | `llm/LlmSettings.kt` | rain-llm | pending |  |
-| main | `llm/LlmSlotStore.kt` | rain-llm | pending |  |
-| main | `llm/LlmSlots.kt` | rain-llm | pending |  |
-| main | `llm/LlmSmokeProbe.kt` | rain-llm | pending |  |
-| main | `llm/Utf8.kt` | rain-llm | pending |  |
-| main | `llm/persistence/LlmSlotRepository.kt` | rain-llm | pending |  |
+| main | `llm/LlmConfiguration.kt` | rain-llm | ported | rain-llm RainLlmAutoConfiguration (enabled-gated) |
+| main | `llm/LlmErrors.kt` | rain-llm | ported | rain-llm LlmException family + RainLlmErrorCodes + LlmFaultTranslator |
+| main | `llm/LlmGateway.kt` | rain-llm | ported | rain-llm LlmGateway over any ChatModel; LlmRequestCustomizer; TokenCounter outputBudget (gaps 38, 39) |
+| main | `llm/LlmSettings.kt` | rain-llm | ported | rain-llm LlmSettings.of(LlmProperties), one validator (gap 40) |
+| main | `llm/LlmSlotStore.kt` | rain-llm | ported | rain-llm LlmSlotStore with SlotGrant Granted |
+| main | `llm/LlmSlots.kt` | rain-llm | ported | rain-llm LlmSlots, pools/classes from config, wait bounded by call budget |
+| main | `llm/LlmSmokeProbe.kt` | rain-llm | ported | rain-llm SmokeLlmCommand (smoke-llm) |
+| main | `llm/Utf8.kt` | rain-llm | dropped | only consumer was the CHARS_PER_TOKEN budget replaced by TokenCounter |
+| main | `llm/persistence/LlmSlotRepository.kt` | rain-llm | ported | rain-llm JooqLlmSlotStore, schema rain_llm, PoolMissing distinct from Full |
 | main | `lock/AdvisoryLockStore.kt` | rain-persistence | ported | rain-persistence lock |
 | main | `lock/AdvisoryLocks.kt` | rain-persistence | ported | rain-persistence lock |
 | main | `lock/LockConfiguration.kt` | rain-persistence | ported | RainPersistenceAutoConfiguration |
@@ -205,11 +205,11 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `realtime/RealtimePublisher.kt` | rain-realtime | ported | bounded byte count; surrogate and NUL refused; transaction required |
 | main | `realtime/Subscription.kt` | rain-realtime | ported | END sentinel, buffer+1 queue, poll returns Next |
 | main | `redis/RedisClients.kt` | dropped | pending | Boot spring.data.redis.* (gap 14) |
-| main | `resilience/AdmissionGate.kt` | rain-resilience | pending |  |
+| main | `resilience/AdmissionGate.kt` | rain-resilience | ported | rain-resilience AdmissionGate over atomic BreakerRegistry.reserve; admit(free) dropped (gap 11) |
 | main | `resilience/AuthBulkheadConfiguration.kt` | rain-access | pending |  |
-| main | `resilience/BreakerHealthContribution.kt` | rain-resilience | pending |  |
-| main | `resilience/BreakerRegistry.kt` | rain-resilience | pending |  |
-| main | `resilience/Breakers.kt` | rain-resilience | pending |  |
+| main | `resilience/BreakerHealthContribution.kt` | rain-resilience | ported | rain-resilience breaker health per BreakerDeclaration |
+| main | `resilience/BreakerRegistry.kt` | rain-resilience | ported | rain-resilience BreakerRegistry over container CircuitBreakerRegistry, no ofDefaults (gap 12) |
+| main | `resilience/Breakers.kt` | rain-resilience | ported | enum Breaker dropped -> BreakerName/BreakerDeclaration/BreakerState/Reservation/AdmissionState |
 | main | `workq/AttemptStatementTimeout.kt` | rain-jobs | ported | AttemptStatementTimeout; failure charged, not swallowed |
 | main | `workq/DefinitionGate.kt` | rain-jobs | ported | DefinitionGate; slot left by attempt thread |
 | main | `workq/FencedEffects.kt` | rain-jobs | ported | FencedEffects; guards list, bound min(step, deadline-now) |
@@ -293,10 +293,10 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `http/limit/CredentialGateTest.kt` | rain-web | pending |  |
 | test | `http/limit/JsonOnlyFilterTest.kt` | rain-web | pending |  |
 | test | `http/limit/TokenBucketThrottleTest.kt` | rain-web | ported | rain-web TokenBucketThrottleTest; timing case replaced by CallerTableFullTest |
-| test | `llm/LlmGatewaySpringAiTest.kt` | rain-llm | pending |  |
-| test | `llm/LlmPortTest.kt` | rain-llm | pending |  |
-| test | `llm/SpringAiConfigurationTest.kt` | rain-llm | pending |  |
-| test | `llm/Utf8Test.kt` | rain-llm | pending |  |
+| test | `llm/LlmGatewaySpringAiTest.kt` | rain-llm | ported | rain-llm LlmGatewayTest (ScriptedChatModel) |
+| test | `llm/LlmPortTest.kt` | rain-llm | ported | rain-llm LlmPropertiesTest + LlmSlotsTest |
+| test | `llm/SpringAiConfigurationTest.kt` | rain-llm | ported | rain-llm LlmAutoConfigurationTest |
+| test | `llm/Utf8Test.kt` | rain-llm | dropped | Utf8.kt dropped |
 | test | `lock/AdvisoryLocksTest.kt` | rain-persistence | ported | rain-persistence PersistenceUnitTest |
 | test | `lock/LockKeyTest.kt` | rain-persistence | ported | rain-core LockKeyTest with the same reference vectors |
 | test | `lock/LockPropertiesTest.kt` | rain-persistence | ported | rain-persistence PersistenceContributorTest |
@@ -320,9 +320,9 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `realtime/RealtimeBackoffTest.kt` | rain-realtime | ported | injected ReconnectWait, no sleeping |
 | test | `realtime/RealtimePublisherTest.kt` | rain-realtime | ported | plus surrogate and bounded-count cases |
 | test | `redis/RedisWiringTest.kt` | dropped | pending | Boot spring.data.redis |
-| test | `resilience/AdmissionGateTest.kt` | rain-resilience | pending |  |
-| test | `resilience/BreakerHealthContributionTest.kt` | rain-resilience | pending |  |
-| test | `resilience/BreakerTest.kt` | rain-resilience | pending |  |
+| test | `resilience/AdmissionGateTest.kt` | rain-resilience | ported | rain-resilience AdmissionGateTest + AdmissionGateRaceTest |
+| test | `resilience/BreakerHealthContributionTest.kt` | rain-resilience | ported | rain-resilience BreakerHealthContributionTest |
+| test | `resilience/BreakerTest.kt` | rain-resilience | ported | rain-resilience BreakerRegistryTest |
 | test | `workq/AttemptRunnerTest.kt` | rain-jobs | ported | AttemptThreadsTest |
 | test | `workq/DefinitionGateTest.kt` | rain-jobs | ported | DefinitionGateTest |
 | test | `workq/JobConcurrencyParityTest.kt` | dropped | dropped | Lease job ceilings |
@@ -343,7 +343,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `audit/AuditTrailIT.kt` | rain-audit | ported | rain-audit AuditIT |
 | lease-it | `persistence/AuditLogSchemaIT.kt` | rain-audit | ported | rain-audit AuditIT (schema, actor both-or-none, index-backed pages) |
 | lease-it | `health/RootProbeIT.kt` | rain-observability | pending |  |
-| lease-it | `llm/LlmSlotsIT.kt` | rain-llm | pending |  |
+| lease-it | `llm/LlmSlotsIT.kt` | rain-llm | ported | rain-llm LlmSlotsIT + MissingBudgetRowIsExplicitIT |
 | lease-it | `lock/AdvisoryLocksIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT |
 | lease-it | `persistence/ApplicationOwnedIdsIT.kt` | rain-data-jdbc | ported | rain-data-jdbc DataJdbcIT |
 | lease-it | `persistence/ConvertersIT.kt` | rain-data-jdbc | ported | rain-data-jdbc DataJdbcIT |

@@ -38,8 +38,10 @@ dependencies {
         api(project(":rain-data-jdbc"))
         api(project(":rain-web"))
         api(project(":rain-crud"))
+        api(project(":rain-resilience"))
         api(project(":rain-audit"))
         api(project(":rain-realtime"))
         api(project(":rain-jobs"))
+        api(project(":rain-llm"))
     }
 }
