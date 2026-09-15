@@ -196,6 +196,11 @@ public class SessionClosing(
     }
 }
 
+/**
+ * Closing one session of the principal's subject. The closing is recorded once, by the call that closed it; a session
+ * already closed is announced again — the list may have lost it — and records nothing, and a session of another subject
+ * matches nothing, closes nothing and announces nothing.
+ */
 public class LogoutUseCase(
     private val sessions: SessionStore,
     private val revocations: RevocationList,
@@ -222,13 +227,13 @@ public class LogoutUseCase(
         reason: String,
         evidence: com.gd.rain.audit.AuditEventType,
     ) {
-        val closedAt =
+        val closure =
             transactions.inTransaction {
                 val closed = sessions.revokeOne(subject, session, clock.instant(), reason)
-                if (closed != null) audit.record(AuditEvent(evidence, AuditOutcome.OK, session.toString()))
+                if (closed?.closedByThisCall == true) audit.record(AuditEvent(evidence, AuditOutcome.OK, session.toString()))
                 closed
             } ?: return
-        revocations.announceSessions(listOf(RevokedSession(session, closedAt)))
+        revocations.announceSessions(listOf(RevokedSession(session, closure.closedAt)))
     }
 }
 

@@ -4,8 +4,8 @@ import com.gd.rain.access.AccessPrincipal
 import com.gd.rain.access.SubjectRef
 import com.gd.rain.access.internal.attempt.Admission
 import com.gd.rain.access.internal.attempt.Attempt
-import com.gd.rain.access.internal.attempt.AttemptKeys
 import com.gd.rain.access.internal.attempt.AttemptLimiter
+import com.gd.rain.access.internal.attempt.AttemptPolicy
 import com.gd.rain.access.internal.audit.AccessAuditTypes
 import com.gd.rain.access.internal.audit.AuditTrail
 import com.gd.rain.access.internal.password.HashingBulkhead
@@ -22,16 +22,18 @@ import java.time.Clock
 
 /**
  * A subject changing its own password: the current password is a password oracle behind a valid session, so it is
- * charged to the same attempt keys a sign-in with the account's identifier is. The current password is verified and the
- * new one hashed outside any transaction; the write happens only while the credential is still the version verified,
- * with one re-run when it changed, then a refusal. Whether the subject's other sessions close is the deployment's
- * `password.revoke-other-sessions-on-change`.
+ * charged to the same attempt keys a sign-in with the account's identifier is, and a failure is recorded the way a
+ * failed sign-in is — its own row, and a `lockout-opened` row for each key it locked. The current password is verified
+ * and the new one hashed outside any transaction; the write happens only while the credential is still the version
+ * verified, with one re-run when it changed, then a refusal. Whether the subject's other sessions close is the
+ * deployment's `password.revoke-other-sessions-on-change`.
  */
 public class ChangePasswordUseCase(
     private val credentials: CredentialStore,
     private val hasher: PasswordHasher,
     private val bulkhead: HashingBulkhead,
     private val limiter: AttemptLimiter,
+    policy: AttemptPolicy,
     private val rules: PasswordRules,
     private val closing: SessionClosing,
     private val revokeOtherSessions: Boolean,
@@ -39,6 +41,8 @@ public class ChangePasswordUseCase(
     private val transactions: AccessTransactions,
     private val clock: Clock,
 ) {
+    private val failures = FailedAttempts(limiter, policy, audit)
+
     public fun change(
         principal: AccessPrincipal,
         current: String,
@@ -55,19 +59,7 @@ public class ChangePasswordUseCase(
             }
             rules.checkNewPassword(next, "next")
             if (!rules.presentable(credential.identifier, current) || !bulkhead.run { hasher.verify(current, credential.secretHash) }) {
-                limiter.recordFailure(attempt)
-                audit.recordIndependently(
-                    AuditEvent(
-                        type = AccessAuditTypes.SIGN_IN_FAILED,
-                        outcome = AuditOutcome.FAILED,
-                        resourceId = attempt.subjectType.name,
-                        detail =
-                            AuditDetail.of(
-                                "identifier_fp" to AttemptKeys.fingerprint(attempt.identifier),
-                                "address" to attempt.address,
-                            ),
-                    ),
-                )
+                failures.record(attempt)
                 throw AccessFaults.badCredentials()
             }
             val hash = bulkhead.run { hasher.hash(next) }
@@ -113,7 +105,8 @@ public class ChangePasswordUseCase(
 /**
  * An operator setting another subject's password: the subject type is one this application serves (otherwise
  * `400 unknown_subject_type`), the identifier is the directory's, normalised the way sign-in normalises what it looks
- * up, the hash is derived outside any transaction, and every session of the subject is closed.
+ * up, the hash is derived outside any transaction, and every session of the subject is closed. An identifier another
+ * subject of the type signs in with is `409 identifier_taken`, whether or not the subject had a credential.
  */
 public class SetSubjectPasswordUseCase(
     private val subjects: SubjectRegistry,
@@ -151,6 +144,9 @@ public class SetSubjectPasswordUseCase(
                         CredentialInsert.SUBJECT_ENROLLED -> throw AccessFaults.credentialChanged()
                     }
                 } else {
+                    // Checked before the write, so another subject's identifier is the refusal the insert gives, not a unique violation.
+                    val holder = credentials.findByIdentifier(subject.type, identifier)
+                    if (holder != null && holder.subject != subject) throw AccessFaults.identifierTaken()
                     credentials.replaceIdentifierAndSecret(existing.id, existing.version, identifier, hash, now)
                 }
                 val cutoff = closing.cutoff(subject, null, now)

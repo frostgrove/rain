@@ -12,7 +12,8 @@ import com.gd.rain.access.SurfaceExemption
 import com.gd.rain.access.SystemRoleDeclaration
 import com.gd.rain.access.internal.HashingBulkheadCheck
 import com.gd.rain.access.internal.RedisClientCheck
-import com.gd.rain.access.internal.UnavailableRedisStores
+import com.gd.rain.access.internal.UnavailableAttemptLimiter
+import com.gd.rain.access.internal.UnavailableRevocationList
 import com.gd.rain.access.internal.attempt.AttemptLimiter
 import com.gd.rain.access.internal.attempt.AttemptPolicy
 import com.gd.rain.access.internal.attempt.MemoryAttemptLimiter
@@ -457,6 +458,7 @@ public class RainAccessAutoConfiguration {
             hasher,
             bulkhead,
             limiter,
+            AttemptPolicy.of(properties.attempts),
             rules,
             closing,
             properties.password.revokeOtherSessionsOnChange,
@@ -687,11 +689,11 @@ public class RainAccessAutoConfiguration {
 
         @Bean
         @ConditionalOnProperty(prefix = "rain.access.revocation", name = ["store"], havingValue = "redis")
-        public fun accessUnavailableRevocationList(): RevocationList = UnavailableRedisStores
+        public fun accessUnavailableRevocationList(): RevocationList = UnavailableRevocationList
 
         @Bean
         @ConditionalOnProperty(prefix = "rain.access.attempts", name = ["store"], havingValue = "redis")
-        public fun accessUnavailableAttemptLimiter(): AttemptLimiter = UnavailableRedisStores
+        public fun accessUnavailableAttemptLimiter(): AttemptLimiter = UnavailableAttemptLimiter
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -709,7 +711,7 @@ public class RainAccessAutoConfiguration {
         ): SecurityFilterChain =
             AccessSecurityChain.build(
                 http,
-                AccessAuthenticationFilter(PresentedToken(properties.web.delivery), verifier, subjects, revocations, writer),
+                AccessAuthenticationFilter(PresentedToken(properties.web.delivery), verifier, subjects, revocations),
                 writer,
             )
 
@@ -779,7 +781,8 @@ public class RainAccessAutoConfiguration {
             public fun accessRoleController(
                 roles: RoleAdministration,
                 pages: PageRequest,
-            ): RoleController = RoleController(roles, pages)
+                properties: AccessProperties,
+            ): RoleController = RoleController(roles, pages, properties.web.maxBulkIds)
 
             @Bean
             public fun accessPermissionController(

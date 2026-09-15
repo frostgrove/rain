@@ -90,10 +90,12 @@ public class UserDetailsServiceExclusionFilter : AutoConfigurationImportFilter {
 }
 
 /**
- * What stands in for a Redis-backed store when a store is stated as `redis` and no Redis client is on the classpath.
- * [RedisClientCheck] refuses that start before anything is served, so none of these is ever called.
+ * What stands in for the revocation list when it is stated as `redis` and no Redis client is on the classpath.
+ * [RedisClientCheck] refuses that start before anything is served, so it is never called. Each store has a stand-in of
+ * its own: one object standing in for both would also be a second candidate for the store that is not on Redis, and the
+ * start would fail on wiring instead of naming what is wrong.
  */
-public object UnavailableRedisStores : RevocationList, AttemptLimiter {
+public object UnavailableRevocationList : RevocationList {
     override fun verdict(
         session: UUID,
         subject: SubjectRef,
@@ -103,15 +105,18 @@ public object UnavailableRedisStores : RevocationList, AttemptLimiter {
     override fun announceSessions(sessions: List<RevokedSession>): Unit = unavailable()
 
     override fun announceCutoff(cutoff: SubjectCutoff): Unit = unavailable()
+}
 
+/** What stands in for the attempt counters when they are stated as `redis` and no Redis client is on the classpath. */
+public object UnavailableAttemptLimiter : AttemptLimiter {
     override fun admit(attempt: Attempt): Admission = unavailable()
 
     override fun recordFailure(attempt: Attempt): FailureRecorded = unavailable()
 
     override fun recordSuccess(attempt: Attempt): Unit = unavailable()
-
-    private fun unavailable(): Nothing = error("a store is stated as redis and no Redis client is on the classpath; start-up refuses that")
 }
+
+private fun unavailable(): Nothing = error("a store is stated as redis and no Redis client is on the classpath; start-up refuses that")
 
 /** A store stated as `redis` needs Spring Data Redis on the classpath. */
 public class RedisClientCheck(

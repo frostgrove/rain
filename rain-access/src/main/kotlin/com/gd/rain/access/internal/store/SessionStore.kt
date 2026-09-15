@@ -40,13 +40,13 @@ public interface SessionStore {
         reason: String,
     ): Int
 
-    /** Closes one of [subject]'s sessions, and answers when it was closed — now or earlier; `null` when it is not theirs. */
+    /** Closes one of [subject]'s sessions, and answers when it was closed and whether this call closed it; `null` when it is not theirs. */
     public fun revokeOne(
         subject: SubjectRef,
         session: UUID,
         now: Instant,
         reason: String,
-    ): Instant?
+    ): SessionClosure?
 
     /** Closes up to [batch] of [subject]'s open sessions issued up to [cutoffAt], except [kept]; answers how many. */
     public fun revokeBatch(
@@ -168,25 +168,28 @@ public class JooqSessionStore(
         session: UUID,
         now: Instant,
         reason: String,
-    ): Instant? {
+    ): SessionClosure? {
         val ofSubject =
             SESSIONS.ID
                 .eq(session)
                 .and(SESSIONS.SUBJECT_TYPE.eq(subject.type.name))
                 .and(SESSIONS.SUBJECT_ID.eq(subject.id))
-        dsl
-            .update(SESSIONS)
-            .set(SESSIONS.REVOKED_AT, now.utc())
-            .set(SESSIONS.REVOKED_REASON, reason)
-            .where(ofSubject)
-            .and(SESSIONS.REVOKED_AT.isNull)
-            .execute()
-        return dsl
-            .select(SESSIONS.REVOKED_AT)
-            .from(SESSIONS)
-            .where(ofSubject)
-            .fetchOne(SESSIONS.REVOKED_AT)
-            ?.toInstant()
+        val closed =
+            dsl
+                .update(SESSIONS)
+                .set(SESSIONS.REVOKED_AT, now.utc())
+                .set(SESSIONS.REVOKED_REASON, reason)
+                .where(ofSubject)
+                .and(SESSIONS.REVOKED_AT.isNull)
+                .execute()
+        val closedAt =
+            dsl
+                .select(SESSIONS.REVOKED_AT)
+                .from(SESSIONS)
+                .where(ofSubject)
+                .fetchOne(SESSIONS.REVOKED_AT)
+                ?.toInstant() ?: return null
+        return SessionClosure(closedAt, closed == 1)
     }
 
     override fun revokeBatch(

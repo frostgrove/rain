@@ -33,6 +33,8 @@ import java.util.UUID
 public class RoleController(
     private val roles: RoleAdministration,
     private val pages: PageRequest,
+    /** The most ids one bulk delete names: `rain.access.web.max-bulk-ids`. */
+    private val maxBulkIds: Int,
 ) {
     @Access(permissions = [AccessPermissionCodes.ROLE_READ])
     @GetMapping
@@ -59,7 +61,7 @@ public class RoleController(
         request: HttpServletRequest,
     ): ResponseEntity<RoleView> {
         pages.only(request)
-        val form = JsonBody(body)
+        val form = JsonBody.of(body, "slug", "name")
         return ResponseEntity
             .status(
                 HttpStatus.CREATED,
@@ -74,7 +76,7 @@ public class RoleController(
         request: HttpServletRequest,
     ): RoleView {
         pages.only(request)
-        return RoleView.of(roles.rename(CanonicalIds.required(roleId, "roleId"), JsonBody(body).requiredText("name")))
+        return RoleView.of(roles.rename(CanonicalIds.required(roleId, "roleId"), JsonBody.of(body, "name").requiredText("name")))
     }
 
     @Access(permissions = [AccessPermissionCodes.ROLE_DELETE])
@@ -95,7 +97,7 @@ public class RoleController(
         request: HttpServletRequest,
     ): ResponseEntity<Void> {
         pages.only(request)
-        roles.deleteAll(JsonBody(body).canonicalIds("ids"))
+        roles.deleteAll(JsonBody.of(body, "ids").canonicalIds("ids", maxBulkIds))
         return ResponseEntity.noContent().build()
     }
 
@@ -123,7 +125,7 @@ public class RoleController(
         request: HttpServletRequest,
     ): ResponseEntity<Void> {
         pages.only(request)
-        roles.attach(CanonicalIds.required(roleId, "roleId"), JsonBody(body).requiredText("permission"))
+        roles.attach(CanonicalIds.required(roleId, "roleId"), JsonBody.of(body, "permission").requiredText("permission"))
         return ResponseEntity.noContent().build()
     }
 
@@ -228,7 +230,7 @@ public class SubjectGrantController(
         grants.grantRole(
             served,
             SubjectRef(served.type, CanonicalIds.required(subjectId, "subjectId")),
-            JsonBody(body).requiredText("role"),
+            JsonBody.of(body, "role").requiredText("role"),
         )
         return ResponseEntity.noContent().build()
     }
@@ -259,7 +261,7 @@ public class SubjectGrantController(
         grants.grantPermission(
             served,
             SubjectRef(served.type, CanonicalIds.required(subjectId, "subjectId")),
-            JsonBody(body).requiredText("permission"),
+            JsonBody.of(body, "permission").requiredText("permission"),
         )
         return ResponseEntity.noContent().build()
     }
@@ -286,7 +288,7 @@ public class SubjectGrantController(
         request: HttpServletRequest,
     ): ResponseEntity<Void> {
         pages.only(request)
-        passwords.set(subjectType, subjectId, JsonBody(body).requiredText("password"))
+        passwords.set(subjectType, subjectId, JsonBody.of(body, "password").requiredText("password"))
         return ResponseEntity.noContent().build()
     }
 

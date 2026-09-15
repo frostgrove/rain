@@ -66,7 +66,7 @@ public class AuthController(
         pages.only(request)
         val mode = DeliveryDecision.forSignIn(delivery, request)
         val served = subjects.resolve(subjectType, "subjectType")
-        val form = JsonBody(body)
+        val form = JsonBody.of(body, "identifier", "password")
         val signedIn = login.signIn(served, form.requiredText("identifier"), form.requiredText("password"), agentOf(request))
         if (mode == CredentialDelivery.COOKIES) cookies.write(response, cookies.issue(signedIn.credentials))
         return AuthAnswer.of(signedIn.credentials, signedIn.profile, mode)
@@ -135,7 +135,7 @@ public class AuthController(
         response: HttpServletResponse,
     ): ClosedView {
         pages.only(request)
-        val includingCurrent = JsonBody(body).requiredBoolean("includingCurrent")
+        val includingCurrent = JsonBody.of(body, "includingCurrent").requiredBoolean("includingCurrent")
         val closed = everywhere.closeAll(principal(), includingCurrent)
         if (includingCurrent && delivery != CredentialDelivery.BODY) cookies.write(response, cookies.clear())
         return ClosedView(closed)
@@ -148,7 +148,7 @@ public class AuthController(
         request: HttpServletRequest,
     ): ResponseEntity<Void> {
         pages.only(request)
-        val form = JsonBody(body)
+        val form = JsonBody.of(body, "current", "next")
         passwords.change(principal(), form.requiredText("current"), form.requiredText("next"), agentOf(request))
         return ResponseEntity.noContent().build()
     }
@@ -217,7 +217,7 @@ public class SignUpController(
         val served = subjects.resolve(subjectType, "subjectType")
         if (served.registrar == null) throw Fault.notFound(message = "subject type ${served.type} does not sign up")
         val mode = DeliveryDecision.forSignIn(delivery, request)
-        val form = JsonBody(body)
+        val form = JsonBody.of(body, "identifier", "password", "profile")
         val signedIn =
             signUp.signUp(
                 served,

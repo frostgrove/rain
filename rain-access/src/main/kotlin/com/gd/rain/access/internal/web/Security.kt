@@ -91,16 +91,19 @@ public class PresentedToken(
 
 /**
  * Turns a presented access token into a principal, inside Spring Security's chain: the token verifies, names a served
- * subject type, is not revoked — by its session or by a cutoff of its subject — and names an active subject. A token
- * that fails any of it is `401 unauthenticated`; a revocation list that cannot be asked is `503 revocation_unavailable`,
- * never a pass.
+ * subject type, is not revoked — by its session or by a cutoff of its subject — and names an active subject.
+ *
+ * A token that fails any of it authenticates nobody, and why is kept on the request ([REFUSAL_ATTRIBUTE]): a route that
+ * needs a caller answers that refusal — `401 unauthenticated`, or `503 revocation_unavailable` when the revocation list
+ * could not be asked, never a pass — and a public route serves the request as the anonymous one it is. A stale
+ * credential a browser still holds — a closed session's cookie, a token past its expiry — never stands between a caller
+ * and signing in again or refreshing.
  */
 public class AccessAuthenticationFilter(
     private val tokens: PresentedToken,
     private val verifier: AccessTokenVerifier,
     private val subjects: SubjectRegistry,
     private val revocations: RevocationList,
-    private val writer: ProblemWriter,
 ) : OncePerRequestFilter() {
     override fun doFilterInternal(
         request: HttpServletRequest,
@@ -111,11 +114,14 @@ public class AccessAuthenticationFilter(
             try {
                 authenticate(request)
             } catch (refusal: Fault) {
-                writer.write(response, refusal)
-                return
+                request.setAttribute(REFUSAL_ATTRIBUTE, refusal)
+                null
             } catch (unavailable: RevocationUnavailableException) {
-                writer.write(response, Fault(FaultKind.RETRYABLE, AccessErrorCodes.REVOCATION_UNAVAILABLE, cause = unavailable))
-                return
+                request.setAttribute(
+                    REFUSAL_ATTRIBUTE,
+                    Fault(FaultKind.RETRYABLE, AccessErrorCodes.REVOCATION_UNAVAILABLE, cause = unavailable),
+                )
+                null
             }
         if (principal == null) {
             filterChain.doFilter(request, response)
@@ -148,6 +154,9 @@ public class AccessAuthenticationFilter(
     public companion object {
         /** Where the principal is kept on the request, which the request log reads after the security context is gone. */
         public const val PRINCIPAL_ATTRIBUTE: String = "com.gd.rain.access.principal"
+
+        /** Where the refusal of a presented credential that authenticated nobody is kept, for a route that needs a caller. */
+        public const val REFUSAL_ATTRIBUTE: String = "com.gd.rain.access.refusal"
     }
 }
 
