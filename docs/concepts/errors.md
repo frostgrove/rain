@@ -64,8 +64,11 @@ object TicketErrorCodes : ErrorCodeCatalog {
 }
 ```
 
-At start-up every catalog is registered together. Two catalogs with one owner, a blank owner, a malformed code and a
-code declared twice are refused in one report. A fault that carries a code no catalog declares is not sent to the
+At start-up every catalog is registered together. Two catalogs with one owner, a blank owner, a catalog whose `codes`
+cannot be produced, and a code declared twice are refused in one report. A malformed code is refused where it is
+constructed (`ErrorCode.of`): in a catalog that computes `codes` on access that is during registration, in the same
+report; in an `object` catalog whose codes are properties it is when the object is first used, which fails the bean that
+uses it. A fault that carries a code no catalog declares is not sent to the
 client as is: it renders as `500 internal`, and the unregistered code is logged.
 
 ## Rules of v1

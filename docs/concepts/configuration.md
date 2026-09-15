@@ -18,10 +18,15 @@ is on the classpath.
 
 ```
 the configuration has 3 problems:
-  - rain.deployment.stage [required]: no value is provided; state one of dev, test, prod
-  - rain.web.body-limit [invalid]: is 0B; it has to be positive (from class path resource [application.yml] - 12:17)
-  - rain.jobs.workers.ticket.sumarize [unknown_key]: no rain section declares this key
+  - rain.runtime.roles [invalid]: names "wroker", which is not one of api, worker, seeder
+  - rain.web.body-limit [invalid]: is 0B; it has to be positive
+  - rain.web.probes.live [unknown_key]: no rain section declares this key (from class path resource [application.yml] from helpdesk.jar - 14:13)
 ```
+
+A problem found while binding a value or looking for undeclared keys names where the value came from; a section's own
+rules name the property path. A section's own rules run only once the stage is known, so a start without a stage
+reports the missing stage together with every problem that does not depend on it, and the section's rules on the next
+start.
 
 Problem codes:
 
@@ -73,7 +78,9 @@ The validator, in one pass:
 5. runs cross-section rules (`CrossSectionRule`); a rule whose sections are not all bound is reported as
    `not_evaluated` and never run;
 6. reports keys under `rain.` that no section declares. Keys from environment variables are not judged, because an
-   environment variable name does not map back to one property path.
+   environment variable name does not map back to one property path. A key under a map of scalars is claimed by the
+   map: `rain.jobs.workers.ticket.summarize` is key `ticket.summarize`, and a name no job definition declares is refused
+   by rain-jobs' bean-time check, not here.
 
 A section prefix declared twice is a contradiction.
 

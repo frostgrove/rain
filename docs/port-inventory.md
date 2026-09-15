@@ -373,17 +373,17 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | resource/doc | `src/test/resources/schema/schema-fingerprint.sql` | rain-test | dropped | RainPostgres gives each test a fresh database; module jOOQ code is generated from the module's own migrations |
 | resource/doc | `src/test/resources/testconfig/application.yml` | rain-test | dropped | rain tests state rain.* per context; no shared test configuration file |
 | resource/doc | `src/test/resources/contract/frontend-calls.json` | dropped | dropped | Lease web contract |
-| resource/doc | `docs/backend/config/README.md` | docs/concepts/configuration.md | pending |  |
-| resource/doc | `docs/backend/core/runtime/README.md` | docs/concepts/runtime-roles-and-commands.md | pending |  |
-| resource/doc | `docs/backend/modules/README.md` | docs/concepts/runtime-roles-and-commands.md | pending |  |
-| resource/doc | `docs/backend/http/README.md` | docs/modules/web.md + docs/concepts/error-contract.md | pending |  |
-| resource/doc | `docs/backend/jobs/README.md` | docs/modules/jobs.md | pending |  |
-| resource/doc | `docs/backend/core/jobs/README.md` | docs/modules/jobs.md | pending |  |
+| resource/doc | `docs/backend/config/README.md` | docs/concepts/configuration.md | ported | unknown keys, every problem at once, dependent rules, production secrets from the environment -> docs/modules/boot.md; Redis, signing key and Go loader dropped |
+| resource/doc | `docs/backend/core/runtime/README.md` | docs/concepts/runtime-roles-and-commands.md | ported | role-gated activation, component-owned loops and parallel drain under one grace -> docs/conventions.md and docs/modules/jobs.md; Go runtime, doctor and product runners dropped |
+| resource/doc | `docs/backend/modules/README.md` | docs/concepts/runtime-roles-and-commands.md | ported | activation as a declaration, commands get no surface -> docs/conventions.md; module catalog, profiles and doctor dropped |
+| resource/doc | `docs/backend/http/README.md` | docs/modules/web.md + docs/concepts/error-contract.md | ported | request log, correlation id, security headers, cross-site table, readiness logging, bounded caller table -> docs/modules/web.md; fiber, deadlines, auth gate and route registrar dropped |
+| resource/doc | `docs/backend/jobs/README.md` | docs/modules/jobs.md | ported | queue step vs recurring pass, adapter vs work, deferred/permanent classification, next step inside the fence -> docs/modules/jobs.md; product steps dropped |
+| resource/doc | `docs/backend/core/jobs/README.md` | docs/modules/jobs.md | ported | queue tables reached only through JobAdministration and fenced effects -> docs/modules/jobs.md; Go framework and migration history dropped |
 | resource/doc | `docs/backend/access/README.md` | docs/modules/access.md | pending |  |
 | resource/doc | `docs/backend/access/accounts.md` | docs/modules/access.md | pending |  |
-| resource/doc | `docs/backend/degradation/README.md` | docs/modules/resilience.md | pending |  |
-| resource/doc | `docs/backend/observability/README.md` | docs/modules/observability.md | pending |  |
-| resource/doc | `docs/backend/slo/README.md` | docs/modules/observability.md | pending |  |
-| resource/doc | `docs/backend/core/realtime/README.md` | docs/modules/realtime.md | pending |  |
+| resource/doc | `docs/backend/degradation/README.md` | docs/modules/resilience.md | ported | dependency failure, one probe per cooldown, process-local state, uncharged deferral, degrading importance -> docs/modules/resilience.md and docs/modules/jobs.md; product pipeline dropped |
+| resource/doc | `docs/backend/observability/README.md` | docs/modules/observability.md | ported | log correlation via MDC and the OTLP log bridge -> docs/modules/observability.md; Go instrumentation seams dropped |
+| resource/doc | `docs/backend/slo/README.md` | docs/modules/observability.md | ported | thresholds as measured or target with a named check, alertable signals -> docs/modules/observability.md; product numbers dropped |
+| resource/doc | `docs/backend/core/realtime/README.md` | docs/modules/realtime.md | ported | channel rules, transactional publish, subscribe-before-snapshot, gap/overflow/closed, startup refusal -> docs/modules/realtime.md |
 | resource/doc | `docs/backend/core/redis/README.md` | docs/modules/access.md (revocation server) | pending |  |
-| resource/doc | `PLAN.md §0-§2` | docs/conventions.md | pending |  |
+| resource/doc | `PLAN.md §0-§2` | docs/conventions.md | ported | docs/conventions.md |

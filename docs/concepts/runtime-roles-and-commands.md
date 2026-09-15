@@ -8,17 +8,21 @@ rain:
   deployment:
     stage: prod          # dev | test | prod — required, independent of Spring profiles
   runtime:
-    roles: [api, worker] # or: command: migrate
+    roles: api,worker    # or: command: migrate
 spring:
   application:
     name: helpdesk       # required
 ```
 
+In a configuration file the roles are one comma-separated value. A YAML list is refused: its elements
+(`rain.runtime.roles[0]`, …) are keys no section declares. As an environment variable the same value is
+`RAIN_RUNTIME_ROLES=api,worker`.
+
 ## Roles
 
 | Role | What it activates |
 |---|---|
-| `api` | request serving: routes, transport filters, listeners that feed responses |
+| `api` | request serving: every route besides the probes, and listeners that feed responses (the realtime listener) |
 | `worker` | background consumption: job schedulers, lease renewal, housekeeping, recurring work |
 | `seeder` | the seeders (normally activated by the `seed` command) |
 
@@ -38,9 +42,14 @@ A command is a one-shot process: no web server, one piece of work, then exit wit
 
 | Command | Module | Roles it activates | What it does |
 |---|---|---|---|
-| `config-check` | rain-boot | none | starts the application (which runs every configuration and bean-time check) and exits 0 |
+| `config-check` | rain-boot | none | starts the application, which runs the configuration validation and the bean-time checks of a process with no role and no web server, and exits 0 |
 | `seed` | rain-boot | `seeder` | runs every `Seeder` by `order`, then `name`, and exits 0 |
 | `migrate` | rain-persistence | none | enables Flyway for this process, applies module and application migrations, reports them, exits 0 |
+| `smoke-llm` | rain-llm | none | asks the configured chat model one question, without a slot or the breaker; exits 0 when it answered, 1 otherwise |
+
+`config-check` does not run the checks that exist only in a role or only in a servlet application — the job worker's
+connection demand, the agreement of `rain.web.client-address` with `server.forward-headers-strategy`. Those refuse the
+start of the process that has them.
 
 A command is declared in `META-INF/spring.factories` under `com.gd.rain.boot.runtime.CommandDeclaration` (so it is
 known before any bean exists) and answered by exactly one `RainCommand` bean with the same name:
