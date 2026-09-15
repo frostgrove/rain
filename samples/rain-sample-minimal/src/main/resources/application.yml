@@ -5,6 +5,10 @@
 spring:
   application:
     name: rain-sample-minimal
+  servlet:
+    multipart:
+      # No uploads: with multipart parsing off, rain.web.body-limit counts every body.
+      enabled: false
 server:
   # No proxy in front of this sample: requests are attributed to the connection's peer.
   forward-headers-strategy: none

@@ -13,12 +13,21 @@ rain:
     client-address: direct    # direct | forwarded
 server:
   forward-headers-strategy: none   # must agree with client-address
+spring:
+  servlet:
+    multipart:
+      enabled: false               # or limits within rain.web.body-limit
 ```
 
 None of the three has a default: each one is a door. `client-address: direct` requires
 `server.forward-headers-strategy=none`; `forwarded` requires `native` or `framework`. An unstated strategy is a
 contradiction, because Spring Boot would otherwise decide from the detected cloud platform whether `X-Forwarded-For`
 from anyone is believed.
+
+Multipart bodies are read by the servlet container itself, not through rain's counted stream. While Spring Boot's
+multipart support is enabled, `spring.servlet.multipart.max-request-size` must be a size within `rain.web.body-limit` and
+`max-file-size` within the request size — Spring Boot's own 10MB applies when they are not stated, and is refused above a
+smaller body limit. With `spring.servlet.multipart.enabled=false` the body limit counts multipart bodies like any other.
 
 ## Filters, outermost first
 
@@ -47,6 +56,11 @@ rain:
 
 Origins are `*` or `scheme://host[:port]`. Credentials together with `*` is a contradiction. Allowed origins without
 allowed methods is a missing value, not "all methods".
+
+An allowed origin lets a page drive unsafe requests as whoever is signed in, so a `prod` deployment refuses `*`, any
+origin that is not `https`, and any origin naming this machine: a loopback IP literal, `localhost` or a `.localhost` name
+(RFC 6761). The refusal names the entry, e.g. `rain.web.cors.allowed-origins[1]`. `dev` and `test` deployments may name
+a workstation's browser.
 
 ## Declaring access
 

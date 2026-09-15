@@ -52,6 +52,7 @@ val BASE_PROPERTIES: Array<String> =
         "rain.web.request-budget=30s",
         "rain.web.client-address=direct",
         "server.forward-headers-strategy=none",
+        "spring.servlet.multipart.enabled=false",
     )
 
 /** A servlet context with Spring MVC, rain's runtime, health and web auto-configurations — no embedded server. */

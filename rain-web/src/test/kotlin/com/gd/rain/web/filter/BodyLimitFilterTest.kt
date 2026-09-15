@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** 413 `too_large`: an announced body before the handler runs, a hidden one while it is read. */
 class BodyLimitFilterTest {
-    private val filter = BodyLimitFilter(DataSize.ofBytes(LIMIT.toLong()), problemWriter())
+    private val filter = BodyLimitFilter(DataSize.ofBytes(LIMIT.toLong()), problemWriter(), multipartParsedByContainer = true)
 
     @Test
     fun `an announced body over the limit is refused before the handler runs`() {
@@ -88,6 +88,18 @@ class BodyLimitFilterTest {
         filter.doFilter(request, MockHttpServletResponse(), chain)
 
         assertThat(chain.request).isSameAs(request)
+    }
+
+    @Test
+    fun `without multipart parsing a multipart body is counted like any other`() {
+        val counting = BodyLimitFilter(DataSize.ofBytes(LIMIT.toLong()), problemWriter(), multipartParsedByContainer = false)
+        val chain = MockFilterChain()
+        val response = MockHttpServletResponse()
+
+        counting.doFilter(posting(ByteArray(LIMIT * 4)).apply { contentType = "multipart/form-data; boundary=x" }, response, chain)
+
+        assertThat(response.status).isEqualTo(413)
+        assertThat(chain.request).isNull()
     }
 
     private fun posting(body: ByteArray): MockHttpServletRequest =

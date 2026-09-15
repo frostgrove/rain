@@ -11,6 +11,7 @@ dependencies {
     api(project(":rain-observability"))
     api("org.springframework.boot:spring-boot-webmvc")
     api("org.springframework.boot:spring-boot-jackson")
+    implementation("org.springframework.boot:spring-boot-servlet")
     implementation("org.slf4j:slf4j-api")
 
     // The servlet API is the container's; rain-web does not choose one for the application.
@@ -21,4 +22,17 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-tomcat")
     testImplementation("ch.qos.logback:logback-classic")
     testImplementation("org.junit.jupiter:junit-jupiter-params")
+}
+
+val testSourceSet = the<SourceSetContainer>()["test"]
+
+tasks.register<Test>("writeProblemGolden") {
+    description = "Rewrites src/test/resources/problem-format-v1.golden.json from the renderer; never part of check."
+    group = "rain"
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    useJUnitPlatform()
+    filter { includeTestsMatching("com.gd.rain.web.problem.ProblemFormatGoldenTest") }
+    systemProperty("rain.writeGolden", "true")
+    outputs.upToDateWhen { false }
 }

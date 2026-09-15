@@ -90,7 +90,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `cli/SeedStep.kt` | rain-boot | ported | rain-boot Seeder + seed command (ordered by order then name, names checked) |
 | main | `config/AccessProperties.kt` | rain-access | pending |  |
 | main | `config/AppProperties.kt` | rain-boot | dropped | spring.application.name is required instead; shutdown budget moves to rain-jobs with spring.lifecycle |
-| main | `config/CasebankProperties.kt` | dropped | pending | product configuration |
+| main | `config/CasebankProperties.kt` | dropped | dropped | product configuration |
 | main | `config/ClientProperties.kt` | split | ported | split: LlmProperties -> rain-llm rain.llm; BreakerProperties -> resilience4j instances config checked by rain-resilience; WpsProperties dropped |
 | main | `config/ConfigurationBinding.kt` | rain-boot | ported | rebuilt as rain-boot SectionBinder (missing leaves, unknown keys, file-borne secrets) |
 | main | `config/ConfigurationProblems.kt` | rain-core | ported | typed ConfigurationProblem + ConfigurationProblemsException in rain-core |
@@ -103,12 +103,12 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `config/HttpProperties.kt` | rain-web | ported | rain-web RainWebProperties + RainWebConfigurationContributor (rain.web, required) |
 | main | `config/JobsProperties.kt` | rain-jobs | ported | rain.jobs JobsProperties; DEFAULT_WORKERS dropped |
 | main | `config/RealtimeProperties.kt` | rain-realtime | ported | rain.realtime; pool-name, subscriber-buffer, max-subscriptions required; contributor OPTIONAL |
-| main | `config/RedisProperties.kt` | dropped | pending | Boot spring.data.redis.*; revocation settings → rain-access |
-| main | `config/ResourceDeclarations.kt` | dropped | pending | replaced by revocation server eviction-policy check (gap 14) |
-| main | `config/SeedProperties.kt` | dropped | pending | product configuration; prod secret rule → @RequiredFromEnvironment (gap 37) |
+| main | `config/RedisProperties.kt` | dropped | dropped | Boot spring.data.redis.*; revocation settings → rain-access |
+| main | `config/ResourceDeclarations.kt` | dropped | dropped | replaced by revocation server eviction-policy check (gap 14) |
+| main | `config/SeedProperties.kt` | dropped | dropped | product configuration; prod secret rule → @RequiredFromEnvironment (gap 37) |
 | main | `config/SigningKey.kt` | rain-access | pending | entropy heuristic removed (gap 21) |
-| main | `config/StorageProperties.kt` | dropped | pending | product configuration |
-| main | `config/WorkspaceProperties.kt` | dropped | pending | product configuration |
+| main | `config/StorageProperties.kt` | dropped | dropped | product configuration |
+| main | `config/WorkspaceProperties.kt` | dropped | dropped | product configuration |
 | main | `crud/BulkDeleteRequest.kt` | rain-crud | ported | CrudResource.bulkDelete + CrudMvc.bulkDelete (strict {"ids":[…]}) |
 | main | `crud/CrudAccessTable.kt` | rain-crud | ported | web/MountedResource.declarations derived from the policy |
 | main | `crud/CrudConfiguration.kt` | rain-crud | ported | autoconfigure/RainCrudAutoConfiguration; SpEL accessPolicies bean not ported |
@@ -190,7 +190,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `persistence/DataAccessFaults.kt` | rain-persistence | ported | DataAccessFaultTranslator over the rain-core FaultTranslator SPI; 57014 statement_timeout, 42P01/42703 internal, cause and nextException walked (gap 42) |
 | main | `persistence/Ids.kt` | rain-persistence | ported | IdGenerator in rain-core, UuidV7Ids in rain-persistence |
 | main | `persistence/JsonbPayload.kt` | rain-persistence | ported | marker in rain-persistence, converters in rain-data-jdbc |
-| main | `persistence/LanguageCodes.kt` | dropped | pending | product converter; JdbcConversionContribution instead |
+| main | `persistence/LanguageCodes.kt` | dropped | dropped | product converter; JdbcConversionContribution instead |
 | main | `persistence/OffsetDateTimeToInstantConverter.kt` | rain-data-jdbc | ported | rain-data-jdbc |
 | main | `persistence/PersistenceConfiguration.kt` | rain-persistence | ported | RainPersistenceAutoConfiguration, RainSchemaAutoConfiguration, RainDataJdbcAutoConfiguration; product converters and the auditing handler are not ported (applications use @EnableJdbcAuditing) |
 | main | `persistence/RealtimeDataSource.kt` | rain-realtime | ported | internal HikariListenerConnections; pool name from config; evictConnection on failure |
@@ -204,7 +204,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `realtime/RealtimeListener.kt` | rain-realtime | ported | SmartLifecycle; UNLISTEN * per session; unsolicited counter; max-subscriptions |
 | main | `realtime/RealtimePublisher.kt` | rain-realtime | ported | bounded byte count; surrogate and NUL refused; transaction required |
 | main | `realtime/Subscription.kt` | rain-realtime | ported | END sentinel, buffer+1 queue, poll returns Next |
-| main | `redis/RedisClients.kt` | dropped | pending | Boot spring.data.redis.* (gap 14) |
+| main | `redis/RedisClients.kt` | dropped | dropped | Boot spring.data.redis.* (gap 14) |
 | main | `resilience/AdmissionGate.kt` | rain-resilience | ported | rain-resilience AdmissionGate over atomic BreakerRegistry.reserve; admit(free) dropped (gap 11) |
 | main | `resilience/AuthBulkheadConfiguration.kt` | rain-access | pending |  |
 | main | `resilience/BreakerHealthContribution.kt` | rain-resilience | ported | rain-resilience breaker health per BreakerDeclaration |
@@ -223,7 +223,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `workq/WorkqSchedulers.kt` | rain-jobs | ported | JobsWorker lifecycle, DbSchedulerFactory, JobTopology checks |
 | main | `workq/persistence/JobIntentRepository.kt` | rain-jobs | ported | IntentLedger |
 | main | `workq/persistence/JobInvocationRepository.kt` | rain-jobs | ported | AttemptLedger, HousekeepingLedger, AdministrationLedger |
-| test | `FrameworkBoundaryTest.kt` | dropped | pending | Lease boundary; replaced by RainArchRules |
+| test | `FrameworkBoundaryTest.kt` | dropped | dropped | Lease boundary; replaced by RainArchRules |
 | test | `access/AccessFieldNamesTest.kt` | rain-access | pending |  |
 | test | `access/PermissionCatalogueTest.kt` | rain-access | pending |  |
 | test | `access/protection/MemoryAttemptLimiterTest.kt` | rain-access | pending |  |
@@ -248,17 +248,17 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `audit/AuditRecorderTest.kt` | rain-audit | ported | rain-audit AuditIT (transaction semantics against PostgreSQL) |
 | test | `audit/SignInAuditRecorderTest.kt` | rain-audit | pending |  |
 | test | `config/AccessConfigurationTest.kt` | rain-access | pending |  |
-| test | `config/ConfigFileParityTest.kt` | dropped | pending | Lease deployment files |
-| test | `config/ConfigurationBindingTest.kt` | split | pending | split: stage/body/budget/llm parts → rain modules; workspace/worker parts dropped |
+| test | `config/ConfigFileParityTest.kt` | dropped | dropped | Lease deployment files |
+| test | `config/ConfigurationBindingTest.kt` | split | ported | split: body limit and budget -> RainWebPropertiesValidationTest, upload vs body -> MultipartLimitsCheckTest, stage/roles -> rain-boot, llm -> LlmPropertiesTest, jobs workers -> JobsConfigurationTest; workspace, receipt retention and supervisor grace dropped (product); stage from profile dropped (gap 36) |
 | test | `config/ConfigurationProblemsTest.kt` | rain-core | ported | rain-core ConfigurationProblemTest + rain-boot RainConfigurationValidatorTest |
-| test | `config/Deployments.kt` | dropped | pending | Lease deployment files; replaced by rain-test ConfigDocuments |
+| test | `config/Deployments.kt` | dropped | dropped | Lease deployment files; replaced by rain-test ConfigDocuments |
 | test | `config/EvictionDomainTest.kt` | rain-access | pending | revocation server eviction-policy check |
-| test | `config/RedisConfigurationTest.kt` | dropped | pending | Boot spring.data.redis |
-| test | `config/ResourceDeclarationsTest.kt` | dropped | pending | mechanism dropped |
+| test | `config/RedisConfigurationTest.kt` | dropped | dropped | Boot spring.data.redis |
+| test | `config/ResourceDeclarationsTest.kt` | dropped | dropped | mechanism dropped |
 | test | `config/ShutdownConfigurationTest.kt` | rain-boot | dropped | shutdown budget is re-specified in rain-jobs |
 | test | `config/SigningKeyTest.kt` | rain-access | pending | entropy heuristic removed (gap 21) |
-| test | `config/TransportConfigurationTest.kt` | rain-web | pending |  |
-| test | `config/WorkspaceConfigurationTest.kt` | dropped | pending | product configuration |
+| test | `config/TransportConfigurationTest.kt` | rain-web | ported | rain-web ProdOriginRulesTest: prod refuses *, non-https and loopback origins (rain-core Loopback) |
+| test | `config/WorkspaceConfigurationTest.kt` | dropped | dropped | product configuration |
 | test | `crud/CrudAccessTableTest.kt` | rain-crud | ported | web/MountedResourceTest |
 | test | `crud/CrudResourceTest.kt` | rain-crud | ported | web/CrudHttpTest + dialect HTTP refusal tests |
 | test | `crud/GuardedResourceTest.kt` | rain-crud | ported | CrudResourcePolicyTest |
@@ -319,7 +319,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `realtime/ChannelNameTest.kt` | rain-realtime | ported | parse rules replace ofOrNull case |
 | test | `realtime/RealtimeBackoffTest.kt` | rain-realtime | ported | injected ReconnectWait, no sleeping |
 | test | `realtime/RealtimePublisherTest.kt` | rain-realtime | ported | plus surrogate and bounded-count cases |
-| test | `redis/RedisWiringTest.kt` | dropped | pending | Boot spring.data.redis |
+| test | `redis/RedisWiringTest.kt` | dropped | dropped | Boot spring.data.redis |
 | test | `resilience/AdmissionGateTest.kt` | rain-resilience | ported | rain-resilience AdmissionGateTest + AdmissionGateRaceTest |
 | test | `resilience/BreakerHealthContributionTest.kt` | rain-resilience | ported | rain-resilience BreakerHealthContributionTest |
 | test | `resilience/BreakerTest.kt` | rain-resilience | ported | rain-resilience BreakerRegistryTest |
@@ -342,7 +342,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `access/SubjectGrantSurfaceIT.kt` | rain-sample | pending |  |
 | lease-it | `audit/AuditTrailIT.kt` | rain-audit | ported | rain-audit AuditIT |
 | lease-it | `persistence/AuditLogSchemaIT.kt` | rain-audit | ported | rain-audit AuditIT (schema, actor both-or-none, index-backed pages) |
-| lease-it | `health/RootProbeIT.kt` | rain-observability | pending |  |
+| lease-it | `health/RootProbeIT.kt` | rain-observability | ported | probes: ProbeController/ReadinessMappingTest; X-Request-ID echo: RequestLogFilterTest; database: DatabaseHealthCheckTest; freshness: HealthCacheTest; `/` and `/favicon.ico` dropped (product surface) |
 | lease-it | `llm/LlmSlotsIT.kt` | rain-llm | ported | rain-llm LlmSlotsIT + MissingBudgetRowIsExplicitIT |
 | lease-it | `lock/AdvisoryLocksIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT |
 | lease-it | `persistence/ApplicationOwnedIdsIT.kt` | rain-data-jdbc | ported | rain-data-jdbc DataJdbcIT |
@@ -369,10 +369,10 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `persistence/Schemas.kt` | rain-test | dropped | schema fingerprint replaced by per-module migration assertions |
 | lease-it | `persistence/Slices.kt` | rain-test | dropped | no Spring Data slice in rain |
 | lease-it | `AbstractIntegrationTest.kt` | rain-test | ported | rain-test RainPostgres (one container per JVM) |
-| resource/doc | `src/test/resources/contract/envelope-golden.json` | rain-web | pending | regenerated as problem+json golden |
-| resource/doc | `src/test/resources/schema/schema-fingerprint.sql` | rain-test | pending | pattern for per-schema fingerprints |
-| resource/doc | `src/test/resources/testconfig/application.yml` | rain-test | pending | rain.* keys |
-| resource/doc | `src/test/resources/contract/frontend-calls.json` | dropped | pending | Lease web contract |
+| resource/doc | `src/test/resources/contract/envelope-golden.json` | rain-web | ported | rain-web problem-format-v1.golden.json + ProblemFormatGoldenTest, writeProblemGolden task |
+| resource/doc | `src/test/resources/schema/schema-fingerprint.sql` | rain-test | dropped | RainPostgres gives each test a fresh database; module jOOQ code is generated from the module's own migrations |
+| resource/doc | `src/test/resources/testconfig/application.yml` | rain-test | dropped | rain tests state rain.* per context; no shared test configuration file |
+| resource/doc | `src/test/resources/contract/frontend-calls.json` | dropped | dropped | Lease web contract |
 | resource/doc | `docs/backend/config/README.md` | docs/concepts/configuration.md | pending |  |
 | resource/doc | `docs/backend/core/runtime/README.md` | docs/concepts/runtime-roles-and-commands.md | pending |  |
 | resource/doc | `docs/backend/modules/README.md` | docs/concepts/runtime-roles-and-commands.md | pending |  |

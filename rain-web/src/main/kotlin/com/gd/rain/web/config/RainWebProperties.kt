@@ -6,14 +6,18 @@ import com.gd.rain.boot.config.ConfigurationSection
 import com.gd.rain.boot.config.Presence
 import com.gd.rain.boot.config.SectionSpec
 import com.gd.rain.boot.config.written
+import com.gd.rain.boot.runtime.DeploymentStage
 import com.gd.rain.core.config.ConfigurationProblem
 import com.gd.rain.core.config.ProblemCode
 import com.gd.rain.core.config.problems
+import com.gd.rain.core.net.Loopback
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.bind.Binder
+import org.springframework.boot.servlet.autoconfigure.MultipartProperties
 import org.springframework.core.env.Environment
 import org.springframework.util.unit.DataSize
 import org.springframework.web.cors.CorsConfiguration
+import java.net.URI
 import java.time.Duration
 
 /** Where the client address a request is attributed to comes from. */
@@ -50,7 +54,8 @@ public data class RainWebProperties(
 ) : ConfigurationSection {
     /**
      * `rain.web.cors` — which cross-origin callers are allowed. No origins means no cross-origin caller:
-     * every CORS request is refused with `403 cross_site`. An allowed origin needs its methods stated.
+     * every CORS request is refused with `403 cross_site`. An allowed origin needs its methods stated. In a `prod`
+     * deployment an allowed origin is `https`, is not `*`, and does not name this machine ([Loopback]).
      */
     public data class Cors(
         public val allowedOrigins: List<String> = emptyList(),
@@ -81,7 +86,7 @@ public data class RainWebProperties(
         public val paths: Set<String> get() = setOf(livePath, readyPath)
     }
 
-    public fun problems(): List<ConfigurationProblem> =
+    public fun problems(stage: DeploymentStage): List<ConfigurationProblem> =
         problems {
             expect(bodyLimit.toBytes() > 0, BODY_LIMIT) { "is ${bodyLimit.written()}; it has to be positive" }
             expect(bodyLimit.toBytes() <= Int.MAX_VALUE, BODY_LIMIT) {
@@ -96,6 +101,7 @@ public data class RainWebProperties(
                 expect(origin == ANY || ORIGIN.matches(origin), "$CORS.allowed-origins[$index]") {
                     "is \"$origin\"; an origin is * or scheme://host[:port], with no path"
                 }
+                if (stage == DeploymentStage.PROD) prodOrigin(index, origin)?.let(::add)
             }
             expect(!(cors.allowCredentials && ANY in cors.allowedOrigins), "$CORS.allow-credentials", ProblemCode.CONTRADICTS) {
                 "is true while $CORS.allowed-origins contains *; a browser discards a credentialed answer to every origin"
@@ -126,6 +132,51 @@ public data class RainWebProperties(
                 ProblemCode.CONTRADICTS,
             ) { "is the same path as $PROBES.live-path" }
         }
+
+    /** The rule a `prod` deployment's allowed origins answer to; null when [origin] satisfies it or is malformed (reported elsewhere). */
+    private fun prodOrigin(
+        index: Int,
+        origin: String,
+    ): ConfigurationProblem? {
+        val path = "$CORS.allowed-origins[$index]"
+        if (origin == ANY) {
+            return ConfigurationProblem(path, ProblemCode.INVALID, "is * in a prod deployment; a prod deployment names each origin")
+        }
+        if (!ORIGIN.matches(origin)) return null
+        val uri =
+            try {
+                URI(origin)
+            } catch (_: java.net.URISyntaxException) {
+                return ConfigurationProblem(path, ProblemCode.INVALID, "is \"$origin\", which is not a URI")
+            }
+        val host = uri.host
+        return when {
+            !"https".equals(uri.scheme, ignoreCase = true) -> {
+                ConfigurationProblem(
+                    path,
+                    ProblemCode.INVALID,
+                    "is \"$origin\" in a prod deployment; a prod deployment's pages are served over https",
+                )
+            }
+
+            host == null -> {
+                ConfigurationProblem(path, ProblemCode.INVALID, "is \"$origin\", which names no host")
+            }
+
+            Loopback.isLoopbackHost(host) -> {
+                ConfigurationProblem(
+                    path,
+                    ProblemCode.INVALID,
+                    "is \"$origin\" in a prod deployment; it names this machine, " +
+                        "and a page served from the machine running the process is no prod caller",
+                )
+            }
+
+            else -> {
+                null
+            }
+        }
+    }
 
     private fun com.gd.rain.core.config.ProblemCollector.tokens(
         values: List<String>,
@@ -168,7 +219,13 @@ public data class RainWebProperties(
 /** Declares the `rain.web` section to rain's configuration validation. */
 public class RainWebConfigurationContributor : ConfigurationContributor {
     override val sections: List<SectionSpec<*>> =
-        listOf(SectionSpec(RainWebProperties.PREFIX, RainWebProperties::class, Presence.REQUIRED) { section, _ -> section.problems() })
+        listOf(
+            SectionSpec(
+                RainWebProperties.PREFIX,
+                RainWebProperties::class,
+                Presence.REQUIRED,
+            ) { section, stage -> section.problems(stage) },
+        )
 }
 
 /**
@@ -214,5 +271,41 @@ public class ForwardHeadersCheck(
         private const val NATIVE = "native"
         private const val FRAMEWORK = "framework"
         private val STRATEGIES = listOf(NATIVE, FRAMEWORK, NONE)
+    }
+}
+
+/**
+ * Multipart bodies are read by the servlet container, not through rain's counted body stream, so while Spring Boot's
+ * multipart support is enabled its limits are the ones that bound them: `spring.servlet.multipart.max-request-size` is a
+ * size within `rain.web.body-limit`, and `max-file-size` is within the request size. With multipart support disabled
+ * (`spring.servlet.multipart.enabled=false`) there is nothing to check, and the body limit counts multipart bodies like any
+ * other.
+ */
+public class MultipartLimitsCheck(
+    private val multipart: MultipartProperties?,
+    private val bodyLimit: DataSize,
+) : ConfigurationCheck {
+    override fun problems(): List<ConfigurationProblem> {
+        val parts = multipart?.takeIf(MultipartProperties::isEnabled) ?: return emptyList()
+        val request = parts.maxRequestSize
+        val file = parts.maxFileSize
+        return problems {
+            expect(request.toBytes() >= 0, MAX_REQUEST_SIZE) {
+                "is unlimited; a multipart body is bounded within ${RainWebProperties.BODY_LIMIT} (${bodyLimit.written()})"
+            }
+            expect(request.toBytes() < 0 || request <= bodyLimit, MAX_REQUEST_SIZE, ProblemCode.CONTRADICTS) {
+                "is ${request.written()}, above ${RainWebProperties.BODY_LIMIT} ${bodyLimit.written()}; the container reads multipart " +
+                    "bodies itself, so state this limit within the body limit, or state spring.servlet.multipart.enabled=false"
+            }
+            expect(file.toBytes() >= 0, MAX_FILE_SIZE) { "is unlimited; a file is bounded within $MAX_REQUEST_SIZE" }
+            expect(file.toBytes() < 0 || request.toBytes() < 0 || file <= request, MAX_FILE_SIZE, ProblemCode.CONTRADICTS) {
+                "is ${file.written()}, above $MAX_REQUEST_SIZE ${request.written()}"
+            }
+        }
+    }
+
+    public companion object {
+        public const val MAX_REQUEST_SIZE: String = "spring.servlet.multipart.max-request-size"
+        public const val MAX_FILE_SIZE: String = "spring.servlet.multipart.max-file-size"
     }
 }

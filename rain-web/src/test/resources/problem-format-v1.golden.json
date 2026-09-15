@@ -1,0 +1,115 @@
+{
+  "format": 1,
+  "refusals": {
+    "kind.internal": {
+      "status": 500,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Internal Server Error","status":500,"detail":"the request failed","code":"internal"}
+    },
+    "kind.bad_request": {
+      "status": 400,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Bad Request","status":400,"detail":"the request could not be understood","code":"bad_request"}
+    },
+    "kind.unauthorized": {
+      "status": 401,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Unauthorized","status":401,"detail":"authentication is required","code":"unauthenticated"}
+    },
+    "kind.forbidden": {
+      "status": 403,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Forbidden","status":403,"detail":"not allowed","code":"forbidden"}
+    },
+    "kind.not_found": {
+      "status": 404,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Not Found","status":404,"detail":"not found","code":"not_found"}
+    },
+    "kind.method_not_allowed": {
+      "status": 405,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Method Not Allowed","status":405,"detail":"this path does not answer that method","code":"method_not_allowed"}
+    },
+    "kind.not_acceptable": {
+      "status": 406,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Not Acceptable","status":406,"detail":"no acceptable representation is available","code":"not_acceptable"}
+    },
+    "kind.conflict": {
+      "status": 409,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Conflict","status":409,"detail":"the request conflicts with the current state","code":"conflict"}
+    },
+    "kind.too_large": {
+      "status": 413,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Content Too Large","status":413,"detail":"the request body is too large","code":"too_large"}
+    },
+    "kind.unsupported_media_type": {
+      "status": 415,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Unsupported Media Type","status":415,"detail":"the request body has an unsupported media type","code":"unsupported_media_type"}
+    },
+    "kind.validation": {
+      "status": 422,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Unprocessable Content","status":422,"detail":"the request is not valid","code":"validation_failed","errors":[{"pointer":"/name","code":"required","message":"this field is required"}]}
+    },
+    "kind.too_many_requests": {
+      "status": 429,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Too Many Requests","status":429,"detail":"too many requests; try again later","code":"too_many_requests"}
+    },
+    "kind.retryable": {
+      "status": 503,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Service Unavailable","status":503,"detail":"the request could not be completed; try again","code":"unavailable"}
+    },
+    "detail.stated": {
+      "status": 409,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Conflict","status":409,"detail":"the record is closed","code":"conflict"}
+    },
+    "retry_after.whole_seconds_rounded_up": {
+      "status": 503,
+      "headers": {"Retry-After":"2"},
+      "body": {"type":"about:blank","title":"Service Unavailable","status":503,"detail":"the request could not be completed; try again","code":"unavailable"}
+    },
+    "retry_after.too_many_requests": {
+      "status": 429,
+      "headers": {"Retry-After":"3"},
+      "body": {"type":"about:blank","title":"Too Many Requests","status":429,"detail":"too many requests; try again later","code":"too_many_requests"}
+    },
+    "validation.sorted_with_default_messages": {
+      "status": 422,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Unprocessable Content","status":422,"detail":"the request is not valid","code":"validation_failed","errors":[{"pointer":"","code":"check","message":"the dates overlap"},{"pointer":"/items/0/name","code":"too_long","message":"this value is too long"},{"pointer":"/items/1/email","code":"required","message":"this field is required"}]}
+    },
+    "validation.partial_stated": {
+      "status": 422,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Unprocessable Content","status":422,"detail":"the request is not valid","code":"validation_failed","errors":[{"pointer":"","code":"check","message":"this value is not allowed"}],"partial":true}
+    },
+    "validation.cut_at_limit": {
+      "status": 422,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Unprocessable Content","status":422,"detail":"the request is not valid","code":"validation_failed","errors":[{"pointer":"/items/0","code":"required","message":"this field is required"},{"pointer":"/items/1","code":"required","message":"this field is required"},{"pointer":"/items/2","code":"required","message":"this field is required"},{"pointer":"/items/3","code":"required","message":"this field is required"},{"pointer":"/items/4","code":"required","message":"this field is required"},{"pointer":"/items/5","code":"required","message":"this field is required"},{"pointer":"/items/6","code":"required","message":"this field is required"},{"pointer":"/items/7","code":"required","message":"this field is required"},{"pointer":"/items/8","code":"required","message":"this field is required"},{"pointer":"/items/9","code":"required","message":"this field is required"},{"pointer":"/items/10","code":"required","message":"this field is required"},{"pointer":"/items/11","code":"required","message":"this field is required"},{"pointer":"/items/12","code":"required","message":"this field is required"},{"pointer":"/items/13","code":"required","message":"this field is required"},{"pointer":"/items/14","code":"required","message":"this field is required"},{"pointer":"/items/15","code":"required","message":"this field is required"},{"pointer":"/items/16","code":"required","message":"this field is required"},{"pointer":"/items/17","code":"required","message":"this field is required"},{"pointer":"/items/18","code":"required","message":"this field is required"},{"pointer":"/items/19","code":"required","message":"this field is required"},{"pointer":"/items/20","code":"required","message":"this field is required"},{"pointer":"/items/21","code":"required","message":"this field is required"},{"pointer":"/items/22","code":"required","message":"this field is required"},{"pointer":"/items/23","code":"required","message":"this field is required"},{"pointer":"/items/24","code":"required","message":"this field is required"},{"pointer":"/items/25","code":"required","message":"this field is required"},{"pointer":"/items/26","code":"required","message":"this field is required"},{"pointer":"/items/27","code":"required","message":"this field is required"},{"pointer":"/items/28","code":"required","message":"this field is required"},{"pointer":"/items/29","code":"required","message":"this field is required"},{"pointer":"/items/30","code":"required","message":"this field is required"},{"pointer":"/items/31","code":"required","message":"this field is required"},{"pointer":"/items/32","code":"required","message":"this field is required"},{"pointer":"/items/33","code":"required","message":"this field is required"},{"pointer":"/items/34","code":"required","message":"this field is required"},{"pointer":"/items/35","code":"required","message":"this field is required"},{"pointer":"/items/36","code":"required","message":"this field is required"},{"pointer":"/items/37","code":"required","message":"this field is required"},{"pointer":"/items/38","code":"required","message":"this field is required"},{"pointer":"/items/39","code":"required","message":"this field is required"},{"pointer":"/items/40","code":"required","message":"this field is required"},{"pointer":"/items/41","code":"required","message":"this field is required"},{"pointer":"/items/42","code":"required","message":"this field is required"},{"pointer":"/items/43","code":"required","message":"this field is required"},{"pointer":"/items/44","code":"required","message":"this field is required"},{"pointer":"/items/45","code":"required","message":"this field is required"},{"pointer":"/items/46","code":"required","message":"this field is required"},{"pointer":"/items/47","code":"required","message":"this field is required"},{"pointer":"/items/48","code":"required","message":"this field is required"},{"pointer":"/items/49","code":"required","message":"this field is required"},{"pointer":"/items/50","code":"required","message":"this field is required"},{"pointer":"/items/51","code":"required","message":"this field is required"},{"pointer":"/items/52","code":"required","message":"this field is required"},{"pointer":"/items/53","code":"required","message":"this field is required"},{"pointer":"/items/54","code":"required","message":"this field is required"},{"pointer":"/items/55","code":"required","message":"this field is required"},{"pointer":"/items/56","code":"required","message":"this field is required"},{"pointer":"/items/57","code":"required","message":"this field is required"},{"pointer":"/items/58","code":"required","message":"this field is required"},{"pointer":"/items/59","code":"required","message":"this field is required"},{"pointer":"/items/60","code":"required","message":"this field is required"},{"pointer":"/items/61","code":"required","message":"this field is required"},{"pointer":"/items/62","code":"required","message":"this field is required"},{"pointer":"/items/63","code":"required","message":"this field is required"},{"pointer":"/items/64","code":"required","message":"this field is required"},{"pointer":"/items/65","code":"required","message":"this field is required"},{"pointer":"/items/66","code":"required","message":"this field is required"},{"pointer":"/items/67","code":"required","message":"this field is required"},{"pointer":"/items/68","code":"required","message":"this field is required"},{"pointer":"/items/69","code":"required","message":"this field is required"},{"pointer":"/items/70","code":"required","message":"this field is required"},{"pointer":"/items/71","code":"required","message":"this field is required"},{"pointer":"/items/72","code":"required","message":"this field is required"},{"pointer":"/items/73","code":"required","message":"this field is required"},{"pointer":"/items/74","code":"required","message":"this field is required"},{"pointer":"/items/75","code":"required","message":"this field is required"},{"pointer":"/items/76","code":"required","message":"this field is required"},{"pointer":"/items/77","code":"required","message":"this field is required"},{"pointer":"/items/78","code":"required","message":"this field is required"},{"pointer":"/items/79","code":"required","message":"this field is required"},{"pointer":"/items/80","code":"required","message":"this field is required"},{"pointer":"/items/81","code":"required","message":"this field is required"},{"pointer":"/items/82","code":"required","message":"this field is required"},{"pointer":"/items/83","code":"required","message":"this field is required"},{"pointer":"/items/84","code":"required","message":"this field is required"},{"pointer":"/items/85","code":"required","message":"this field is required"},{"pointer":"/items/86","code":"required","message":"this field is required"},{"pointer":"/items/87","code":"required","message":"this field is required"},{"pointer":"/items/88","code":"required","message":"this field is required"},{"pointer":"/items/89","code":"required","message":"this field is required"},{"pointer":"/items/90","code":"required","message":"this field is required"},{"pointer":"/items/91","code":"required","message":"this field is required"},{"pointer":"/items/92","code":"required","message":"this field is required"},{"pointer":"/items/93","code":"required","message":"this field is required"},{"pointer":"/items/94","code":"required","message":"this field is required"},{"pointer":"/items/95","code":"required","message":"this field is required"},{"pointer":"/items/96","code":"required","message":"this field is required"},{"pointer":"/items/97","code":"required","message":"this field is required"},{"pointer":"/items/98","code":"required","message":"this field is required"},{"pointer":"/items/99","code":"required","message":"this field is required"}],"partial":true}
+    },
+    "internal.says_only_that_it_failed": {
+      "status": 500,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Internal Server Error","status":500,"detail":"the request failed","code":"internal"}
+    },
+    "code.unregistered_renders_internal": {
+      "status": 500,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Internal Server Error","status":500,"detail":"the request failed","code":"internal"}
+    },
+    "code.cross_site": {
+      "status": 403,
+      "headers": {},
+      "body": {"type":"about:blank","title":"Forbidden","status":403,"detail":"this request was made from another site","code":"cross_site"}
+    }
+  }
+}

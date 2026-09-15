@@ -79,6 +79,10 @@ client as is: it renders as `500 internal`, and the unregistered code is logged.
 - An internal fault says only `the request failed`, names no violations, and its cause is logged with the request id.
 - Keys are written in exactly this order, by a mapper no application Jackson setting reaches.
 
+`rain-web/src/test/resources/problem-format-v1.golden.json` records every fault kind and each of these rules byte for
+byte; a change to the format changes that file in the same commit (`./gradlew :rain-web:writeProblemGolden` rewrites it,
+`check` only compares).
+
 ## Refusals rain did not raise
 
 Spring MVC refuses requests itself (unsupported media type, missing parameter, async timeout, …). rain's exception

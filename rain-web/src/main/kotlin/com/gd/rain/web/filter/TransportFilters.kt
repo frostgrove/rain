@@ -167,13 +167,15 @@ public class RequestLogFilter(
  *
  * Two arms: a `Content-Length` over the limit is refused before the handler runs; a body that announces
  * no length is counted while it is read, and the read that goes over raises the fault and marks the
- * request, so the exception handler answers 413 whatever the reader wrapped the fault in. Multipart
- * requests are not counted here: the container parses their parts, bounded by
- * `spring.servlet.multipart.*`.
+ * request, so the exception handler answers 413 whatever the reader wrapped the fault in. While the container
+ * parses multipart requests ([multipartParsedByContainer]) their bodies are not counted here: the container reads them
+ * itself, bounded by `spring.servlet.multipart.*`, which `MultipartLimitsCheck` holds within the body limit. Without
+ * multipart parsing they are counted like any body.
  */
 public class BodyLimitFilter(
     limit: DataSize,
     private val writer: ProblemWriter,
+    private val multipartParsedByContainer: Boolean,
 ) : OncePerRequestFilter() {
     private val limitBytes: Int = limitBytesOf(limit)
 
@@ -182,7 +184,7 @@ public class BodyLimitFilter(
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
-        if (isMultipart(request)) {
+        if (multipartParsedByContainer && isMultipart(request)) {
             filterChain.doFilter(request, response)
             return
         }

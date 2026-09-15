@@ -11,6 +11,7 @@ import com.gd.rain.core.error.RainErrorCodes
 import com.gd.rain.observability.autoconfigure.RainHealthAutoConfiguration
 import com.gd.rain.observability.health.HealthRegistry
 import com.gd.rain.web.config.ForwardHeadersCheck
+import com.gd.rain.web.config.MultipartLimitsCheck
 import com.gd.rain.web.config.RainWebProperties
 import com.gd.rain.web.error.RainErrorController
 import com.gd.rain.web.error.RainExceptionHandler
@@ -38,6 +39,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
 import org.springframework.boot.autoconfigure.condition.SpringBootCondition
 import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.boot.servlet.autoconfigure.MultipartProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration
 import org.springframework.boot.webmvc.autoconfigure.error.ErrorMvcAutoConfiguration
@@ -151,8 +153,13 @@ public class RainWebFilterAutoConfiguration {
     public fun bodyLimitFilterRegistration(
         properties: RainWebProperties,
         writer: ProblemWriter,
+        multipart: ObjectProvider<MultipartProperties>,
     ): FilterRegistrationBean<BodyLimitFilter> =
-        registration("rainBodyLimitFilter", BodyLimitFilter(properties.bodyLimit, writer), WebFilterOrder.BODY_LIMIT)
+        registration(
+            "rainBodyLimitFilter",
+            BodyLimitFilter(properties.bodyLimit, writer, multipartParsedByContainer = multipart.ifAvailable?.isEnabled == true),
+            WebFilterOrder.BODY_LIMIT,
+        )
 
     @Bean
     public fun crossSiteFilterRegistration(
@@ -160,6 +167,12 @@ public class RainWebFilterAutoConfiguration {
         writer: ProblemWriter,
     ): FilterRegistrationBean<CrossSiteFilter> =
         registration("rainCrossSiteFilter", CrossSiteFilter(properties.cors.allowedOrigins, writer), WebFilterOrder.CROSS_SITE)
+
+    @Bean
+    public fun multipartLimitsCheck(
+        properties: RainWebProperties,
+        multipart: ObjectProvider<MultipartProperties>,
+    ): ConfigurationCheck = MultipartLimitsCheck(multipart.ifAvailable, properties.bodyLimit)
 
     @Bean
     public fun forwardHeadersCheck(
