@@ -1,0 +1,4 @@
+com.gd.rain.boot.runtime.CommandDeclaration=\
+com.gd.rain.persistence.schema.MigrateCommandDeclaration
+com.gd.rain.boot.config.ConfigurationContributor=\
+com.gd.rain.persistence.PersistenceConfigurationContributor

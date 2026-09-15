@@ -171,12 +171,12 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `llm/LlmSmokeProbe.kt` | rain-llm | pending |  |
 | main | `llm/Utf8.kt` | rain-llm | pending |  |
 | main | `llm/persistence/LlmSlotRepository.kt` | rain-llm | pending |  |
-| main | `lock/AdvisoryLockStore.kt` | rain-persistence | pending |  |
-| main | `lock/AdvisoryLocks.kt` | rain-persistence | pending |  |
-| main | `lock/LockConfiguration.kt` | rain-persistence | pending |  |
+| main | `lock/AdvisoryLockStore.kt` | rain-persistence | ported | rain-persistence lock |
+| main | `lock/AdvisoryLocks.kt` | rain-persistence | ported | rain-persistence lock |
+| main | `lock/LockConfiguration.kt` | rain-persistence | ported | RainPersistenceAutoConfiguration |
 | main | `lock/LockKey.kt` | rain-persistence | ported | rain-core lock key derivation (FNV-1a 64) and guards |
-| main | `lock/LockProperties.kt` | rain-persistence | pending |  |
-| main | `lock/persistence/AdvisoryLockRepository.kt` | rain-persistence | pending |  |
+| main | `lock/LockProperties.kt` | rain-persistence | ported | rain.locks section |
+| main | `lock/persistence/AdvisoryLockRepository.kt` | rain-persistence | ported | JooqAdvisoryLockStore |
 | main | `observability/LoggingConfiguration.kt` | rain-observability | pending |  |
 | main | `observability/health/ActuatorHealthContributors.kt` | rain-observability | pending |  |
 | main | `observability/health/DatabaseHealthIndicator.kt` | rain-persistence | pending |  |
@@ -184,20 +184,20 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `observability/health/HealthConfiguration.kt` | rain-observability | pending |  |
 | main | `observability/health/HealthModel.kt` | rain-observability | pending |  |
 | main | `observability/health/HealthRegistry.kt` | rain-observability | pending |  |
-| main | `persistence/AssignIdCallback.kt` | rain-data-jdbc | pending |  |
+| main | `persistence/AssignIdCallback.kt` | rain-data-jdbc | ported | rain-data-jdbc |
 | main | `persistence/ConnectionBudget.kt` | dropped | pending | replaced by ConnectionDemandCheck in rain-jobs |
-| main | `persistence/CurrentActor.kt` | rain-persistence | pending |  |
-| main | `persistence/DataAccessFaults.kt` | rain-persistence | pending |  |
-| main | `persistence/Ids.kt` | rain-persistence | pending |  |
-| main | `persistence/JsonbPayload.kt` | rain-persistence | pending |  |
+| main | `persistence/CurrentActor.kt` | rain-persistence | ported | rain-core Actor(type, id) + CurrentActor |
+| main | `persistence/DataAccessFaults.kt` | rain-persistence | ported | DataAccessFaultTranslator over the rain-core FaultTranslator SPI; 57014 statement_timeout, 42P01/42703 internal, cause and nextException walked (gap 42) |
+| main | `persistence/Ids.kt` | rain-persistence | ported | IdGenerator in rain-core, UuidV7Ids in rain-persistence |
+| main | `persistence/JsonbPayload.kt` | rain-persistence | ported | marker in rain-persistence, converters in rain-data-jdbc |
 | main | `persistence/LanguageCodes.kt` | dropped | pending | product converter; JdbcConversionContribution instead |
-| main | `persistence/OffsetDateTimeToInstantConverter.kt` | rain-data-jdbc | pending |  |
-| main | `persistence/PersistenceConfiguration.kt` | rain-persistence | pending |  |
+| main | `persistence/OffsetDateTimeToInstantConverter.kt` | rain-data-jdbc | ported | rain-data-jdbc |
+| main | `persistence/PersistenceConfiguration.kt` | rain-persistence | ported | RainPersistenceAutoConfiguration, RainSchemaAutoConfiguration, RainDataJdbcAutoConfiguration; product converters and the auditing handler are not ported (applications use @EnableJdbcAuditing) |
 | main | `persistence/RealtimeDataSource.kt` | rain-realtime | pending |  |
-| main | `persistence/RecordingFlywayMigration.kt` | rain-persistence | pending |  |
-| main | `persistence/StatementBudget.kt` | rain-persistence | pending |  |
-| main | `persistence/TransactionRetry.kt` | rain-persistence | pending |  |
-| main | `persistence/WireEnum.kt` | rain-persistence | pending |  |
+| main | `persistence/RecordingFlywayMigration.kt` | rain-persistence | ported | RainSchemaMigrationStrategy (schema per module, own history) + migrate command |
+| main | `persistence/StatementBudget.kt` | rain-persistence | ported | StatementTimeout for jOOQ and every JdbcTemplate, one key, agreement check with Boot's (gap 43) |
+| main | `persistence/TransactionRetry.kt` | rain-persistence | ported | Spring Framework 7 RetryTemplate with a SQLState predicate (gap 46) |
+| main | `persistence/WireEnum.kt` | rain-persistence | ported | marker in rain-persistence, converters in rain-data-jdbc |
 | main | `realtime/Channel.kt` | rain-realtime | pending |  |
 | main | `realtime/RealtimeConfiguration.kt` | rain-realtime | pending |  |
 | main | `realtime/RealtimeFault.kt` | rain-realtime | pending |  |
@@ -297,9 +297,9 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `llm/LlmPortTest.kt` | rain-llm | pending |  |
 | test | `llm/SpringAiConfigurationTest.kt` | rain-llm | pending |  |
 | test | `llm/Utf8Test.kt` | rain-llm | pending |  |
-| test | `lock/AdvisoryLocksTest.kt` | rain-persistence | pending |  |
+| test | `lock/AdvisoryLocksTest.kt` | rain-persistence | ported | rain-persistence PersistenceUnitTest |
 | test | `lock/LockKeyTest.kt` | rain-persistence | ported | rain-core LockKeyTest with the same reference vectors |
-| test | `lock/LockPropertiesTest.kt` | rain-persistence | pending |  |
+| test | `lock/LockPropertiesTest.kt` | rain-persistence | ported | rain-persistence PersistenceContributorTest |
 | test | `observability/ApplicationLogLevelTest.kt` | rain-observability | pending |  |
 | test | `observability/LokiOffTest.kt` | rain-observability | pending |  |
 | test | `observability/MutableClock.kt` | rain-observability | pending |  |
@@ -311,11 +311,11 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `observability/health/HealthCacheTest.kt` | rain-observability | pending |  |
 | test | `observability/health/HealthRegistryTest.kt` | rain-observability | pending |  |
 | test | `observability/health/ReadinessMappingTest.kt` | rain-observability | pending |  |
-| test | `persistence/AssignIdCallbackTest.kt` | rain-persistence | pending |  |
-| test | `persistence/ConversionRegistrationTest.kt` | rain-persistence | pending |  |
-| test | `persistence/FlywayMigrationSettingsTest.kt` | rain-persistence | pending |  |
-| test | `persistence/IdsTest.kt` | rain-persistence | pending |  |
-| test | `persistence/TransactionRetryTest.kt` | rain-persistence | pending |  |
+| test | `persistence/AssignIdCallbackTest.kt` | rain-persistence | ported | rain-data-jdbc DataJdbcUnitTest |
+| test | `persistence/ConversionRegistrationTest.kt` | rain-persistence | ported | rain-data-jdbc DataJdbcUnitTest |
+| test | `persistence/FlywayMigrationSettingsTest.kt` | rain-persistence | dropped | replaced by SchemaDescriptorTest and the schema migration IT |
+| test | `persistence/IdsTest.kt` | rain-persistence | ported | rain-persistence PersistenceUnitTest |
+| test | `persistence/TransactionRetryTest.kt` | rain-persistence | ported | rain-persistence TransactionRetryTest (incl. back-off ladder parity) |
 | test | `realtime/ChannelNameTest.kt` | rain-realtime | pending |  |
 | test | `realtime/RealtimeBackoffTest.kt` | rain-realtime | pending |  |
 | test | `realtime/RealtimePublisherTest.kt` | rain-realtime | pending |  |
@@ -344,13 +344,13 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `persistence/AuditLogSchemaIT.kt` | rain-audit | pending |  |
 | lease-it | `health/RootProbeIT.kt` | rain-observability | pending |  |
 | lease-it | `llm/LlmSlotsIT.kt` | rain-llm | pending |  |
-| lease-it | `lock/AdvisoryLocksIT.kt` | rain-persistence | pending |  |
-| lease-it | `persistence/ApplicationOwnedIdsIT.kt` | rain-data-jdbc | pending |  |
-| lease-it | `persistence/ConvertersIT.kt` | rain-data-jdbc | pending |  |
-| lease-it | `persistence/OptimisticLockingIT.kt` | rain-data-jdbc | pending |  |
-| lease-it | `persistence/JooqReadModelIT.kt` | rain-persistence | pending |  |
-| lease-it | `persistence/MigrationIT.kt` | rain-persistence | pending |  |
-| lease-it | `persistence/MigrateCommandIT.kt` | rain-persistence | pending |  |
+| lease-it | `lock/AdvisoryLocksIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT |
+| lease-it | `persistence/ApplicationOwnedIdsIT.kt` | rain-data-jdbc | ported | rain-data-jdbc DataJdbcIT |
+| lease-it | `persistence/ConvertersIT.kt` | rain-data-jdbc | ported | rain-data-jdbc DataJdbcIT |
+| lease-it | `persistence/OptimisticLockingIT.kt` | rain-data-jdbc | ported | rain-data-jdbc OptimisticLockingIT |
+| lease-it | `persistence/JooqReadModelIT.kt` | rain-persistence | dropped | product read models |
+| lease-it | `persistence/MigrationIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT (schema per module, second run applies nothing) |
+| lease-it | `persistence/MigrateCommandIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT (migrate command) |
 | lease-it | `persistence/ConnectionBudgetIT.kt` | rain-jobs | pending |  |
 | lease-it | `realtime/RealtimeListenerIT.kt` | rain-realtime | pending |  |
 | lease-it | `surface/AnonymousSurfaceIT.kt` | rain-sample | pending |  |
@@ -364,11 +364,11 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `ops/DeadJobsIT.kt` | rain-jobs | pending |  |
 | lease-it | `OneShotRunnerIT.kt` | rain-sample | pending |  |
 | lease-it | `seed/SeedCommandIT.kt` | rain-sample | pending |  |
-| lease-it | `persistence/Databases.kt` | rain-test | pending |  |
-| lease-it | `persistence/Applications.kt` | rain-test | pending |  |
-| lease-it | `persistence/Schemas.kt` | rain-test | pending |  |
-| lease-it | `persistence/Slices.kt` | rain-test | pending |  |
-| lease-it | `AbstractIntegrationTest.kt` | rain-test | pending |  |
+| lease-it | `persistence/Databases.kt` | rain-test | ported | rain-test RainPostgres.freshDatabase |
+| lease-it | `persistence/Applications.kt` | rain-test | dropped | tests start applications with SpringApplicationBuilder |
+| lease-it | `persistence/Schemas.kt` | rain-test | dropped | schema fingerprint replaced by per-module migration assertions |
+| lease-it | `persistence/Slices.kt` | rain-test | dropped | no Spring Data slice in rain |
+| lease-it | `AbstractIntegrationTest.kt` | rain-test | ported | rain-test RainPostgres (one container per JVM) |
 | resource/doc | `src/test/resources/contract/envelope-golden.json` | rain-web | pending | regenerated as problem+json golden |
 | resource/doc | `src/test/resources/schema/schema-fingerprint.sql` | rain-test | pending | pattern for per-schema fingerprints |
 | resource/doc | `src/test/resources/testconfig/application.yml` | rain-test | pending | rain.* keys |

@@ -23,4 +23,7 @@ include(
     "rain-dependencies",
     "rain-core",
     "rain-boot",
+    "rain-test",
+    "rain-persistence",
+    "rain-data-jdbc",
 )

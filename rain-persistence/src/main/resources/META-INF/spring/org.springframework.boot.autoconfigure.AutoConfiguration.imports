@@ -1,0 +1,2 @@
+com.gd.rain.persistence.autoconfigure.RainPersistenceAutoConfiguration
+com.gd.rain.persistence.autoconfigure.RainSchemaAutoConfiguration
