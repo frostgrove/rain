@@ -102,7 +102,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `config/DurationFormat.kt` | rain-core | ported | rain-boot config/Formats.kt |
 | main | `config/HttpProperties.kt` | rain-web | ported | rain-web RainWebProperties + RainWebConfigurationContributor (rain.web, required) |
 | main | `config/JobsProperties.kt` | rain-jobs | pending | DEFAULT_WORKERS dropped |
-| main | `config/RealtimeProperties.kt` | rain-realtime | pending |  |
+| main | `config/RealtimeProperties.kt` | rain-realtime | ported | rain.realtime; pool-name, subscriber-buffer, max-subscriptions required; contributor OPTIONAL |
 | main | `config/RedisProperties.kt` | dropped | pending | Boot spring.data.redis.*; revocation settings → rain-access |
 | main | `config/ResourceDeclarations.kt` | dropped | pending | replaced by revocation server eviction-policy check (gap 14) |
 | main | `config/SeedProperties.kt` | dropped | pending | product configuration; prod secret rule → @RequiredFromEnvironment (gap 37) |
@@ -193,17 +193,17 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `persistence/LanguageCodes.kt` | dropped | pending | product converter; JdbcConversionContribution instead |
 | main | `persistence/OffsetDateTimeToInstantConverter.kt` | rain-data-jdbc | ported | rain-data-jdbc |
 | main | `persistence/PersistenceConfiguration.kt` | rain-persistence | ported | RainPersistenceAutoConfiguration, RainSchemaAutoConfiguration, RainDataJdbcAutoConfiguration; product converters and the auditing handler are not ported (applications use @EnableJdbcAuditing) |
-| main | `persistence/RealtimeDataSource.kt` | rain-realtime | pending |  |
+| main | `persistence/RealtimeDataSource.kt` | rain-realtime | ported | internal HikariListenerConnections; pool name from config; evictConnection on failure |
 | main | `persistence/RecordingFlywayMigration.kt` | rain-persistence | ported | RainSchemaMigrationStrategy (schema per module, own history) + migrate command |
 | main | `persistence/StatementBudget.kt` | rain-persistence | ported | StatementTimeout for jOOQ and every JdbcTemplate, one key, agreement check with Boot's (gap 43) |
 | main | `persistence/TransactionRetry.kt` | rain-persistence | ported | Spring Framework 7 RetryTemplate with a SQLState predicate (gap 46) |
 | main | `persistence/WireEnum.kt` | rain-persistence | ported | marker in rain-persistence, converters in rain-data-jdbc |
-| main | `realtime/Channel.kt` | rain-realtime | pending |  |
-| main | `realtime/RealtimeConfiguration.kt` | rain-realtime | pending |  |
-| main | `realtime/RealtimeFault.kt` | rain-realtime | pending |  |
-| main | `realtime/RealtimeListener.kt` | rain-realtime | pending |  |
-| main | `realtime/RealtimePublisher.kt` | rain-realtime | pending |  |
-| main | `realtime/Subscription.kt` | rain-realtime | pending |  |
+| main | `realtime/Channel.kt` | rain-realtime | ported | Channel.parse replaces ofOrNull; NotifyRules v1 checked against server |
+| main | `realtime/RealtimeConfiguration.kt` | rain-realtime | ported | RainRealtimeAutoConfiguration; section condition; listener under @ConditionalOnRainRole(API) |
+| main | `realtime/RealtimeFault.kt` | rain-realtime | ported | split into SubscriptionEnd, PublishRefusal, RealtimeErrorCodes faults, ListenerStartRefused |
+| main | `realtime/RealtimeListener.kt` | rain-realtime | ported | SmartLifecycle; UNLISTEN * per session; unsolicited counter; max-subscriptions |
+| main | `realtime/RealtimePublisher.kt` | rain-realtime | ported | bounded byte count; surrogate and NUL refused; transaction required |
+| main | `realtime/Subscription.kt` | rain-realtime | ported | END sentinel, buffer+1 queue, poll returns Next |
 | main | `redis/RedisClients.kt` | dropped | pending | Boot spring.data.redis.* (gap 14) |
 | main | `resilience/AdmissionGate.kt` | rain-resilience | pending |  |
 | main | `resilience/AuthBulkheadConfiguration.kt` | rain-access | pending |  |
@@ -316,9 +316,9 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `persistence/FlywayMigrationSettingsTest.kt` | rain-persistence | dropped | replaced by SchemaDescriptorTest and the schema migration IT |
 | test | `persistence/IdsTest.kt` | rain-persistence | ported | rain-persistence PersistenceUnitTest |
 | test | `persistence/TransactionRetryTest.kt` | rain-persistence | ported | rain-persistence TransactionRetryTest (incl. back-off ladder parity) |
-| test | `realtime/ChannelNameTest.kt` | rain-realtime | pending |  |
-| test | `realtime/RealtimeBackoffTest.kt` | rain-realtime | pending |  |
-| test | `realtime/RealtimePublisherTest.kt` | rain-realtime | pending |  |
+| test | `realtime/ChannelNameTest.kt` | rain-realtime | ported | parse rules replace ofOrNull case |
+| test | `realtime/RealtimeBackoffTest.kt` | rain-realtime | ported | injected ReconnectWait, no sleeping |
+| test | `realtime/RealtimePublisherTest.kt` | rain-realtime | ported | plus surrogate and bounded-count cases |
 | test | `redis/RedisWiringTest.kt` | dropped | pending | Boot spring.data.redis |
 | test | `resilience/AdmissionGateTest.kt` | rain-resilience | pending |  |
 | test | `resilience/BreakerHealthContributionTest.kt` | rain-resilience | pending |  |
@@ -352,7 +352,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `persistence/MigrationIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT (schema per module, second run applies nothing) |
 | lease-it | `persistence/MigrateCommandIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT (migrate command) |
 | lease-it | `persistence/ConnectionBudgetIT.kt` | rain-jobs | pending |  |
-| lease-it | `realtime/RealtimeListenerIT.kt` | rain-realtime | pending |  |
+| lease-it | `realtime/RealtimeListenerIT.kt` | rain-realtime | ported | terminated-backend case moved to ListenerReconnectUnlistenIT |
 | lease-it | `surface/AnonymousSurfaceIT.kt` | rain-sample | pending |  |
 | lease-it | `surface/AuthorizationIT.kt` | rain-sample | pending |  |
 | lease-it | `surface/HttpSurfaceIT.kt` | rain-sample | pending |  |

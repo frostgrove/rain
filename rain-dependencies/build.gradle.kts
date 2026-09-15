@@ -38,5 +38,6 @@ dependencies {
         api(project(":rain-data-jdbc"))
         api(project(":rain-web"))
         api(project(":rain-audit"))
+        api(project(":rain-realtime"))
     }
 }

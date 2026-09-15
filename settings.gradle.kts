@@ -29,4 +29,5 @@ include(
     "rain-data-jdbc",
     "rain-web",
     "rain-audit",
+    "rain-realtime",
 )
