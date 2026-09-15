@@ -23,4 +23,6 @@ include(
     "rain-dependencies",
     "rain-core",
     "rain-boot",
+    "rain-observability",
+    "rain-web",
 )
