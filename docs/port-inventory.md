@@ -6,7 +6,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 
 | Kind | Source | Destination | Status | Note |
 |---|---|---|---|---|
-| main | `FrameworkPackages.kt` | dropped | pending | replaced by auto-configuration; no package scanning |
+| main | `FrameworkPackages.kt` | dropped | dropped | no package scanning in rain |
 | main | `access/AccessFaults.kt` | rain-access | pending |  |
 | main | `access/AccessFieldNames.kt` | rain-access | pending |  |
 | main | `access/ModuleMetadata.kt` | rain-access | pending |  |
@@ -87,19 +87,19 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `audit/AuditRecorder.kt` | rain-audit | pending |  |
 | main | `audit/SignInAuditRecorder.kt` | rain-access | pending | breaks the access↔audit cycle |
 | main | `cli/OneShotReports.kt` | split | pending | LlmSmokeCheck → rain-llm; RedlineReport dropped (product) |
-| main | `cli/SeedStep.kt` | rain-boot | pending | SeedStep → Seeder |
+| main | `cli/SeedStep.kt` | rain-boot | ported | rain-boot Seeder + seed command (ordered by order then name, names checked) |
 | main | `config/AccessProperties.kt` | rain-access | pending |  |
-| main | `config/AppProperties.kt` | rain-boot | pending | rain.application |
+| main | `config/AppProperties.kt` | rain-boot | dropped | spring.application.name is required instead; shutdown budget moves to rain-jobs with spring.lifecycle |
 | main | `config/CasebankProperties.kt` | dropped | pending | product configuration |
 | main | `config/ClientProperties.kt` | split | pending | LlmProperties → rain-llm; BreakerProperties → rain-resilience (r4j config); WpsProperties dropped |
-| main | `config/ConfigurationBinding.kt` | rain-boot | pending |  |
-| main | `config/ConfigurationProblems.kt` | rain-core | pending | typed ConfigurationProblem |
-| main | `config/ConfigurationPropertiesWiring.kt` | dropped | pending | @EnableConfigurationProperties per auto-configuration |
-| main | `config/CrossCuttingConfigurationValidator.kt` | rain-boot | pending | rebuilt as RainConfigurationValidator; product rules dropped |
-| main | `config/DataSizeFormat.kt` | rain-core | pending |  |
-| main | `config/DeploymentConfiguration.kt` | dropped | pending | replaced by rain-boot ConfigurationContributor SPI |
-| main | `config/DeploymentStage.kt` | rain-boot | pending | required rain.deployment.stage (gap 36) |
-| main | `config/DurationFormat.kt` | rain-core | pending |  |
+| main | `config/ConfigurationBinding.kt` | rain-boot | ported | rebuilt as rain-boot SectionBinder (missing leaves, unknown keys, file-borne secrets) |
+| main | `config/ConfigurationProblems.kt` | rain-core | ported | typed ConfigurationProblem + ConfigurationProblemsException in rain-core |
+| main | `config/ConfigurationPropertiesWiring.kt` | dropped | dropped | @EnableConfigurationProperties per auto-configuration |
+| main | `config/CrossCuttingConfigurationValidator.kt` | rain-boot | ported | rebuilt as rain-boot RainConfigurationValidator over the open ConfigurationContributor SPI (gaps 37, 41, 45) |
+| main | `config/DataSizeFormat.kt` | rain-core | ported | rain-boot config/Formats.kt |
+| main | `config/DeploymentConfiguration.kt` | dropped | dropped | closed product tree replaced by ConfigurationContributor sections |
+| main | `config/DeploymentStage.kt` | rain-boot | ported | required rain.deployment.stage, no profile inference (gap 36) |
+| main | `config/DurationFormat.kt` | rain-core | ported | rain-boot config/Formats.kt |
 | main | `config/HttpProperties.kt` | rain-web | pending | rain.web |
 | main | `config/JobsProperties.kt` | rain-jobs | pending | DEFAULT_WORKERS dropped |
 | main | `config/RealtimeProperties.kt` | rain-realtime | pending |  |
@@ -143,14 +143,14 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `http/TransportConfiguration.kt` | rain-web | pending |  |
 | main | `http/error/EnvelopeErrorController.kt` | rain-web | pending |  |
 | main | `http/error/EnvelopeWriter.kt` | rain-web | pending |  |
-| main | `http/error/ErrorCodes.kt` | rain-core | pending | generic codes + ErrorCodeRegistry; DOMAIN dropped (gap 35) |
+| main | `http/error/ErrorCodes.kt` | rain-core | ported | RainErrorCodes catalog + ErrorCodeRegistry (duplicates refused); DOMAIN codes dropped (gap 35) |
 | main | `http/error/ErrorEnvelope.kt` | rain-web | pending |  |
 | main | `http/error/ErrorEnvelopeAdvice.kt` | rain-web | pending |  |
-| main | `http/error/Fault.kt` | rain-core | pending |  |
-| main | `http/error/FaultKind.kt` | rain-core | pending | status as int (gap 31) |
-| main | `http/error/Groups.kt` | rain-core | pending |  |
+| main | `http/error/Fault.kt` | rain-core | ported | rain-core Fault with typed ErrorCode and construction invariants |
+| main | `http/error/FaultKind.kt` | rain-core | ported | status as Int, total kind table (gap 31 core half) |
+| main | `http/error/Groups.kt` | rain-core | dropped | validation/general grouping replaced by the problem+json errors list |
 | main | `http/error/StaleDocumentBody.kt` | dropped | pending | product body; problem extensions instead |
-| main | `http/error/Violation.kt` | rain-core | pending |  |
+| main | `http/error/Violation.kt` | rain-core | ported | RFC 6901 pointer path, deterministic order |
 | main | `http/filter/BodyLimitFilter.kt` | rain-web | pending |  |
 | main | `http/filter/CrossSiteFilter.kt` | rain-web | pending |  |
 | main | `http/filter/RequestBudgetFilter.kt` | rain-web | pending |  |
@@ -174,7 +174,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `lock/AdvisoryLockStore.kt` | rain-persistence | pending |  |
 | main | `lock/AdvisoryLocks.kt` | rain-persistence | pending |  |
 | main | `lock/LockConfiguration.kt` | rain-persistence | pending |  |
-| main | `lock/LockKey.kt` | rain-persistence | pending |  |
+| main | `lock/LockKey.kt` | rain-persistence | ported | rain-core lock key derivation (FNV-1a 64) and guards |
 | main | `lock/LockProperties.kt` | rain-persistence | pending |  |
 | main | `lock/persistence/AdvisoryLockRepository.kt` | rain-persistence | pending |  |
 | main | `observability/LoggingConfiguration.kt` | rain-observability | pending |  |
@@ -250,12 +250,12 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `config/AccessConfigurationTest.kt` | rain-access | pending |  |
 | test | `config/ConfigFileParityTest.kt` | dropped | pending | Lease deployment files |
 | test | `config/ConfigurationBindingTest.kt` | split | pending | split: stage/body/budget/llm parts → rain modules; workspace/worker parts dropped |
-| test | `config/ConfigurationProblemsTest.kt` | rain-core | pending | typed ConfigurationProblem |
+| test | `config/ConfigurationProblemsTest.kt` | rain-core | ported | rain-core ConfigurationProblemTest + rain-boot RainConfigurationValidatorTest |
 | test | `config/Deployments.kt` | dropped | pending | Lease deployment files; replaced by rain-test ConfigDocuments |
 | test | `config/EvictionDomainTest.kt` | rain-access | pending | revocation server eviction-policy check |
 | test | `config/RedisConfigurationTest.kt` | dropped | pending | Boot spring.data.redis |
 | test | `config/ResourceDeclarationsTest.kt` | dropped | pending | mechanism dropped |
-| test | `config/ShutdownConfigurationTest.kt` | rain-boot | pending |  |
+| test | `config/ShutdownConfigurationTest.kt` | rain-boot | dropped | shutdown budget is re-specified in rain-jobs |
 | test | `config/SigningKeyTest.kt` | rain-access | pending | entropy heuristic removed (gap 21) |
 | test | `config/TransportConfigurationTest.kt` | rain-web | pending |  |
 | test | `config/WorkspaceConfigurationTest.kt` | dropped | pending | product configuration |
@@ -282,7 +282,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `http/error/ErrorCodesParityTest.kt` | dropped | pending | Go/Lease code parity |
 | test | `http/error/ErrorEnvelopeGoldenTest.kt` | rain-web | pending |  |
 | test | `http/error/ErrorEnvelopeTest.kt` | rain-web | pending |  |
-| test | `http/error/FaultKindTest.kt` | rain-web | pending |  |
+| test | `http/error/FaultKindTest.kt` | rain-web | ported | rain-core FaultTest (kinds, invariants) |
 | test | `http/error/UnreadableBodyTest.kt` | rain-web | pending |  |
 | test | `http/filter/BodyLimitFilterTest.kt` | rain-web | pending |  |
 | test | `http/filter/CrossSiteFilterTest.kt` | rain-web | pending |  |
@@ -298,7 +298,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `llm/SpringAiConfigurationTest.kt` | rain-llm | pending |  |
 | test | `llm/Utf8Test.kt` | rain-llm | pending |  |
 | test | `lock/AdvisoryLocksTest.kt` | rain-persistence | pending |  |
-| test | `lock/LockKeyTest.kt` | rain-persistence | pending |  |
+| test | `lock/LockKeyTest.kt` | rain-persistence | ported | rain-core LockKeyTest with the same reference vectors |
 | test | `lock/LockPropertiesTest.kt` | rain-persistence | pending |  |
 | test | `observability/ApplicationLogLevelTest.kt` | rain-observability | pending |  |
 | test | `observability/LokiOffTest.kt` | rain-observability | pending |  |

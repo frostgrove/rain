@@ -22,4 +22,5 @@ rootProject.name = "rain"
 include(
     "rain-dependencies",
     "rain-core",
+    "rain-boot",
 )

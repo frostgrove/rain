@@ -4,3 +4,7 @@
 plugins {
     id("rain.kotlin-library")
 }
+
+dependencies {
+    testImplementation(libs.archunit.junit5)
+}

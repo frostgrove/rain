@@ -1,0 +1,9 @@
+org.springframework.boot.EnvironmentPostProcessor=\
+com.gd.rain.boot.runtime.RainRuntimeEnvironmentPostProcessor
+org.springframework.context.ApplicationListener=\
+com.gd.rain.boot.config.RainConfigurationValidator
+org.springframework.boot.diagnostics.FailureAnalyzer=\
+com.gd.rain.boot.config.ConfigurationProblemsFailureAnalyzer
+com.gd.rain.boot.runtime.CommandDeclaration=\
+com.gd.rain.boot.command.ConfigCheckCommandDeclaration,\
+com.gd.rain.boot.seed.SeedCommandDeclaration
