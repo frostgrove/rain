@@ -74,4 +74,8 @@ rain builds with its Gradle wrapper; the Java 25 toolchain is provisioned by Gra
   [ADR 0002 — no Spring Data inside rain](docs/adr/0002-no-spring-data-inside-rain.md),
   [ADR 0003 — roles, not profiles](docs/adr/0003-roles-not-profiles.md)
 - [Dependency notes](docs/dependency-notes.md)
+- [`samples/rain-sample`](samples/rain-sample/README.md) — the complete example: a helpdesk that uses every module
+  through public API only — roles and commands from one image, access on Redis, a CRUD resource with its plan proof,
+  audit, jobs, the LLM gateway behind a breaker, server-sent events, Spring Data JDBC — started by its integration tests,
+  and by hand with Docker Compose as its README walks through
 - `samples/rain-sample-minimal` — the smallest rain HTTP application, with its tests

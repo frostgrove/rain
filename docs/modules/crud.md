@@ -503,6 +503,32 @@ matching, no case folding.
 Any other parameter — `search`, `page`, `Limit`, `filter[title]` — is `400 unknown_parameter`, with one violation per
 name. A scalar parameter given more than once is `400 bad_query`.
 
+### On the wire
+
+RFC 3986 does not allow `[` and `]` unencoded in a query, and Tomcat — the container the Web MVC starter brings — refuses
+a request target holding them with an HTML `400` of its own, before the request reaches the application: no problem
+document, no code. A client percent-encodes the names, `[` as `%5B` and `]` as `%5D`:
+
+```http
+GET /books?filter%5Bshelf%5D%5Beq%5D=a&sort=-createdAt&limit=2
+```
+
+The container decodes names and values before rain-crud reads them, so that request is `filter[shelf][eq]=a`. curl's
+`--data-urlencode` encodes a value and not a name, so the name is written encoded:
+
+```sh
+curl -s -G http://127.0.0.1:8080/books --data-urlencode 'filter%5Bshelf%5D%5Beq%5D=a' --data-urlencode 'sort=-createdAt'
+```
+
+An application that chooses to accept unencoded brackets from its clients says so to Tomcat through Spring Boot's
+`server.tomcat.relaxed-query-chars`; rain neither states nor checks it:
+
+```yaml
+server:
+  tomcat:
+    relaxed-query-chars: ['[', ']']
+```
+
 ### Operators
 
 | Operator | Values | Applies to |
@@ -677,13 +703,14 @@ An offset page, `GET /books?sort=pages&offset=1&limit=1`:
 {"items":[{"id":"0192f1c0-0000-7000-8000-000000000002","title":"t1","shelf":"a","pages":1,"price":null,"publishedOn":null,"createdAt":"2026-09-15T10:00:01Z","available":true,"isbn":null,"copies":1}],"page":{"limit":1,"offset":1,"hasNext":true}}
 ```
 
-A counted page, `GET /books?filter[shelf][eq]=a&count=capped`, adds `count` after `page`:
+A counted page, `GET /books?filter%5Bshelf%5D%5Beq%5D=a&count=capped` — `filter[shelf][eq]=a`, encoded as
+[on the wire](#on-the-wire) — adds `count` after `page`:
 
 ```json
 {"items":[…],"page":{"limit":10},"count":{"value":3,"exact":true}}
 ```
 
-The count route, `GET /books/count?filter[shelf][eq]=a`, and `GET /books/count` over 63 rows with a cap of 50:
+The count route, `GET /books/count?filter%5Bshelf%5D%5Beq%5D=a`, and `GET /books/count` over 63 rows with a cap of 50:
 
 ```json
 {"count":{"value":3,"exact":true}}
@@ -918,6 +945,42 @@ the `Limit` (rule 4), and the `Limit` runs once (rule 5). The rows a page examin
 offset page — whether the table holds ten rows or ten million. Without `books_shelf_created_at_id` the plan either filters
 `shelf` or sorts by `created_at`, and the proof names the statement, the node and the SQL.
 
+### Choosing shapes and indexes
+
+The proof judges the plan PostgreSQL chooses on the empty, never-analysed table, where every candidate is priced from the
+planner's defaults rather than from data. `samples/rain-sample` learnt two things about that choice while declaring its
+ticket resource; both are reproduced here on PostgreSQL 18.6 under `QueryPlans.SETTINGS`.
+
+**Overlapping indexes tie.** An index whose key holds some of a statement's equality columns and then the same order
+serves that statement too, checking the other equalities as a `Filter`. With `(status, created_at, id)` and
+`(assignee, status, created_at, id)`, the first page of `filter[assignee][eq]` and `filter[status][eq]` with
+`sort=-createdAt` reads the longer index. Its cursor pages, whose seek brings both estimates down to one row, are priced
+the same on both, and PostgreSQL read the index created later: created after the longer one, `(status, created_at, id)`
+was read with `Filter: (assignee = …)`, a finding. A proof that passes over such a pair passes by the order of a
+migration's statements, not by its indexes. So the sample declares no two shapes of one scope that sort by the same fields
+while one's equality filters are part of the other's, and gives each shape an index whose key is exactly its equality
+columns and its order.
+
+**A row lock keeps a partial index's predicate as a `Filter`.** A statement whose conditions include a partial index's
+predicate reads that index with only its other conditions as the `Index Cond` — unless it locks the rows `FOR UPDATE`,
+with `SKIP LOCKED` or without: then PostgreSQL keeps the predicate's conditions as a `Filter` on the scan, and criterion
+v3 refuses it (rule 2). The sample's escalation sweep reads its batch over
+`(created_at, id) WHERE status = 'open' AND escalated_at IS NULL` in a `MATERIALIZED` common table expression without a
+lock, and writes each ticket by primary key only while its version is the one the batch read (`TicketStatementPlansIT`).
+
+The ticket resource's shapes and indexes (`V1__helpdesk.sql`):
+
+| Scope | Shape | Index |
+|---|---|---|
+| every ticket, for a caller holding `ticket.read` | `sort=-updatedAt` | `(updated_at, id)` |
+| every ticket | `filter[status][eq]`, `sort=-createdAt` | `(status, created_at, id)`, which the open-ticket report reads too |
+| every ticket | `filter[assignee][eq]`, `filter[status][eq]`, `sort=-priority` | `(assignee, status, priority, id)` |
+| the tickets assigned to the caller, whose scope pins `assignee` | `sort=-updatedAt` | `(assignee, updated_at, id)` |
+| the tickets assigned to the caller | `filter[status][eq]`, `sort=-priority` | `(assignee, status, priority, id)`, the same index |
+
+A scope rule answers a predicate for every authenticated caller, so the two scopes are two `CrudResource`s over one
+store, each with the shapes its callers are served; `TicketPlanProofIT` proves every statement of each under its scope.
+
 ## Error codes
 
 `RainCrudErrorCodes` (owner `rain-crud`):
@@ -926,14 +989,13 @@ offset page — whether the table holds ten rows or ten million. Without `books_
 |---|---|---|
 | `field_not_granted` | this field may not be used this way | a violation: `fields`, `include` or a write naming what the resource does not grant |
 | `unknown_operator` | this is not an operator of the query dialect | a violation at `/filter/<field>/<op>` |
-| `invalid_cursor` (rain-core) | the page cursor could not be read | `400`, with a violation at `/cursor` naming why |
 | `not_offered` | this resource does not offer that | `400` for a request no declared shape is; a violation at `/count` when no count cap is declared |
 | `outside_scope` | the row would be outside the rows you may reach | `403` for a write whose row, as stored, would be outside the caller's scope |
 
 rain-crud also answers with rain-core's `unauthenticated`, `forbidden`, `not_found`, `unknown_parameter`, `bad_query`,
-`unknown_field`, `invalid_format`, `out_of_range`, `required`, `invalid_id`, `malformed_body`, `validation_failed` and
-`stale_version`
-([rain-core](core.md#error-codes)).
+`invalid_cursor` (`400`, with a violation at `/cursor` naming why; declared in rain-core, since rain-access pages with it
+too), `unknown_field`, `invalid_format`, `out_of_range`, `required`, `invalid_id`, `malformed_body`, `validation_failed`
+and `stale_version` ([rain-core](core.md#error-codes)).
 
 ## Scale guarantees
 

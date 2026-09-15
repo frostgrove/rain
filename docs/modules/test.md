@@ -44,20 +44,18 @@ class TicketStoreIT {
 
     @Test
     fun `a closed ticket stays closed`() {
+        val stated =
+            database.springProperties() +
+                listOf(
+                    "rain.deployment.stage=test",
+                    "rain.runtime.roles=api",
+                    "rain.persistence.statement-timeout=30s",
+                    "spring.flyway.enabled=true",
+                )
+
         SpringApplicationBuilder(TicketApplication::class.java)
             .web(WebApplicationType.NONE)
-            .properties(
-                *(
-                    database.springProperties() +
-                        listOf(
-                            "spring.application.name=tickets-it",
-                            "rain.deployment.stage=test",
-                            "rain.runtime.roles=api",
-                            "rain.persistence.statement-timeout=30s",
-                            "spring.flyway.enabled=true",
-                        )
-                ).toTypedArray(),
-            ).run()
+            .run(*stated.map { "--$it" }.toTypedArray())
             .use { context ->
                 // …
             }
@@ -67,6 +65,15 @@ class TicketStoreIT {
 
 Every context a test starts states its stage and roles; there is no implicit test role
 ([ADR 0003](../adr/0003-roles-not-profiles.md)).
+
+A test states the properties of its process as command-line arguments to `run`, `--name=value`, which outrank
+`application.yml` the way a deployment's environment does. `SpringApplicationBuilder.properties(...)` does not: it sets
+Spring Boot's default properties, the source every other one outranks, so a value the application's `application.yml`
+states wins over it — an application whose file says `spring.flyway.enabled: false` would start without migrating. A JVM
+system property (`-D`, or a Gradle test task's `systemProperty`) outranks the file too, but rain judges its keys as it
+judges a file's: a key under `rain.` that no section declares is refused as `unknown_key`; only keys from environment
+variables are not judged ([rain-boot](boot.md#environment-variable-names)). `samples/rain-sample` starts every process of
+its integration tests this way (`Stand.arguments`).
 
 ### Query plans
 

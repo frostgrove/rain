@@ -4,6 +4,11 @@ From an empty Gradle project to a running rain HTTP application, then persistenc
 application below is the shape of `samples/rain-sample-minimal`; the build, and every command whose output is shown,
 were run against this revision of rain.
 
+The complete example is `samples/rain-sample`: a helpdesk that uses every rain module the way a product would. Its
+[README](../samples/rain-sample/README.md) runs it by hand — PostgreSQL, Redis, a migration, a seed, an api and a worker
+from one image with Docker Compose — and walks through signing in, paging tickets, a live event stream, a summary job and
+a command.
+
 ## What you need
 
 - JDK 25. The build declares a Java 25 toolchain.
@@ -648,6 +653,24 @@ process in rotation; a failing `required` check makes it `not_ready` (503).
 
 ## Where to go next
 
+- `samples/rain-sample` and its [README](../samples/rain-sample/README.md) — the complete example, beside
+  `samples/rain-sample-minimal`. It shows:
+  - roles `api` and `worker`, and the commands `migrate`, `seed`, `config-check`, `smoke-llm` and one of its own,
+    `ticket-report`, all from one image;
+  - configuration sections of its own validated with rain's, a rule reading `rain.web`, and a seed password required
+    from the environment in `prod`;
+  - rain-access: agents as a subject type, roles written by seeders through `AccessProvisioning`, credentials delivered
+    in cookies or in the body, the revocation list and the attempt counters on Redis;
+  - a rain-crud resource with declared query shapes, cursor pages, a capped count and a row scope, and a plan proof of
+    every statement it runs (`TicketPlanProofIT`);
+  - rain-audit evidence written in the transaction of each change;
+  - a rain-jobs job with a bounded step and a fenced write under an advisory lock, cancelled with its ticket, and
+    recurring work in keyset batches;
+  - rain-llm behind a rain-resilience breaker, over a deterministic in-sample model;
+  - rain-realtime changes served as server-sent events;
+  - a Spring Data JDBC repository through rain-data-jdbc beside jOOQ;
+  - integration tests that start every process the way a deployment does, and the bootJar's exit codes tested as a
+    subprocess.
 - [Conventions](conventions.md) — what an application and a rain module follow.
 - [Configuration](concepts/configuration.md), [runtime roles and commands](concepts/runtime-roles-and-commands.md),
   [errors](concepts/errors.md), [schema ownership](concepts/schema-ownership.md),
