@@ -1,0 +1,61 @@
+[versions]
+kotlin = "2.4.20"
+springBoot = "4.1.1"
+springAi = "2.0.1"
+# Pinned rather than Boot-managed because jOOQ codegen and Flyway run on the build-logic classpath,
+# which sees no BOM; `rainToolParity` fails `check` when a pin drifts from what modules resolve.
+jooq = "3.21.7"
+flyway = "12.4.0"
+postgresqlDriver = "42.7.13"
+postgresImage = "postgres:18"
+testcontainers = "2.0.5"
+resilience4j = "2.4.0"
+dbScheduler = "16.12.0"
+bouncycastle = "1.86"
+jug = "5.2.0"
+otelSdk = "1.65.0"
+otelInstrumentation = "2.31.1-alpha"
+archunit = "1.5.0"
+mockk = "1.14.11"
+kover = "0.9.9"
+spotless = "8.10.2"
+ktlint = "1.8.0"
+
+[libraries]
+# --- build-logic classpath --------------------------------------------------
+kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlin-allopen = { module = "org.jetbrains.kotlin:kotlin-allopen", version.ref = "kotlin" }
+spotless-gradle-plugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }
+kover-gradle-plugin = { module = "org.jetbrains.kotlinx:kover-gradle-plugin", version.ref = "kover" }
+spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gradle-plugin", version.ref = "springBoot" }
+jooq-codegen-tool = { module = "org.jooq:jooq-codegen", version.ref = "jooq" }
+jooq-meta-tool = { module = "org.jooq:jooq-meta", version.ref = "jooq" }
+flyway-core-tool = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-postgresql-tool = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+postgresql-tool = { module = "org.postgresql:postgresql", version.ref = "postgresqlDriver" }
+testcontainers-postgresql-tool = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+
+# --- BOMs ------------------------------------------------------------------------
+spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }
+spring-ai-bom = { module = "org.springframework.ai:spring-ai-bom", version.ref = "springAi" }
+otel-bom = { module = "io.opentelemetry:opentelemetry-bom", version.ref = "otelSdk" }
+
+# --- explicitly versioned third party (constraints in rain-dependencies) ---------
+resilience4j-spring-boot4 = { module = "io.github.resilience4j:resilience4j-spring-boot4", version.ref = "resilience4j" }
+db-scheduler = { module = "com.github.kagkarlsson:db-scheduler", version.ref = "dbScheduler" }
+bcprov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+jug = { module = "com.fasterxml.uuid:java-uuid-generator", version.ref = "jug" }
+jooq = { module = "org.jooq:jooq", version.ref = "jooq" }
+otel-logback-appender = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version.ref = "otelInstrumentation" }
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+
+# --- managed by the Boot BOM -------------------------------------------------------
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
+spring-boot-autoconfigure = { module = "org.springframework.boot:spring-boot-autoconfigure" }
+spring-boot-configuration-processor = { module = "org.springframework.boot:spring-boot-configuration-processor" }
+spring-boot-autoconfigure-processor = { module = "org.springframework.boot:spring-boot-autoconfigure-processor" }
+spring-boot-test = { module = "org.springframework.boot:spring-boot-test" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj-core = { module = "org.assertj:assertj-core" }
