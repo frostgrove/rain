@@ -36,5 +36,6 @@ include(
     "rain-jobs",
     "rain-llm",
     "rain-architecture",
+    "samples:rain-sample",
     "samples:rain-sample-minimal",
 )

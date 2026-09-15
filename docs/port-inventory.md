@@ -337,9 +337,9 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `access/RevocationListIT.kt` | rain-access | ported | RevocationListIT |
 | lease-it | `access/SessionRepositoryIT.kt` | rain-access | ported | SessionStoreIT |
 | lease-it | `persistence/AccessAggregateRoundTripIT.kt` | rain-access | ported | AccessAggregateRoundTripIT |
-| lease-it | `access/AuthSurfaceIT.kt` | rain-sample | pending |  |
-| lease-it | `access/DirectorySurfaceIT.kt` | rain-sample | pending |  |
-| lease-it | `access/SubjectGrantSurfaceIT.kt` | rain-sample | pending |  |
+| lease-it | `access/AuthSurfaceIT.kt` | rain-sample | ported | rain-sample AuthSurfaceIT (AuthSurfaceIT.kt): both deliveries, concurrent refresh, replay past grace, lockout; sign-up absent without a registrar |
+| lease-it | `access/DirectorySurfaceIT.kt` | rain-sample | ported | rain-sample DirectorySurfaceIT (SurfaceSuitesIT.kt): verified surface, catalogue, second start unchanged |
+| lease-it | `access/SubjectGrantSurfaceIT.kt` | rain-sample | ported | rain-sample SubjectGrantSurfaceIT (SurfaceSuitesIT.kt): effective grants via GrantsLookup |
 | lease-it | `audit/AuditTrailIT.kt` | rain-audit | ported | rain-audit AuditIT |
 | lease-it | `persistence/AuditLogSchemaIT.kt` | rain-audit | ported | rain-audit AuditIT (schema, actor both-or-none, index-backed pages) |
 | lease-it | `health/RootProbeIT.kt` | rain-observability | ported | probes: ProbeController/ReadinessMappingTest; X-Request-ID echo: RequestLogFilterTest; database: DatabaseHealthCheckTest; freshness: HealthCacheTest; `/` and `/favicon.ico` dropped (product surface) |
@@ -353,17 +353,17 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `persistence/MigrateCommandIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT (migrate command) |
 | lease-it | `persistence/ConnectionBudgetIT.kt` | rain-jobs | ported | ConnectionDemandIT |
 | lease-it | `realtime/RealtimeListenerIT.kt` | rain-realtime | ported | terminated-backend case moved to ListenerReconnectUnlistenIT |
-| lease-it | `surface/AnonymousSurfaceIT.kt` | rain-sample | pending |  |
-| lease-it | `surface/AuthorizationIT.kt` | rain-sample | pending |  |
-| lease-it | `surface/HttpSurfaceIT.kt` | rain-sample | pending |  |
-| lease-it | `surface/RouterIT.kt` | rain-sample | pending |  |
+| lease-it | `surface/AnonymousSurfaceIT.kt` | rain-sample | ported | rain-sample AnonymousSurfaceIT (SurfaceSuitesIT.kt) |
+| lease-it | `surface/AuthorizationIT.kt` | rain-sample | ported | rain-sample AuthorizationIT (SurfaceSuitesIT.kt): per-verb on tickets and access routes |
+| lease-it | `surface/HttpSurfaceIT.kt` | rain-sample | ported | rain-sample HttpSurfaceIT (SurfaceSuitesIT.kt): SSE route and probe declarations |
+| lease-it | `surface/RouterIT.kt` | rain-sample | ported | rain-sample RouterIT (SurfaceSuitesIT.kt) |
 | lease-it | `workq/WorkqIT.kt` | rain-jobs | ported | EnqueueIT, AttemptLifecycleIT, FenceIT, ReaperIT, RetentionIT |
 | lease-it | `workq/SchedulerTopologyIT.kt` | rain-jobs | ported | SchedulerTopologyIT per declared profile, RoleGatingIT |
 | lease-it | `workq/JobIntentRepositoryIT.kt` | rain-jobs | ported | JobIntentIT |
 | lease-it | `workq/AttemptStatementTimeoutIT.kt` | rain-jobs | ported | AttemptStatementTimeoutIT |
 | lease-it | `ops/DeadJobsIT.kt` | rain-jobs | ported | DeadLetterKeysetIT, RedriveIT |
-| lease-it | `OneShotRunnerIT.kt` | rain-sample | pending |  |
-| lease-it | `seed/SeedCommandIT.kt` | rain-sample | pending |  |
+| lease-it | `OneShotRunnerIT.kt` | rain-sample | ported | rain-sample OneShotRunnerIT (CommandsIT.kt): ticket-report, smoke-llm, seed order and a broken seeder set |
+| lease-it | `seed/SeedCommandIT.kt` | rain-sample | ported | rain-sample SeedCommandIT (CommandsIT.kt) |
 | lease-it | `persistence/Databases.kt` | rain-test | ported | rain-test RainPostgres.freshDatabase |
 | lease-it | `persistence/Applications.kt` | rain-test | dropped | tests start applications with SpringApplicationBuilder |
 | lease-it | `persistence/Schemas.kt` | rain-test | dropped | schema fingerprint replaced by per-module migration assertions |

@@ -1,0 +1,173 @@
+# What every process of this deployment shares. Per process, the environment states what it is:
+#   RAIN_DEPLOYMENT_STAGE=dev|test|prod
+#   RAIN_RUNTIME_ROLES=api | worker | api,worker          a serving process, or
+#   RAIN_RUNTIME_COMMAND=migrate | seed | config-check | ticket-report | smoke-llm
+# and where its dependencies and secrets are:
+#   SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME, SPRING_DATASOURCE_PASSWORD
+#   SPRING_DATA_REDIS_HOST, SPRING_DATA_REDIS_PORT
+#   RAIN_ACCESS_TOKEN_SIGNINGKEY    base64:<at least 32 bytes>; in prod only from the environment
+#   SAMPLE_SEED_INITIALPASSWORD     the seed command only; in prod only from the environment
+spring:
+  application:
+    name: rain-sample
+  main:
+    # A command's result is its standard output; the banner is not part of it.
+    banner-mode: "off"
+  threads:
+    virtual:
+      # An event stream holds its request thread for as long as it streams.
+      enabled: true
+  servlet:
+    multipart:
+      # No uploads: with multipart parsing off, rain.web.body-limit counts every body.
+      enabled: false
+  datasource:
+    hikari:
+      # A worker's demand: 2 summary threads + 5 recurring threads (the reaper, retention, the escalation sweep, session
+      # retention, revocation replay) + 2 schedulers x 4 db-scheduler connections + 1 lease renewer + 10 reserved = 26.
+      maximum-pool-size: 30
+  flyway:
+    # Serving processes never migrate; migration is its own step, RAIN_RUNTIME_COMMAND=migrate.
+    enabled: false
+  jooq:
+    # Stated, so building the DSLContext opens no connection to find out.
+    sql-dialect: postgres
+  data:
+    jdbc:
+      dialect: postgresql
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+server:
+  # No proxy in front of this sample: requests are attributed to the connection's peer.
+  forward-headers-strategy: none
+  shutdown: graceful
+rain:
+  web:
+    body-limit: 64KB
+    request-budget: 60s
+    client-address: direct
+  persistence:
+    statement-timeout: 5s
+  health:
+    checks:
+      database: required
+      jobs: required
+      realtime.listener: degrading
+      breaker.summarizer: degrading
+      access.revocation: required
+      access.attempts: required
+  jobs:
+    workers:
+      ticket.summarize: 2
+    required-recurring: [ticket.escalation-sweep, access.session-retention, access.revocation-replay]
+    drain-grace: 15s
+    reserved-connections: 10
+  realtime:
+    pool-name: rain-sample-realtime
+    subscriber-buffer: 64
+    max-subscriptions: 1000
+  llm:
+    enabled: true
+    model: helpdesk-summarizer
+    timeout: 30s
+    call-budget: 10s
+    context-window: 8192
+    breaker: summarizer
+    pools:
+      summaries:
+        bulk: 2
+        interactive: 4
+    models:
+      helpdesk-summarizer:
+        encoding: cl100k_base
+        message-overhead: 4
+        prompt-overhead: 3
+  access:
+    web:
+      base-path: /v1
+      delivery: both
+    token:
+      issuer: rain-sample
+      audience: rain-sample-api
+      access-ttl: 5m
+    session:
+      ttl: 30d
+      idle-ttl: 7d
+      retention:
+        keep-for: 7d
+        interval: 1h
+    password:
+      revoke-other-sessions-on-change: true
+    hashing:
+      queue: 32
+    attempts:
+      store: redis
+      redis:
+        key-prefix: "rain-sample:attempts"
+    revocation:
+      store: redis
+      redis:
+        key-prefix: "rain-sample:revocation"
+        replay:
+          interval: 1m
+    gate:
+      throttle:
+        per-minute: 600
+        burst: 100
+        callers: 10000
+    grants:
+      max-roles-per-subject: 8
+resilience4j:
+  bulkhead:
+    instances:
+      rain-access-hashing:
+        max-concurrent-calls: 4
+        max-wait-duration: 2s
+  circuitbreaker:
+    instances:
+      summarizer:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+sample:
+  tickets:
+    pages:
+      default-limit: 25
+      max-limit: 100
+      max-offset: 1000
+      count-cap: 1000
+    events:
+      stream-for: 50s
+      poll-every: 15s
+      subscribe-timeout: 5s
+    summary:
+      pool: summaries
+      max-answer-tokens: 256
+      step-budget: 2m
+      attempt-timeout: 5m
+      retries: 3
+      deferrals: 20
+      backoff-initial: 10s
+      backoff-maximum: 5m
+      retention: 14d
+      defer-when-busy: 15s
+    escalation:
+      after: 4h
+      interval: 5m
+      batch: 200
+      batches-per-run: 10
+      priority: 90
+    report:
+      page-size: 50
+  seed:
+    agents:
+      administrator:
+        identifier: admin@helpdesk.example
+        display-name: Ada Administrator
+      supervisor:
+        identifier: supervisor@helpdesk.example
+        display-name: Sam Supervisor
+      responder:
+        identifier: responder@helpdesk.example
+        display-name: Rae Responder
