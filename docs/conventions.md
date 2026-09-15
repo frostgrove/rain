@@ -23,6 +23,10 @@ How that reads in rain:
 | a declared breaker has no explicit configuration | the start is refused; no library default |
 | an invocation of a definition the application does not declare | `dead` with `unknown_definition`; never retried under an assumed profile |
 | rows of a job profile the application no longer declares | kept and reported on every pass; no assumed retention |
+| a handler that declares no access | the start is refused; no package or library exempts it, only a `SurfaceExemption` bean |
+| a revocation list or an attempt store that cannot be asked | `503 revocation_unavailable` or `503 unavailable`; never read as a live session or an admitted attempt |
+| a Redis server that will not say what it evicts | the start is refused, unless the deployment attests `noeviction`; then `not_evaluated` |
+| a search for a usable role holder that runs out of its page budget | `HolderSearch.NotEvaluated`; no answer from the pages it did read |
 
 Rule sets that can change carry a version: problem format v1, status table v1, query dialect v1, cursor format v1, plan
 criterion v2, the rain-crud plan proof version 1, `NotifyRules` version 1, the breaker configuration rules version 1.
@@ -45,7 +49,9 @@ Examples in rain: audit and dead-letter pages are keyset over `(occurred_at|fini
 total; cancellation by subject runs 500 rows per statement; job retention deletes in batches and stops at a run budget;
 the reaper takes one page `FOR UPDATE SKIP LOCKED`; an LLM slot is decided in one statement over one pool's index range;
 a throttle's caller table is bounded and finds room with one heap look; readiness detail is found by name in a map; a
-rain-crud list answers only a declared query shape, reads `limit + 1` rows and counts no further than a declared cap.
+rain-crud list answers only a declared query shape, reads `limit + 1` rows and counts no further than a declared cap; a
+rain-access permission question reads the asked codes and the subject's own grants, bounded by the role ceiling; closing
+every session of a subject writes one cutoff row and one revocation key, then closes sessions in batches.
 
 ### Plan-proven queries
 
@@ -57,6 +63,10 @@ run once — or a lookup of at most one entry of a unique index. A statement who
 and at ten million, so the test needs no large fixture. rain's own: `AuditIT`, `RetentionUsesIndexIT`,
 `DeadLetterKeysetIT`, `ReaperIT`, `CancelBySubjectIT`, `HeldReservationIsKeyedByInvocationIT`, `CursorPagingIT`,
 `CappedCountIT`; `LlmSlotsIT` asserts the indexes its statements read and that neither table is scanned sequentially.
+rain-access's `SessionPagesKeysetIT` and `DirectoryPagesKeysetIT` explain each keyset page with sequential scans, bitmap
+scans and sorts priced out and assert the named index under a `Limit` with no `Filter` and no sort;
+`PermissionCheckBoundedCostIT` and `SessionsRetentionIT` read their plans through `QueryPlans` and assert the indexes used,
+index conditions and no sequential scan ([rain-access](modules/access.md#scale-guarantees)).
 
 A rain-crud resource is proven as a whole: `CrudPlanProof` explains every statement of every declared query shape against
 the application's migrated, empty database ([rain-crud](modules/crud.md#the-plan-proof)).

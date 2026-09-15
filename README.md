@@ -3,8 +3,8 @@
 rain is a meta-framework over Spring Boot 4 for Kotlin backends on PostgreSQL. It adds what every service needs and Boot
 leaves to each application: configuration that is validated as a whole before any bean exists, processes started with
 explicit roles or as one-shot commands, one wire format for every refusal, readiness composed from checks whose
-importance the application states, schema-per-module migrations, and bounded data access for durable jobs, audit, live
-updates, circuit breakers and language models.
+importance the application states, schema-per-module migrations, and bounded data access for durable jobs, audit,
+sign-in and grants, live updates, circuit breakers and language models.
 
 Version `0.1.0-SNAPSHOT`; Kotlin 2.4.20, Spring Boot 4.1.1, Java 25.
 
@@ -24,6 +24,7 @@ Version `0.1.0-SNAPSHOT`; Kotlin 2.4.20, Spring Boot 4.1.1, Java 25.
 | [rain-realtime](docs/modules/realtime.md) | PostgreSQL `LISTEN`/`NOTIFY` as a bus with transactional publishing and bounded subscriptions |
 | [rain-resilience](docs/modules/resilience.md) | circuit breakers on Resilience4j with atomic admission and one probe per cooldown |
 | [rain-llm](docs/modules/llm.md) | a gateway over a Spring AI `ChatModel` with cluster-wide slots, breaker accounting and token budgets |
+| [rain-access](docs/modules/access.md) | password sign-in with database sessions and rotating refresh credentials, an HS256 access token, a revocation list on Redis, role and permission grants, and every route's `@Access` verified at start-up and enforced per request |
 | [rain-test](docs/modules/test.md) | a PostgreSQL per test JVM with a database per test, query plans judged by plan criterion v2, a movable clock |
 | `rain-dependencies` | the one platform an application imports |
 
@@ -56,9 +57,9 @@ rain builds with its Gradle wrapper; the Java 25 toolchain is provisioned by Gra
 ./gradlew check
 ```
 
-- `./gradlew test` runs the unit tier. No test in it needs Docker. Compiling rain-audit, rain-jobs and rain-llm generates
-  their jOOQ code from their migrations on a throwaway PostgreSQL container, so a clean build needs a Docker daemon — or
-  `JOOQ_CODEGEN_SERVER_URL`, `JOOQ_CODEGEN_SERVER_USER` and `JOOQ_CODEGEN_SERVER_PASSWORD` naming a PostgreSQL server.
+- `./gradlew test` runs the unit tier. No test in it needs Docker. Compiling rain-access, rain-audit, rain-jobs and rain-llm
+  generates their jOOQ code from their migrations on a throwaway PostgreSQL container, so a clean build needs a Docker
+  daemon — or `JOOQ_CODEGEN_SERVER_URL`, `JOOQ_CODEGEN_SERVER_USER` and `JOOQ_CODEGEN_SERVER_PASSWORD` naming a PostgreSQL server.
 - `./gradlew check` runs both tiers (the integration tier is `@Tag("integration")`), Kover's verification, the formatting
   checks, the module graph and the tool-version parity, and needs Docker.
 

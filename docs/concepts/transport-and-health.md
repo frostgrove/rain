@@ -41,6 +41,10 @@ smaller body limit. With `spring.servlet.multipart.enabled=false` the body limit
 | 6 | body limit | a `Content-Length` above the limit is refused before the handler runs; a body without a length is counted while it is read and the read that crosses the limit fails; `413 too_large`; multipart bodies are bounded by `spring.servlet.multipart.*` instead |
 | 7 | cross site | an unsafe method (not GET, HEAD, OPTIONS) passes only with an allowed `Origin`, or with no `Origin` and `Sec-Fetch-Site` absent, `same-origin` or `none`; otherwise `403 cross_site` |
 
+In the `api` role rain-access adds two filters after these, on its credential routes only — a JSON-only filter and a
+throttle per client address — and Spring Security's chain after those
+([rain-access](../modules/access.md#the-credential-gate)).
+
 ## CORS
 
 ```yaml
@@ -64,11 +68,23 @@ a workstation's browser.
 
 ## Declaring access
 
-`@Access` is the one annotation a route wears. It names permissions, or says the route needs an authenticated
-caller, or says the route is public; the last two carry a mandatory `why`. rain-access enforces it and verifies
-the whole surface at start-up: a request mapping without `@Access` is a start-up refusal. Controllers whose
-routes are derived from a table implement `DeclaresItsOwnAccess`; routes mounted outside request mappings
-(WebSocket upgrades) implement `MountsItsOwnSurface` and check access themselves.
+`@Access` is the one annotation a route wears ([rain-web](../modules/web.md#declaring-access)). It names permissions,
+or says the route needs an authenticated caller, or says the route is public; the last two carry a mandatory `why`. With
+[rain-access](../modules/access.md), a process with the `api` role verifies the whole surface once beans exist and
+enforces each declaration before its handler runs:
+
+- a request mapping that declares nothing refuses the start, whatever package or library its controller comes from; only
+  a `SurfaceExemption` bean exempts a handler type;
+- a controller whose routes are derived from a table implements `DeclaresItsOwnAccess`, and a declaration it makes for a
+  route nothing mounts refuses the start;
+- a functional `RouterFunction` route is declared by a `MountsItsOwnSurface` bean and enforced from that declaration, a
+  `HEAD` request held to the `GET` declaration; a route whose predicate does not reduce to a method and a path refuses the
+  start; rain-web declares the probes this way;
+- a route another handler mapping serves (a WebSocket upgrade) is declared through `MountsItsOwnSurface` and checks what
+  it declares itself.
+
+An anonymous caller of a route that is not public is `401 unauthenticated`; a subject missing a named permission is
+`403 forbidden`. A permission is one a `ModuleGrants` bean declares, or the start is refused.
 
 ## Throttling
 
@@ -113,6 +129,8 @@ so an entry for a check this process does not run is reported `not_evaluated` an
 | `jobs` | rain-jobs | `worker` | the worker is stopped, a scheduler is not started, is shutting down or has not polled within `rain.jobs.health.max-poll-age`, or the lease renewer has not run within `rain.jobs.lease.ttl` |
 | `realtime.listener` | rain-realtime | `api` | the listener has no live session |
 | `breaker.<name>` | rain-resilience | every process declaring the breaker | the breaker withholds calls (open, half-open or forced open) |
+| `access.revocation` | rain-access | `api`, `worker`, when `rain.access.revocation.store` is `redis` | the revocation list's Redis server does not answer `PING` |
+| `access.attempts` | rain-access | `api`, when `rain.access.attempts.store` is `redis` | the attempt counters' Redis server does not answer `PING` |
 
 The checks of one evaluation run
 concurrently on virtual threads, each against an absolute budget counted from the start of the evaluation (its own,
