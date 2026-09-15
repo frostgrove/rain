@@ -1,0 +1,4 @@
+com.gd.rain.boot.runtime.CommandDeclaration=\
+com.gd.rain.llm.SmokeLlmCommandDeclaration
+com.gd.rain.boot.config.ConfigurationContributor=\
+com.gd.rain.llm.LlmConfigurationContributor
