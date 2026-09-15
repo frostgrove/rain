@@ -80,11 +80,11 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `access/web/RoleService.kt` | rain-access | pending |  |
 | main | `access/web/SubjectGrantController.kt` | rain-access | pending |  |
 | main | `audit/AccessAudit.kt` | rain-access | pending | generic access events; product `userChanged` dropped |
-| main | `audit/AuditConfiguration.kt` | rain-audit | pending |  |
-| main | `audit/AuditDetail.kt` | rain-audit | pending |  |
-| main | `audit/AuditEvent.kt` | rain-audit | pending |  |
-| main | `audit/AuditLogRepository.kt` | rain-audit | pending |  |
-| main | `audit/AuditRecorder.kt` | rain-audit | pending |  |
+| main | `audit/AuditConfiguration.kt` | rain-audit | ported | RainAuditAutoConfiguration |
+| main | `audit/AuditDetail.kt` | rain-audit | ported | bounded scalar detail checked against the declared type, deterministic JSON (gap 21 part) |
+| main | `audit/AuditEvent.kt` | rain-audit | ported | AuditEventType (declared detail keys) + AuditEvent + AuditOutcome |
+| main | `audit/AuditLogRepository.kt` | rain-audit | ported | schema rain_audit via rain.jooq-schema; actor (type, id) with no foreign key (gap 17 part) |
+| main | `audit/AuditRecorder.kt` | rain-audit | ported | JooqAuditRecorder: record inside the caller's transaction (refused outside), recordIndependently in its own; keyset reads with a bounded page |
 | main | `audit/SignInAuditRecorder.kt` | rain-access | pending | breaks the access↔audit cycle |
 | main | `cli/OneShotReports.kt` | split | pending | LlmSmokeCheck → rain-llm; RedlineReport dropped (product) |
 | main | `cli/SeedStep.kt` | rain-boot | ported | rain-boot Seeder + seed command (ordered by order then name, names checked) |
@@ -244,8 +244,8 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `access/web/AuthViewsSerializationTest.kt` | rain-access | pending |  |
 | test | `access/web/CredentialDeliveryTest.kt` | rain-access | pending |  |
 | test | `access/web/RoleServiceTest.kt` | rain-access | pending |  |
-| test | `audit/AuditDetailTest.kt` | rain-audit | pending |  |
-| test | `audit/AuditRecorderTest.kt` | rain-audit | pending |  |
+| test | `audit/AuditDetailTest.kt` | rain-audit | ported | rain-audit AuditDetailTest |
+| test | `audit/AuditRecorderTest.kt` | rain-audit | ported | rain-audit AuditIT (transaction semantics against PostgreSQL) |
 | test | `audit/SignInAuditRecorderTest.kt` | rain-audit | pending |  |
 | test | `config/AccessConfigurationTest.kt` | rain-access | pending |  |
 | test | `config/ConfigFileParityTest.kt` | dropped | pending | Lease deployment files |
@@ -340,8 +340,8 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `access/AuthSurfaceIT.kt` | rain-sample | pending |  |
 | lease-it | `access/DirectorySurfaceIT.kt` | rain-sample | pending |  |
 | lease-it | `access/SubjectGrantSurfaceIT.kt` | rain-sample | pending |  |
-| lease-it | `audit/AuditTrailIT.kt` | rain-audit | pending |  |
-| lease-it | `persistence/AuditLogSchemaIT.kt` | rain-audit | pending |  |
+| lease-it | `audit/AuditTrailIT.kt` | rain-audit | ported | rain-audit AuditIT |
+| lease-it | `persistence/AuditLogSchemaIT.kt` | rain-audit | ported | rain-audit AuditIT (schema, actor both-or-none, index-backed pages) |
 | lease-it | `health/RootProbeIT.kt` | rain-observability | pending |  |
 | lease-it | `llm/LlmSlotsIT.kt` | rain-llm | pending |  |
 | lease-it | `lock/AdvisoryLocksIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT |
