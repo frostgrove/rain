@@ -136,6 +136,34 @@ val verifyToolParity =
         }
     }
 
+/*
+ * Every module a consumer uses has a page in docs/modules linked from the README, and every sample has a README. The
+ * test-only rain-architecture module and the rain-dependencies platform are not modules a consumer uses.
+ */
+val verifyDocsCoverage =
+    tasks.register("verifyDocsCoverage") {
+        group = LifecycleBasePlugin.VERIFICATION_GROUP
+        description = "Checks that every consumer module has a docs page linked from the README and every sample a README."
+        val modules = foundModules.keys.filterNot { it == "rain-architecture" }.sorted()
+        val samples = foundSamples.keys.map { it.removePrefix(":samples:") }.sorted()
+        val root = layout.projectDirectory
+        inputs.property("modules", modules)
+        inputs.property("samples", samples)
+        doLast {
+            val readme = root.file("README.md").asFile.readText()
+            val problems = mutableListOf<String>()
+            modules.forEach { module ->
+                val page = "docs/modules/${module.removePrefix("rain-")}.md"
+                if (!root.file(page).asFile.isFile) problems += "$module has no page $page"
+                if ("($page)" !in readme) problems += "README.md does not link $page"
+            }
+            samples.forEach { sample ->
+                if (!root.file("samples/$sample/README.md").asFile.isFile) problems += "sample $sample has no README.md"
+            }
+            if (problems.isNotEmpty()) throw GradleException(problems.joinToString("\n", "the documentation misses ${problems.size} things:\n"))
+        }
+    }
+
 tasks.named("check") {
-    dependsOn(verifyModuleGraph, verifyToolParity)
+    dependsOn(verifyModuleGraph, verifyToolParity, verifyDocsCoverage)
 }
