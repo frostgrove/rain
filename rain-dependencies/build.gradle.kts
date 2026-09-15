@@ -39,5 +39,6 @@ dependencies {
         api(project(":rain-web"))
         api(project(":rain-audit"))
         api(project(":rain-realtime"))
+        api(project(":rain-jobs"))
     }
 }

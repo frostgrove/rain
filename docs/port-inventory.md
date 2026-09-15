@@ -101,7 +101,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `config/DeploymentStage.kt` | rain-boot | ported | required rain.deployment.stage, no profile inference (gap 36) |
 | main | `config/DurationFormat.kt` | rain-core | ported | rain-boot config/Formats.kt |
 | main | `config/HttpProperties.kt` | rain-web | ported | rain-web RainWebProperties + RainWebConfigurationContributor (rain.web, required) |
-| main | `config/JobsProperties.kt` | rain-jobs | pending | DEFAULT_WORKERS dropped |
+| main | `config/JobsProperties.kt` | rain-jobs | ported | rain.jobs JobsProperties; DEFAULT_WORKERS dropped |
 | main | `config/RealtimeProperties.kt` | rain-realtime | ported | rain.realtime; pool-name, subscriber-buffer, max-subscriptions required; contributor OPTIONAL |
 | main | `config/RedisProperties.kt` | dropped | pending | Boot spring.data.redis.*; revocation settings → rain-access |
 | main | `config/ResourceDeclarations.kt` | dropped | pending | replaced by revocation server eviction-policy check (gap 14) |
@@ -185,7 +185,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `observability/health/HealthModel.kt` | rain-observability | ported | rain-observability HealthModel (readiness contract) |
 | main | `observability/health/HealthRegistry.kt` | rain-observability | ported | rain-observability HealthRegistry (gap 44) |
 | main | `persistence/AssignIdCallback.kt` | rain-data-jdbc | ported | rain-data-jdbc |
-| main | `persistence/ConnectionBudget.kt` | dropped | pending | replaced by ConnectionDemandCheck in rain-jobs |
+| main | `persistence/ConnectionBudget.kt` | dropped | dropped | replaced by ConnectionDemandCheck in rain-jobs |
 | main | `persistence/CurrentActor.kt` | rain-persistence | ported | rain-core Actor(type, id) + CurrentActor |
 | main | `persistence/DataAccessFaults.kt` | rain-persistence | ported | DataAccessFaultTranslator over the rain-core FaultTranslator SPI; 57014 statement_timeout, 42P01/42703 internal, cause and nextException walked (gap 42) |
 | main | `persistence/Ids.kt` | rain-persistence | ported | IdGenerator in rain-core, UuidV7Ids in rain-persistence |
@@ -210,19 +210,19 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `resilience/BreakerHealthContribution.kt` | rain-resilience | pending |  |
 | main | `resilience/BreakerRegistry.kt` | rain-resilience | pending |  |
 | main | `resilience/Breakers.kt` | rain-resilience | pending |  |
-| main | `workq/AttemptStatementTimeout.kt` | rain-jobs | pending |  |
-| main | `workq/DefinitionGate.kt` | rain-jobs | pending |  |
-| main | `workq/FencedEffects.kt` | rain-jobs | pending |  |
-| main | `workq/Housekeeping.kt` | rain-jobs | pending |  |
-| main | `workq/JobDefinition.kt` | rain-jobs | pending |  |
-| main | `workq/JobProfile.kt` | rain-jobs | pending |  |
-| main | `workq/Jobs.kt` | rain-jobs | pending |  |
-| main | `workq/SchedulerWorkQueue.kt` | rain-jobs | pending |  |
-| main | `workq/WorkqConfiguration.kt` | rain-jobs | pending |  |
-| main | `workq/WorkqExecutionHandler.kt` | rain-jobs | pending |  |
-| main | `workq/WorkqSchedulers.kt` | rain-jobs | pending |  |
-| main | `workq/persistence/JobIntentRepository.kt` | rain-jobs | pending |  |
-| main | `workq/persistence/JobInvocationRepository.kt` | rain-jobs | pending |  |
+| main | `workq/AttemptStatementTimeout.kt` | rain-jobs | ported | AttemptStatementTimeout; failure charged, not swallowed |
+| main | `workq/DefinitionGate.kt` | rain-jobs | ported | DefinitionGate; slot left by attempt thread |
+| main | `workq/FencedEffects.kt` | rain-jobs | ported | FencedEffects; guards list, bound min(step, deadline-now) |
+| main | `workq/Housekeeping.kt` | rain-jobs | ported | JobReaper, JobRetention, JobAdministration; cancelByContract/DOCUMENT_SCOPED dropped |
+| main | `workq/JobDefinition.kt` | rain-jobs | ported | JobDefinition bean; JobCatalog constants dropped |
+| main | `workq/JobProfile.kt` | rain-jobs | ported | JobProfile bean, BackoffLadder; enum constants dropped |
+| main | `workq/Jobs.kt` | rain-jobs | ported | WorkQueue, EnqueueOptions, Attempt, JobHandler, JobState |
+| main | `workq/SchedulerWorkQueue.kt` | rain-jobs | ported | SchedulerWorkQueue; intent before insert |
+| main | `workq/WorkqConfiguration.kt` | rain-jobs | ported | RainJobsAutoConfiguration, role-gated worker |
+| main | `workq/WorkqExecutionHandler.kt` | rain-jobs | ported | JobExecution, AttemptThreads, LeasedAttempt, LeaseRenewer |
+| main | `workq/WorkqSchedulers.kt` | rain-jobs | ported | JobsWorker lifecycle, DbSchedulerFactory, JobTopology checks |
+| main | `workq/persistence/JobIntentRepository.kt` | rain-jobs | ported | IntentLedger |
+| main | `workq/persistence/JobInvocationRepository.kt` | rain-jobs | ported | AttemptLedger, HousekeepingLedger, AdministrationLedger |
 | test | `FrameworkBoundaryTest.kt` | dropped | pending | Lease boundary; replaced by RainArchRules |
 | test | `access/AccessFieldNamesTest.kt` | rain-access | pending |  |
 | test | `access/PermissionCatalogueTest.kt` | rain-access | pending |  |
@@ -323,14 +323,14 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `resilience/AdmissionGateTest.kt` | rain-resilience | pending |  |
 | test | `resilience/BreakerHealthContributionTest.kt` | rain-resilience | pending |  |
 | test | `resilience/BreakerTest.kt` | rain-resilience | pending |  |
-| test | `workq/AttemptRunnerTest.kt` | rain-jobs | pending |  |
-| test | `workq/DefinitionGateTest.kt` | rain-jobs | pending |  |
-| test | `workq/JobConcurrencyParityTest.kt` | dropped | pending | Lease job ceilings |
-| test | `workq/JobProfileTest.kt` | rain-jobs | pending |  |
-| test | `workq/NoParkingInTheHandlerTest.kt` | rain-jobs | pending |  |
-| test | `workq/ScheduledTasksIsolationTest.kt` | rain-jobs | pending |  |
-| test | `workq/WorkQueueAdminTest.kt` | rain-jobs | pending |  |
-| test | `workq/WorkqWiringTest.kt` | rain-jobs | pending |  |
+| test | `workq/AttemptRunnerTest.kt` | rain-jobs | ported | AttemptThreadsTest |
+| test | `workq/DefinitionGateTest.kt` | rain-jobs | ported | DefinitionGateTest |
+| test | `workq/JobConcurrencyParityTest.kt` | dropped | dropped | Lease job ceilings |
+| test | `workq/JobProfileTest.kt` | rain-jobs | ported | rewritten for BackoffLadder; Lease constants dropped |
+| test | `workq/NoParkingInTheHandlerTest.kt` | rain-jobs | ported | NoParkingInTheHandlerTest |
+| test | `workq/ScheduledTasksIsolationTest.kt` | rain-jobs | ported | ScheduledTasksIsolationTest |
+| test | `workq/WorkQueueAdminTest.kt` | rain-jobs | dropped | DOCUMENT_SCOPED Lease vocabulary; CancelBySubjectIT covers cancelBySubject |
+| test | `workq/WorkqWiringTest.kt` | rain-jobs | ported | JobsAutoConfigurationTest, JobTopologyTest |
 | lease-it | `access/CredentialRepositoryIT.kt` | rain-access | pending |  |
 | lease-it | `access/DirectoryStoreIT.kt` | rain-access | pending |  |
 | lease-it | `access/RefreshRotationIT.kt` | rain-access | pending |  |
@@ -351,17 +351,17 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | lease-it | `persistence/JooqReadModelIT.kt` | rain-persistence | dropped | product read models |
 | lease-it | `persistence/MigrationIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT (schema per module, second run applies nothing) |
 | lease-it | `persistence/MigrateCommandIT.kt` | rain-persistence | ported | rain-persistence PersistenceIT (migrate command) |
-| lease-it | `persistence/ConnectionBudgetIT.kt` | rain-jobs | pending |  |
+| lease-it | `persistence/ConnectionBudgetIT.kt` | rain-jobs | ported | ConnectionDemandIT |
 | lease-it | `realtime/RealtimeListenerIT.kt` | rain-realtime | ported | terminated-backend case moved to ListenerReconnectUnlistenIT |
 | lease-it | `surface/AnonymousSurfaceIT.kt` | rain-sample | pending |  |
 | lease-it | `surface/AuthorizationIT.kt` | rain-sample | pending |  |
 | lease-it | `surface/HttpSurfaceIT.kt` | rain-sample | pending |  |
 | lease-it | `surface/RouterIT.kt` | rain-sample | pending |  |
-| lease-it | `workq/WorkqIT.kt` | rain-jobs | pending |  |
-| lease-it | `workq/SchedulerTopologyIT.kt` | rain-jobs | pending |  |
-| lease-it | `workq/JobIntentRepositoryIT.kt` | rain-jobs | pending |  |
-| lease-it | `workq/AttemptStatementTimeoutIT.kt` | rain-jobs | pending |  |
-| lease-it | `ops/DeadJobsIT.kt` | rain-jobs | pending |  |
+| lease-it | `workq/WorkqIT.kt` | rain-jobs | ported | EnqueueIT, AttemptLifecycleIT, FenceIT, ReaperIT, RetentionIT |
+| lease-it | `workq/SchedulerTopologyIT.kt` | rain-jobs | ported | SchedulerTopologyIT per declared profile, RoleGatingIT |
+| lease-it | `workq/JobIntentRepositoryIT.kt` | rain-jobs | ported | JobIntentIT |
+| lease-it | `workq/AttemptStatementTimeoutIT.kt` | rain-jobs | ported | AttemptStatementTimeoutIT |
+| lease-it | `ops/DeadJobsIT.kt` | rain-jobs | ported | DeadLetterKeysetIT, RedriveIT |
 | lease-it | `OneShotRunnerIT.kt` | rain-sample | pending |  |
 | lease-it | `seed/SeedCommandIT.kt` | rain-sample | pending |  |
 | lease-it | `persistence/Databases.kt` | rain-test | ported | rain-test RainPostgres.freshDatabase |

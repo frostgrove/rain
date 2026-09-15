@@ -18,7 +18,13 @@ class RainConfigurationValidatorTest {
         val timeout: Duration = Duration.ofSeconds(30),
         val headers: Map<String, String> = emptyMap(),
         val origins: List<String> = emptyList(),
+        val limits: Map<String, Int> = emptyMap(),
+        val pools: Map<String, PoolSection> = emptyMap(),
     )
+
+    data class PoolSection(
+        val size: Int = 1,
+    ) : ConfigurationSection
 
     data class StoreSection(
         val poolName: String,
@@ -162,6 +168,19 @@ class RainConfigurationValidatorTest {
             )
 
         assertThat(report.fatal.map { it.path to it.code }).containsExactly("rain.web.timout" to ProblemCode.UNKNOWN_KEY)
+    }
+
+    @Test
+    fun `a dotted key under a map of scalars is one key, and a key under a map of sections still has to name a member`() {
+        val report =
+            validate(
+                *valid,
+                "rain.web.limits.tickets.summarize" to "3",
+                "rain.web.pools.main.size" to "2",
+                "rain.web.pools.main.sise" to "2",
+            )
+
+        assertThat(report.fatal.map { it.path to it.code }).containsExactly("rain.web.pools.main.sise" to ProblemCode.UNKNOWN_KEY)
     }
 
     @Test
