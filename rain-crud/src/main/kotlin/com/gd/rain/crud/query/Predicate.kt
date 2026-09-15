@@ -19,7 +19,7 @@ public data class Order(
  * `EQ` is not `eq`.
  *
  * Every operator is one a b-tree index can serve as a bound on an ordered scan, so a shape using it can pass
- * the plan proof (criterion v1 of rain-test's `QueryPlan.boundedScan`). Operators PostgreSQL 18 can never
+ * the plan proof (criterion v2 of rain-test's `QueryPlan.boundedScan`). Operators PostgreSQL 18 can never
  * serve that way are not part of the dialect: `ne` and `nin` (no index condition on a b-tree; a GiST
  * condition on btree_gist cannot give the order a page needs), and the substring and pattern operators
  * `contains`, `icontains`, `startswith`, `istartswith`, `endswith`, `iendswith` together with `search`

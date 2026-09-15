@@ -71,7 +71,7 @@ public class ProvenStatement(
     override fun toString(): String = "shape $shape | scope $scope | $kind | $values"
 }
 
-/** A statement whose plan criterion v1 does not accept, with every reason, the SQL and the plan. */
+/** A statement whose plan criterion v2 does not accept, with every reason, the SQL and the plan. */
 public class PlanFinding(
     public val statement: ProvenStatement,
     reasons: List<String>,
@@ -144,7 +144,7 @@ public object RepresentativeValues {
 
 /**
  * The plan proof of a resource, version [VERSION]: every statement the resource can run for its declared
- * query shapes, explained against the application's database and judged by criterion v1 of rain-test's
+ * query shapes, explained against the application's database and judged by criterion v2 of rain-test's
  * `QueryPlan.boundedScan` over the resource's table.
  *
  * An application runs it in its own integration tests, against a database migrated with its real schema

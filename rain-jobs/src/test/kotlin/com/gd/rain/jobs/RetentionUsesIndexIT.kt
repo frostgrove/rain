@@ -8,7 +8,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
-/** Gap 5: a retention batch reaches its rows through the partial retention index under a limit (criterion v1), never by a scan. */
+/** Gap 5: a retention batch reaches its rows through the partial retention index under a limit (criterion v2), never by a scan. */
 @Tag("integration")
 class RetentionUsesIndexIT {
     @Test

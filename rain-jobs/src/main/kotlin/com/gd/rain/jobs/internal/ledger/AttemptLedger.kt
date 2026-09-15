@@ -340,7 +340,17 @@ internal class JooqAttemptLedger(
         code: String?,
         message: String?,
         now: Instant,
-    ): Int {
+    ): Int = terminalQuery(invocation, guard, state, code, message, now).fetchSingle().value1()
+
+    /** The statement [terminal] runs: the invocation by primary key, its held reservation through `uq_job_intent_held_invocation`. */
+    internal fun terminalQuery(
+        invocation: UUID,
+        guard: Condition,
+        state: JobState,
+        code: String?,
+        message: String?,
+        now: Instant,
+    ): org.jooq.SelectJoinStep<org.jooq.Record1<Int>> {
         val owned =
             DSL.name("owned").`as`(
                 DSL
@@ -370,8 +380,6 @@ internal class JooqAttemptLedger(
             .with(released)
             .selectCount()
             .from(owned)
-            .fetchSingle()
-            .value1()
     }
 
     private fun requeued(

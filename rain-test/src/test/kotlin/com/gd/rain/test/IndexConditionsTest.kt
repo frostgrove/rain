@@ -3,7 +3,7 @@ package com.gd.rain.test
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/** How criterion v1 reads PostgreSQL's deparsed `Index Cond` text. */
+/** How criterion v2 reads PostgreSQL's deparsed `Index Cond` text. */
 class IndexConditionsTest {
     private fun read(condition: String): List<String>? =
         IndexConditions.parse(condition)?.map { "${it.columns.joinToString(",")} ${it.kind}" }
@@ -48,5 +48,13 @@ class IndexConditionsTest {
             "(books.title)",
             "(3 = books.pages)",
         ).forEach { condition -> assertThat(read(condition)).describedAs(condition).isNull() }
+    }
+
+    @Test
+    fun `only an equality against one value is single-valued`() {
+        assertThat(checkNotNull(IndexConditions.parse("(books.id = 'x'::uuid)")).single().singleValue).isTrue()
+        assertThat(checkNotNull(IndexConditions.parse("(books.shelf = ANY ('{a,b}'::text[]))")).single().singleValue).isFalse()
+        assertThat(checkNotNull(IndexConditions.parse("(books.isbn IS NULL)")).single().singleValue).isFalse()
+        assertThat(checkNotNull(IndexConditions.parse("(books.pages >= 5)")).single().singleValue).isFalse()
     }
 }

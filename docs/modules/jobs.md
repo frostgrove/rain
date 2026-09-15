@@ -364,7 +364,7 @@ finish instant exactly in a terminal state.
 
 | Statement | Access path | Bound |
 |---|---|---|
-| claim, finish, retry, defer, release | primary key and lease token | one row, its reservations through `ix_job_intent_held_invocation` |
+| claim, finish, retry, defer, release | primary key and lease token | one row, its reservations through `uq_job_intent_held_invocation` |
 | lease renewal | primary keys of this process's leases, `FOR UPDATE SKIP LOCKED` | the attempts this process runs |
 | reaper page | `ix_job_invocation_lease`, `FOR UPDATE SKIP LOCKED` | `reaper.batch` rows |
 | dead-letter page | `ix_job_invocation_dead_letters` or `ix_job_invocation_dead_letters_definition` | `limit + 1` rows, keyset |
@@ -374,8 +374,9 @@ finish instant exactly in a terminal state.
 | reservation | `uq_job_intent_held` | one row |
 | db-scheduler due poll | `priority_execution_time_idx` | db-scheduler's own batch |
 
-`RetentionUsesIndexIT`, `DeadLetterKeysetIT`, `ReaperIT` and `CancelBySubjectIT` assert that these plans read the named
-index under a `Limit`. No statement counts invocations. A definition at its worker ceiling is rescheduled after one poll
+`RetentionUsesIndexIT`, `DeadLetterKeysetIT`, `ReaperIT`, `CancelBySubjectIT` and `HeldReservationIsKeyedByInvocationIT`
+prove these plans bounded under rain-test's plan criterion v2 (`QueryPlan.boundedScan`): the named index under a `Limit`,
+every condition an index condition, keyed lookups for the reservations. No statement counts invocations. A definition at its worker ceiling is rescheduled after one poll
 interval instead of parking a pooled thread.
 
 ## What it does not do

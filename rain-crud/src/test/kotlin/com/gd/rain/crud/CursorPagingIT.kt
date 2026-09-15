@@ -15,7 +15,7 @@ import java.time.Duration
 /**
  * Gap 25: a page before a cursor used to drop the row nearest to it. Walking forward and then back over
  * real rows — with sort values shared by several rows — now reproduces every page exactly, and each page
- * reaches its rows through the order's index under a limit (criterion v1 of `QueryPlan.boundedScan`).
+ * reaches its rows through the order's index under a limit (criterion v2 of `QueryPlan.boundedScan`).
  */
 @Tag("integration")
 class CursorPagingIT {

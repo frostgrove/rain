@@ -12,7 +12,7 @@ import javax.sql.DataSource
  *
  * The statement is explained with `VERBOSE` (which reports `Inner Unique` on joins) inside a transaction
  * that is rolled back, with [SETTINGS] applied by `SET LOCAL`, so a pooled connection is handed back as it
- * was lent. The settings disable the scan kinds criterion v1 never accepts — sequential, bitmap and TID
+ * was lent. The settings disable the scan kinds criterion v2 never accepts — sequential, bitmap and TID
  * scans — and parallel plans. PostgreSQL 18 prefers any plan with fewer disabled nodes over a cheaper plan
  * with more, so the plan shows an index access path whenever the indexes offer one, however few rows the
  * test database holds. Sorts, hashed aggregates and joins stay enabled: above a `LIMIT` they are part of
@@ -22,7 +22,7 @@ import javax.sql.DataSource
  * (`GENERIC_PLAN`); without it the statement carries its values inline (e.g. jOOQ's `renderInlined`).
  *
  * Every index an index scan of the plan uses is described from the catalog ([PlanIndex]), because the
- * criterion needs each index's access method and key columns.
+ * criterion needs each index's access method, key columns and uniqueness.
  */
 public object QueryPlans {
     /** The planner settings every explained statement runs under, applied with `SET LOCAL`. */
@@ -35,7 +35,7 @@ public object QueryPlans {
         )
 
     private const val DESCRIBE_INDEX = """
-        SELECT am.amname, a.attname
+        SELECT am.amname, a.attname, ix.indisunique
         FROM pg_catalog.pg_class ic
         JOIN pg_catalog.pg_namespace n ON n.oid = ic.relnamespace
         JOIN pg_catalog.pg_index ix ON ix.indexrelid = ic.oid
@@ -82,12 +82,14 @@ public object QueryPlans {
             statement.setString(2, name)
             statement.executeQuery().use { rows ->
                 var method: String? = null
+                var unique = false
                 val columns = mutableListOf<String?>()
                 while (rows.next()) {
                     method = rows.getString(1)
                     columns += rows.getString(2)
+                    unique = rows.getBoolean(3)
                 }
-                method?.let { PlanIndex(schema, name, it, columns) }
+                method?.let { PlanIndex(schema, name, it, columns, unique) }
             }
         }
 }

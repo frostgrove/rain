@@ -1,8 +1,8 @@
 package com.gd.rain.test
 
 /**
- * Reads the `Index Cond` text PostgreSQL's EXPLAIN prints for a b-tree scan, as far as criterion v1 needs it:
- * which key columns each clause compares and whether the clause is an equality.
+ * Reads the `Index Cond` text PostgreSQL's EXPLAIN prints for a b-tree scan, as far as criterion v2 needs it:
+ * which key columns each clause compares, whether the clause is an equality, and whether it equates them with one value.
  *
  * PostgreSQL deparses the index qualification as one parenthesised expression: a single clause
  * `(col op value)`, or `((clause) AND (clause) …)`. Each clause is `col op value`, `col = ANY (…)`,
@@ -18,6 +18,8 @@ internal object IndexConditions {
         val text: String,
         val columns: List<String>,
         val kind: Kind,
+        /** An `=` against one value (not `= ANY (…)`, not `IS NULL`): at most one entry of a unique index matches it. */
+        val singleValue: Boolean,
     )
 
     private const val OPERATOR_CHARACTERS = "+-*/<>=~!@#%^&|`?"
@@ -43,23 +45,23 @@ internal object IndexConditions {
             }
         if (text.getOrNull(end) != ' ') return null
         val rest = text.substring(end + 1)
-        val kind =
+        val (kind, singleValue) =
             when (rest) {
                 "IS NULL" -> {
-                    Kind.EQUALITY
+                    Kind.EQUALITY to false
                 }
 
                 "IS NOT NULL" -> {
-                    Kind.RANGE
+                    Kind.RANGE to false
                 }
 
                 else -> {
                     val operator = rest.takeWhile { it in OPERATOR_CHARACTERS }
                     if (operator.isEmpty() || rest.getOrNull(operator.length) != ' ') return null
-                    if (operator == "=") Kind.EQUALITY else Kind.RANGE
+                    if (operator == "=") Kind.EQUALITY to !rest.substring(operator.length + 1).startsWith("ANY ") else Kind.RANGE to false
                 }
             }
-        return Clause(text, columns, kind)
+        return Clause(text, columns, kind, singleValue)
     }
 
     /** The last identifier of a qualified column reference that spans all of [reference], unquoted; `null` otherwise. */

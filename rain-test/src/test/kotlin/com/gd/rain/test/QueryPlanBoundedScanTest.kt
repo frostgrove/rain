@@ -7,25 +7,26 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 
 /**
- * Criterion v1 of [QueryPlan.boundedScan], over hand-written EXPLAIN (FORMAT JSON, VERBOSE) plans in
+ * Criterion v2 of [QueryPlan.boundedScan], over hand-written EXPLAIN (FORMAT JSON, VERBOSE) plans in
  * `src/test/resources/plans`: the accepted forms, one plan per node kind that makes a read unbounded, and
  * the other ways a read fails.
  */
 class QueryPlanBoundedScanTest {
     private val indexes =
         listOf(
-            PlanIndex("public", "books_shelf_created_at_id", "btree", listOf("shelf", "created_at", "id")),
-            PlanIndex("public", "books_created_at_id", "btree", listOf("created_at", "id")),
-            PlanIndex("public", "books_created_at_id_pages", "btree", listOf("created_at", "id", "pages")),
-            PlanIndex("public", "books_pkey", "btree", listOf("id")),
-            PlanIndex("public", "shelves_pkey", "btree", listOf("code")),
-            PlanIndex("public", "books_title_trgm", "gist", listOf("title")),
-            PlanIndex("public", "books_lower_title", "btree", listOf(null)),
-            PlanIndex("rain_jobs", "ix_job_invocation_retention", "btree", listOf("profile", "finished_at")),
-            PlanIndex("rain_jobs", "ix_job_invocation_lease", "btree", listOf("state", "lease_expires_at")),
-            PlanIndex("rain_jobs", "ix_job_invocation_subject", "btree", listOf("subject_key", "state")),
-            PlanIndex("rain_jobs", "job_invocation_pkey", "btree", listOf("id")),
-            PlanIndex("rain_jobs", "ix_job_intent_held_invocation", "btree", listOf("invocation_id", "released_at")),
+            PlanIndex("public", "books_shelf_created_at_id", "btree", listOf("shelf", "created_at", "id"), unique = false),
+            PlanIndex("public", "books_created_at_id", "btree", listOf("created_at", "id"), unique = false),
+            PlanIndex("public", "books_created_at_id_pages", "btree", listOf("created_at", "id", "pages"), unique = false),
+            PlanIndex("public", "books_pkey", "btree", listOf("id"), unique = true),
+            PlanIndex("public", "shelves_pkey", "btree", listOf("code"), unique = true),
+            PlanIndex("public", "books_title_trgm", "gist", listOf("title"), unique = false),
+            PlanIndex("public", "books_lower_title", "btree", listOf(null), unique = false),
+            PlanIndex("rain_jobs", "ix_job_invocation_retention", "btree", listOf("profile", "finished_at"), unique = false),
+            PlanIndex("rain_jobs", "ix_job_invocation_lease", "btree", listOf("state", "lease_expires_at"), unique = false),
+            PlanIndex("rain_jobs", "ix_job_invocation_subject", "btree", listOf("subject_key", "state"), unique = false),
+            PlanIndex("rain_jobs", "job_invocation_pkey", "btree", listOf("id"), unique = true),
+            PlanIndex("rain_jobs", "uq_job_intent_held_invocation", "btree", listOf("invocation_id"), unique = true),
+            PlanIndex("rain_jobs", "ix_job_intent_held_invocation", "btree", listOf("invocation_id", "released_at"), unique = false),
         )
 
     private fun plan(name: String): QueryPlan = QueryPlan(fixture(name), indexes)
@@ -113,14 +114,14 @@ class QueryPlanBoundedScanTest {
     @Test
     fun `only b-tree scans are bounded`() {
         assertThat(reasons(plan("gist-count").boundedScan("books")))
-            .containsExactly("Index Scan using books_title_trgm on books reads a gist index; criterion v1 bounds b-tree scans only")
+            .containsExactly("Index Scan using books_title_trgm on books reads a gist index; criterion v2 bounds b-tree scans only")
     }
 
     @Test
     fun `an Index Cond the criterion cannot read is unbounded, never guessed`() {
         assertThat(reasons(plan("expression-index-cond").boundedScan("books")))
             .containsExactly(
-                "Index Scan using books_lower_title on books has an Index Cond criterion v1 cannot read: (lower(books.title) = 'dune'::text)",
+                "Index Scan using books_lower_title on books has an Index Cond criterion v2 cannot read: (lower(books.title) = 'dune'::text)",
             )
     }
 
@@ -136,10 +137,24 @@ class QueryPlanBoundedScanTest {
 
     @Test
     fun `a keyed lookup under a Join Filter, or driven by an unbounded input, is unbounded`() {
-        assertThat(reasons(plan("keyed-join-filter").boundedScan("books"))).containsExactly(
+        val notUnique =
+            indexes.map {
+                if (it.name ==
+                    "books_pkey"
+                ) {
+                    PlanIndex(it.schema, it.name, it.method, it.keyColumns, unique = false)
+                } else {
+                    it
+                }
+            }
+
+        assertThat(reasons(QueryPlan(fixture("keyed-join-filter"), notUnique).boundedScan("books"))).containsExactly(
             "Nested Loop above Index Scan using books_pkey on books carries a Join Filter: (books.shelf = \"ANY_subquery\".shelf)",
             "the output of Seq Scan on shelves (ANY_subquery) is not bounded",
         )
+        // As a unique lookup it reads one row per outer row, so only the unbounded driver remains.
+        assertThat(reasons(plan("keyed-join-filter").boundedScan("books")))
+            .containsExactly("the output of Seq Scan on shelves (ANY_subquery) is not bounded")
     }
 
     @Test
@@ -187,5 +202,54 @@ class QueryPlanBoundedScanTest {
             .forEach { json ->
                 assertThatThrownBy { QueryPlan(json, emptyList()) }.describedAs(json).isInstanceOf(IllegalArgumentException::class.java)
             }
+    }
+
+    @ParameterizedTest(name = "{0} reads {1} boundedly")
+    @CsvSource(
+        "unique-lookup-terminal, job_invocation",
+        "unique-lookup-terminal, job_intent",
+        "unique-lookup-release, job_intent",
+        "unique-lookup-release, job_invocation",
+    )
+    fun `a unique lookup reads at most one entry each time it runs, whatever its Filter and the join above it`(
+        fixture: String,
+        relation: String,
+    ) {
+        val plan = plan(fixture)
+
+        assertThat(plan.boundedScan(relation)).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+    }
+
+    @Test
+    fun `a lookup is unique only on a unique index with a single-value equality on every key column`() {
+        fun describedAs(index: PlanIndex) =
+            QueryPlan(
+                fixture("unique-lookup-release"),
+                indexes.map {
+                    if (it.name ==
+                        index.name
+                    ) {
+                        index
+                    } else {
+                        it
+                    }
+                },
+            )
+
+        assertThat(
+            reasons(
+                describedAs(
+                    PlanIndex("rain_jobs", "uq_job_intent_held_invocation", "btree", listOf("invocation_id"), unique = false),
+                ).boundedScan("job_intent"),
+            ),
+        ).containsExactly(
+            "Index Scan using uq_job_intent_held_invocation on job_intent carries a Filter: (job_intent.released_at IS NULL)",
+            "Index Scan using uq_job_intent_held_invocation on job_intent is the inner input of a Nested Loop that is not Inner Unique",
+        )
+        assertThat(
+            describedAs(
+                PlanIndex("rain_jobs", "uq_job_intent_held_invocation", "btree", listOf("invocation_id", "definition"), unique = true),
+            ).boundedScan("job_intent"),
+        ).isInstanceOf(PlanVerdict.Unbounded::class.java)
     }
 }

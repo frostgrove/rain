@@ -101,8 +101,10 @@ CREATE TABLE job_intent (
 -- The reservation itself: one holder per (definition, key) while held, any number of released rows behind it.
 CREATE UNIQUE INDEX uq_job_intent_held ON job_intent (definition, dedupe_key) WHERE released_at IS NULL;
 
--- Releasing the reservation an invocation holds, in the statement that ends or claims it.
-CREATE INDEX ix_job_intent_held_invocation ON job_intent (invocation_id) WHERE released_at IS NULL;
+-- Releasing the reservation an invocation holds, in the statement that ends, claims or cancels it. Unique: an
+-- invocation holds at most one reservation (one dedupe key per order, and a redrive reserves again only after the
+-- terminal write released the last one), which also lets the planner treat the release as a keyed lookup.
+CREATE UNIQUE INDEX uq_job_intent_held_invocation ON job_intent (invocation_id) WHERE released_at IS NULL;
 
 -- Retention of released reservations, per profile.
 CREATE INDEX ix_job_intent_retention ON job_intent (profile, released_at) WHERE released_at IS NOT NULL;

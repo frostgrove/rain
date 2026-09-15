@@ -11,11 +11,14 @@ public class PlanIndex(
     /** The access method, e.g. `btree` or `gist`. */
     public val method: String,
     keyColumns: List<String?>,
+    /** Whether the index is unique (`pg_index.indisunique`); a partial unique index is unique among the rows its predicate admits. */
+    public val unique: Boolean,
 ) {
     /** The key columns in index order; `null` for a key that is an expression rather than a column. */
     public val keyColumns: List<String?> = keyColumns.toList()
 
-    override fun toString(): String = "$schema.$name ($method on ${keyColumns.joinToString(", ") { it ?: "<expression>" }})"
+    override fun toString(): String =
+        "$schema.$name (${if (unique) "unique " else ""}$method on ${keyColumns.joinToString(", ") { it ?: "<expression>" }})"
 }
 
 /** Whether a plan bounds every row it reads from a relation ([QueryPlan.boundedScan]). */
@@ -54,11 +57,19 @@ public class QueryPlan(
     public fun hasLimit(): Boolean = nodes.any { it.type == LIMIT }
 
     /**
-     * Criterion **v1**: whether every row this plan reads from [relation] is bounded by the statement's own
-     * `LIMIT` (and `OFFSET`), whatever the size of the relation.
+     * Criterion **v2**: whether every row this plan reads from [relation] is bounded, whatever the size of the
+     * relation — by the statement's own `LIMIT` (and `OFFSET`), or by the uniqueness of the key it looks up.
      *
      * The plan is [PlanVerdict.Bounded] when it reads [relation] at all and every node that reads it (every
-     * node naming it as `Relation Name`, except the `ModifyTable` a write targets) satisfies all of:
+     * node naming it as `Relation Name`, except the `ModifyTable` a write targets) is a unique lookup (rule 0)
+     * or satisfies all of rules 1–5:
+     *
+     * 0. **Unique lookup.** An `Index Scan` or `Index Only Scan` of a unique b-tree index whose `Index Cond`
+     *    has an `=` clause against one value (not `= ANY`, not `IS NULL`) on every key column reads at most one
+     *    index entry each time it runs, so its `Filter` is evaluated on at most one row and no `Limit` is needed.
+     *    It is bounded when it runs once (rule 5) or, as the `Inner` input of a `Nested Loop` — with or without
+     *    `Inner Unique`, with or without a `Join Filter` — when that join's `Outer` input has a bounded output and
+     *    the join runs once. A unique lookup also counts as a bounded output wherever rule 4 asks for one.
      *
      * 1. **Index scan.** It is an `Index Scan` or an `Index Only Scan`.
      * 2. **No filter.** It carries no `Filter`: every condition is an `Index Cond`.
@@ -67,7 +78,7 @@ public class QueryPlan(
      *    key column before *k*, by an equality clause (`=`, `= ANY (…)` or `IS NULL`); a row comparison covers
      *    consecutive key columns. A clause on a later column alone would be checked against every entry of
      *    the range instead of ending it, so the entries visited would grow with the relation. A clause
-     *    criterion v1 cannot read (an expression key, any other form) makes the scan unbounded.
+     *    criterion v2 cannot read (an expression key, any other form) makes the scan unbounded.
      * 4. **Limited or keyed.** Either
      *    - *limited*: walking up from the scan through its row input, the first node that is not `LockRows`,
      *      a `Subquery Scan` without `Filter` or a `Result` without `Filter` is a `Limit`. Every other node
@@ -95,6 +106,8 @@ public class QueryPlan(
      * tables under it) is never proven by default.
      *
      * [PlanVerdict.Unbounded] lists every reason, for every read of [relation] that fails.
+     *
+     * v2 adds rule 0 to v1; every plan v1 accepts, v2 accepts.
      */
     public fun boundedScan(relation: String): PlanVerdict {
         val reads = nodes.filter { it.text(RELATION_NAME) == relation && it.type != MODIFY_TABLE }
@@ -115,6 +128,12 @@ public class QueryPlan(
     override fun toString(): String = json
 
     private fun reasonsAgainst(scan: PlanNode): List<String> {
+        if (uniqueLookup(scan)) {
+            val join = scan.innerOfNestedLoop() ?: return executionReasons(scan)
+            val outer = join.children.singleOrNull { it.relationship == OUTER }
+            val driven = if (outer == null) listOf("${join.label()} above ${scan.label()} has no outer input") else outputReasons(outer)
+            return driven + executionReasons(join)
+        }
         val reasons = mutableListOf<String>()
         val indexScan = scan.type in INDEX_SCANS
         if (!indexScan) reasons += "${scan.label()} is not an index scan"
@@ -131,15 +150,27 @@ public class QueryPlan(
         return reasons
     }
 
+    /** Rule 0: a scan of a unique b-tree index with a single-value `=` on every key column. */
+    private fun uniqueLookup(scan: PlanNode): Boolean {
+        if (scan.type !in INDEX_SCANS) return false
+        val name = scan.text(INDEX_NAME) ?: return false
+        val schema = scan.text(SCHEMA) ?: return false
+        val index = indexes[schema to name] ?: return false
+        if (!index.unique || index.method != BTREE || null in index.keyColumns) return false
+        val clauses = scan.text(INDEX_COND)?.let(IndexConditions::parse) ?: return false
+        val equated = clauses.filter { it.singleValue }.flatMap { it.columns }.toSet()
+        return index.keyColumns.all { it in equated }
+    }
+
     private fun boundingReasons(scan: PlanNode): List<String> {
         val condition = scan.text(INDEX_COND) ?: return emptyList()
         val name = scan.text(INDEX_NAME) ?: return listOf("${scan.label()} names no index")
         val schema = scan.text(SCHEMA) ?: return listOf("${scan.label()} names no schema; the plan is explained with VERBOSE")
         val index = indexes[schema to name] ?: return listOf("the plan carries no description of index $schema.$name")
-        if (index.method != BTREE) return listOf("${scan.label()} reads a ${index.method} index; criterion v1 bounds b-tree scans only")
+        if (index.method != BTREE) return listOf("${scan.label()} reads a ${index.method} index; criterion v2 bounds b-tree scans only")
         val clauses =
             IndexConditions.parse(condition)
-                ?: return listOf("${scan.label()} has an Index Cond criterion v1 cannot read: $condition")
+                ?: return listOf("${scan.label()} has an Index Cond criterion v2 cannot read: $condition")
         val positions =
             clauses.map { clause ->
                 clause to clause.columns.map { column -> index.keyColumns.indexOf(column) }
@@ -207,6 +238,10 @@ public class QueryPlan(
     /** Why [node] may emit a number of rows that grows with a relation; empty when its output is bounded. */
     private fun outputReasons(node: PlanNode): List<String> =
         when {
+            uniqueLookup(node) -> {
+                emptyList()
+            }
+
             node.type == LIMIT -> {
                 emptyList()
             }

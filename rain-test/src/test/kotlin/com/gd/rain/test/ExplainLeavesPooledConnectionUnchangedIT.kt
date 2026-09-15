@@ -47,7 +47,8 @@ class ExplainLeavesPooledConnectionUnchangedIT {
 
             val plan = QueryPlans.explain(pool, "SELECT id FROM t WHERE id = 1", generic = false)
 
-            assertThat(plan.boundedScan("t")).isInstanceOf(PlanVerdict.Unbounded::class.java)
+            // A primary-key lookup: the catalog describes the index as unique, so it is a unique lookup (rule 0).
+            assertThat(plan.boundedScan("t")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
             assertThat(pool.settings()).isEqualTo(before).contains("enable_seqscan=on", "autoCommit=true")
         }
     }
