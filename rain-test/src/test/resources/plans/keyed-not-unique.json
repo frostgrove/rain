@@ -1,0 +1,16 @@
+[{"Plan": {"Node Type": "ModifyTable", "Operation": "Update", "Relation Name": "job_intent", "Schema": "rain_jobs", "Alias": "job_intent", "Plans": [
+  {"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Join Type": "Inner", "Inner Unique": false, "Plans": [
+    {"Node Type": "Aggregate", "Strategy": "Hashed", "Parent Relationship": "Outer", "Plans": [
+      {"Node Type": "Subquery Scan", "Parent Relationship": "Outer", "Alias": "ANY_subquery", "Plans": [
+        {"Node Type": "Limit", "Parent Relationship": "Subquery", "Plans": [
+          {"Node Type": "Index Scan", "Parent Relationship": "Outer", "Index Name": "ix_job_invocation_subject",
+           "Relation Name": "job_invocation", "Schema": "rain_jobs", "Alias": "job_invocation",
+           "Index Cond": "(job_invocation.subject_key = 't'::text)"}
+        ]}
+      ]}
+    ]},
+    {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Index Name": "ix_job_intent_held_invocation",
+     "Relation Name": "job_intent", "Schema": "rain_jobs", "Alias": "job_intent",
+     "Index Cond": "((job_intent.invocation_id = \"ANY_subquery\".id) AND (job_intent.released_at IS NULL))"}
+  ]}
+]}}]

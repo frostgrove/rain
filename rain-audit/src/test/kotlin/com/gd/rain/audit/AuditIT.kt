@@ -7,6 +7,7 @@ import com.gd.rain.persistence.id.UuidV7Ids
 import com.gd.rain.persistence.schema.RainSchemaMigrationStrategy
 import com.gd.rain.persistence.schema.SchemaDescriptor
 import com.gd.rain.test.MutableClock
+import com.gd.rain.test.PlanVerdict
 import com.gd.rain.test.QueryPlans
 import com.gd.rain.test.RainPostgres
 import org.assertj.core.api.Assertions.assertThat
@@ -183,7 +184,6 @@ class AuditIT {
         val plan = QueryPlans.explain(fixture.dataSource, fixture.dsl.renderInlined(query), generic = false)
 
         assertThat(plan.usesIndex("ix_audit_log_resource")).describedAs(plan.json).isTrue()
-        assertThat(plan.hasLimit()).isTrue()
-        assertThat(plan.scansSequentially("audit_log")).isFalse()
+        assertThat(plan.boundedScan("audit_log")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 }

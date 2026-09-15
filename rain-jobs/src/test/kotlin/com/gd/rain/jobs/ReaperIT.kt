@@ -5,6 +5,7 @@ import com.gd.rain.jobs.internal.ledger.LapsedInvocation
 import com.gd.rain.jobs.support.Awaits
 import com.gd.rain.jobs.support.Fixtures
 import com.gd.rain.jobs.support.HousekeepingFixture
+import com.gd.rain.test.PlanVerdict
 import com.gd.rain.test.QueryPlans
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
@@ -118,8 +119,7 @@ class ReaperIT {
             )
 
         assertThat(plan.usesIndex("ix_job_invocation_lease")).describedAs(plan.json).isTrue()
-        assertThat(plan.hasLimit()).isTrue()
-        assertThat(plan.scansSequentially("job_invocation")).isFalse()
+        assertThat(plan.boundedScan("job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 
     private companion object {

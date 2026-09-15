@@ -75,12 +75,14 @@ CREATE INDEX ix_job_invocation_dead_letters ON job_invocation (finished_at DESC,
 CREATE INDEX ix_job_invocation_dead_letters_definition ON job_invocation (definition, finished_at DESC, id DESC)
   WHERE state IN ('failed', 'dead');
 
--- Cancellation: the live work about one subject.
-CREATE INDEX ix_job_invocation_subject ON job_invocation (subject_key)
+-- Cancellation: the live work about one subject. The state is a key column as well as the predicate: a
+-- locking read keeps the predicate's conditions to recheck them, and only a key column holds them as index
+-- conditions rather than a filter, which the plan proof (criterion v1) requires.
+CREATE INDEX ix_job_invocation_subject ON job_invocation (subject_key, state)
   WHERE state IN ('queued', 'running') AND subject_key IS NOT NULL;
 
--- The reaper: running rows whose lease lapsed, earliest lapse first.
-CREATE INDEX ix_job_invocation_lease ON job_invocation (lease_expires_at)
+-- The reaper: running rows whose lease lapsed, earliest lapse first; the state leads for the same reason.
+CREATE INDEX ix_job_invocation_lease ON job_invocation (state, lease_expires_at)
   WHERE state = 'running';
 
 -- Deduplication reservations. No foreign key to job_invocation: a reservation's history outlives the order it

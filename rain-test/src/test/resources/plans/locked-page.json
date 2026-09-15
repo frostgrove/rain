@@ -1,0 +1,7 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "LockRows", "Parent Relationship": "Outer", "Plans": [
+    {"Node Type": "Index Scan", "Parent Relationship": "Outer", "Index Name": "ix_job_invocation_lease",
+     "Relation Name": "job_invocation", "Schema": "rain_jobs", "Alias": "job_invocation",
+     "Index Cond": "((job_invocation.state = 'running'::text) AND (job_invocation.lease_expires_at <= '2026-01-01 00:00:00+00'::timestamp with time zone))"}
+  ]}
+]}}]

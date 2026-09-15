@@ -9,6 +9,7 @@ import com.gd.rain.crud.query.FieldKind
 import com.gd.rain.crud.query.Pagination
 import com.gd.rain.crud.query.Predicate
 import com.gd.rain.crud.query.QueryRules
+import com.gd.rain.crud.query.QueryShape
 import com.gd.rain.crud.query.SchemaField
 import com.gd.rain.crud.query.SortKey
 import org.assertj.core.api.Assertions.assertThat
@@ -155,15 +156,12 @@ class CrudResourcePolicyTest {
 
     @Test
     fun `a declaration with problems is refused with all of them at once`() {
-        val rules = Books.rules()
         val nullableCursor =
             QueryRules(
-                rules.filterable,
-                rules.sortable,
-                rules.selectable,
+                listOf(QueryShape.of(SortKey.parse("price"))),
+                Books.rules().selectable,
                 FieldGrant.only("reviews", "authors"),
-                rules.searchFields,
-                Pagination(10, 50, 100, setOf(SortKey.parse("price")), 10),
+                Pagination(10, 50, 100, 10),
             )
         val policy = ResourcePolicy(Books.policy().access, ScopeRule.Unrestricted, FieldGrant.only("title", "colour"))
 
@@ -173,6 +171,6 @@ class CrudResourcePolicyTest {
             .hasMessageContaining("declares relation reviews more than once")
             .hasMessageContaining("grants colour, which is not a field")
             .hasMessageContaining("grants authors, which is not a relation")
-            .hasMessageContaining("sort price names price, which is nullable; a cursor cannot page by it")
+            .hasMessageContaining("shape filters [], sort price sorts by price, which is nullable; a cursor cannot page by it")
     }
 }

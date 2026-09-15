@@ -1,0 +1,2 @@
+[{"Plan": {"Node Type": "Index Scan", "Index Name": "books_shelf_created_at_id",
+  "Relation Name": "books", "Schema": "public", "Alias": "books", "Index Cond": "(books.shelf = 'a'::text)"}}]

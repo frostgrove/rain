@@ -15,4 +15,8 @@ dependencies {
     api("org.assertj:assertj-core")
     api("org.testcontainers:testcontainers-postgresql")
     api("org.postgresql:postgresql")
+    implementation("tools.jackson.core:jackson-databind")
+
+    testImplementation("com.zaxxer:HikariCP")
+    testImplementation("org.junit.jupiter:junit-jupiter-params")
 }

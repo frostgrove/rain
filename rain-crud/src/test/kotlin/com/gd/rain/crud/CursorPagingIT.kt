@@ -6,6 +6,7 @@ import com.gd.rain.crud.query.Predicate
 import com.gd.rain.crud.query.Projection
 import com.gd.rain.crud.query.QueryCompiler
 import com.gd.rain.crud.query.SortKey
+import com.gd.rain.test.PlanVerdict
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -14,7 +15,7 @@ import java.time.Duration
 /**
  * Gap 25: a page before a cursor used to drop the row nearest to it. Walking forward and then back over
  * real rows — with sort values shared by several rows — now reproduces every page exactly, and each page
- * reaches its rows through the order's index under a limit.
+ * reaches its rows through the order's index under a limit (criterion v1 of `QueryPlan.boundedScan`).
  */
 @Tag("integration")
 class CursorPagingIT {
@@ -107,11 +108,8 @@ class CursorPagingIT {
         val scoped = database.plan(database.store.readQuery(RowRead(shelf, null, seek, order, 6, 0, Projection.Full)))
 
         assertThat(everywhere.usesIndex("books_created_at_id")).describedAs("%s", everywhere).isTrue()
-        assertThat(everywhere.json).describedAs("the seek is the index condition").contains("\"Index Cond\"")
-        assertThat(everywhere.hasLimit()).isTrue()
-        assertThat(everywhere.scansSequentially("books")).isFalse()
+        assertThat(everywhere.boundedScan("books")).describedAs("%s", everywhere).isEqualTo(PlanVerdict.Bounded)
         assertThat(scoped.usesIndex("books_shelf_created_at_id")).describedAs("%s", scoped).isTrue()
-        assertThat(scoped.hasLimit()).isTrue()
-        assertThat(scoped.scansSequentially("books")).isFalse()
+        assertThat(scoped.boundedScan("books")).describedAs("%s", scoped).isEqualTo(PlanVerdict.Bounded)
     }
 }

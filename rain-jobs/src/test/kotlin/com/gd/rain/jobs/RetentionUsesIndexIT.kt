@@ -2,12 +2,13 @@ package com.gd.rain.jobs
 
 import com.gd.rain.jobs.support.Fixtures
 import com.gd.rain.jobs.support.HousekeepingFixture
+import com.gd.rain.test.PlanVerdict
 import com.gd.rain.test.QueryPlans
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
-/** Gap 5: a retention batch reaches its rows through the partial retention index under a limit, never by a sequential scan. */
+/** Gap 5: a retention batch reaches its rows through the partial retention index under a limit (criterion v1), never by a scan. */
 @Tag("integration")
 class RetentionUsesIndexIT {
     @Test
@@ -22,8 +23,7 @@ class RetentionUsesIndexIT {
             )
 
         assertThat(plan.usesIndex("ix_job_invocation_retention")).describedAs(plan.json).isTrue()
-        assertThat(plan.hasLimit()).isTrue()
-        assertThat(plan.scansSequentially("job_invocation")).describedAs(plan.json).isFalse()
+        assertThat(plan.boundedScan("job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 
     @Test
@@ -38,8 +38,7 @@ class RetentionUsesIndexIT {
             )
 
         assertThat(plan.usesIndex("ix_job_intent_retention")).describedAs(plan.json).isTrue()
-        assertThat(plan.hasLimit()).isTrue()
-        assertThat(plan.scansSequentially("job_intent")).describedAs(plan.json).isFalse()
+        assertThat(plan.boundedScan("job_intent")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 
     @Test
@@ -53,8 +52,7 @@ class RetentionUsesIndexIT {
             val plan = QueryPlans.explain(fixture.database.dataSource, fixture.database.dsl.renderInlined(query), generic = false)
 
             assertThat(plan.usesIndex(expected.first)).describedAs(plan.json).isTrue()
-            assertThat(plan.hasLimit()).isTrue()
-            assertThat(plan.scansSequentially(expected.second)).describedAs(plan.json).isFalse()
+            assertThat(plan.boundedScan(expected.second)).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
         }
     }
 }

@@ -32,8 +32,8 @@ public class QueryParameters(
 /**
  * Query dialect v1 — the query parameters every rain-crud resource reads.
  *
- * The parameters are exactly `limit`, `offset`, `cursor`, `sort`, `fields`, `include`, `search`, `count`
- * and `filter[<field>][<op>]`. Names are compared exactly: there are no aliases, no near-miss matching and
+ * The parameters are exactly `limit`, `offset`, `cursor`, `sort`, `fields`, `include`, `count` and
+ * `filter[<field>][<op>]`. Names are compared exactly: there are no aliases, no near-miss matching and
  * no case folding. Any other parameter is refused with `400 unknown_parameter`, one violation naming each.
  * A scalar is given at most once; a filter parameter is repeated only to give a list operator several
  * values. Values are checked when the query is compiled against a resource ([QueryCompiler]).
@@ -47,14 +47,13 @@ public object DialectV1 {
     public const val SORT: String = "sort"
     public const val FIELDS: String = "fields"
     public const val INCLUDE: String = "include"
-    public const val SEARCH: String = "search"
     public const val COUNT: String = "count"
     public const val FILTER: String = "filter"
 
     /** The one value of `count`: a count bounded by the resource's declared cap. */
     public const val COUNT_CAPPED: String = "capped"
 
-    public val SCALAR_PARAMETERS: Set<String> = setOf(LIMIT, OFFSET, CURSOR, SORT, FIELDS, INCLUDE, SEARCH, COUNT)
+    public val SCALAR_PARAMETERS: Set<String> = setOf(LIMIT, OFFSET, CURSOR, SORT, FIELDS, INCLUDE, COUNT)
 
     private val FILTER_PARAMETER = Regex("^filter\\[([^\\[\\]]+)]\\[([^\\[\\]]+)]$")
 
@@ -98,7 +97,7 @@ public object DialectV1 {
     }
 }
 
-/** The three refusals of the dialect, in the order they are decided: parameter names, then the query, then the cursor. */
+/** The refusals of the dialect, in the order they are decided: parameter names, then the query, then its shape, then the cursor. */
 internal object QueryFaults {
     fun unknownParameters(names: List<String>): Fault =
         Fault(
@@ -108,6 +107,8 @@ internal object QueryFaults {
         )
 
     fun badQuery(violations: List<Violation>): Fault = Fault(FaultKind.BAD_REQUEST, RainErrorCodes.BAD_QUERY, violations = violations)
+
+    fun notOffered(message: String): Fault = Fault(FaultKind.BAD_REQUEST, RainCrudErrorCodes.NOT_OFFERED, message)
 
     fun invalidCursor(reason: String): Fault =
         Fault(

@@ -1,0 +1,6 @@
+[{"Plan": {"Node Type": "Aggregate", "Strategy": "Plain", "Plans": [
+  {"Node Type": "Limit", "Parent Relationship": "Outer", "Plans": [
+    {"Node Type": "Index Only Scan", "Parent Relationship": "Outer", "Index Name": "books_shelf_created_at_id",
+     "Relation Name": "books", "Schema": "public", "Alias": "books", "Index Cond": "(books.shelf = 'a'::text)"}
+  ]}
+]}}]

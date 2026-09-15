@@ -17,50 +17,48 @@ public data class Order(
 /**
  * The operators of dialect v1, spelled exactly as [wire]. There are no aliases and no case folding:
  * `EQ` is not `eq`.
+ *
+ * Every operator is one a b-tree index can serve as a bound on an ordered scan, so a shape using it can pass
+ * the plan proof (criterion v1 of rain-test's `QueryPlan.boundedScan`). Operators PostgreSQL 18 can never
+ * serve that way are not part of the dialect: `ne` and `nin` (no index condition on a b-tree; a GiST
+ * condition on btree_gist cannot give the order a page needs), and the substring and pattern operators
+ * `contains`, `icontains`, `startswith`, `istartswith`, `endswith`, `iendswith` together with `search`
+ * (a b-tree keeps a pattern as a `Filter` even over `text_pattern_ops`; trigram GIN and GiST indexes give
+ * no order). `DroppedOperatorsNeverBoundedIT` holds the plans.
  */
 public enum class Operator(
     public val wire: String,
 ) {
     EQ("eq"),
-    NE("ne"),
     GT("gt"),
     GTE("gte"),
     LT("lt"),
     LTE("lte"),
     IN("in"),
-    NIN("nin"),
-    CONTAINS("contains"),
-    ICONTAINS("icontains"),
-    STARTS_WITH("startswith"),
-    ISTARTS_WITH("istartswith"),
-    ENDS_WITH("endswith"),
-    IENDS_WITH("iendswith"),
     IS_NULL("isnull"),
     ;
 
-    /** `in` and `nin` take one value per repetition of their parameter; every other operator takes exactly one. */
-    public val takesList: Boolean get() = this == IN || this == NIN
-
-    /** The operators that match text patterns; they apply to `TEXT` fields only. */
-    public val textual: Boolean get() = this in TEXTUAL
+    /** `in` takes one value per repetition of its parameter; every other operator takes exactly one. */
+    public val takesList: Boolean get() = this == IN
 
     /** The comparisons that need an ordered kind. */
     public val ordering: Boolean get() = this == GT || this == GTE || this == LT || this == LTE
 
     /**
-     * Whether this operator means something on [field]. `isnull` applies to nullable fields only: on a
-     * column that cannot hold NULL it would be a constant, which is a query nobody meant to write.
+     * Why this operator does not apply to [field], or `null` when it does. `isnull` applies to nullable
+     * fields only: on a column that cannot hold NULL it would be a constant, which is a query nobody meant
+     * to write.
      */
-    public fun appliesTo(field: SchemaField): Boolean =
+    public fun refusalFor(field: SchemaField): String? =
         when {
-            textual -> field.kind == FieldKind.TEXT
-            ordering -> field.kind.ordered
-            this == IS_NULL -> field.nullable
-            else -> true
+            ordering && !field.kind.ordered -> "$wire applies to ordered fields; ${field.name} is ${field.kind}"
+            this == IS_NULL && !field.nullable -> "$wire applies to nullable fields; ${field.name} is not nullable"
+            else -> null
         }
 
+    public fun appliesTo(field: SchemaField): Boolean = refusalFor(field) == null
+
     public companion object {
-        private val TEXTUAL = setOf(CONTAINS, ICONTAINS, STARTS_WITH, ISTARTS_WITH, ENDS_WITH, IENDS_WITH)
         private val BY_WIRE: Map<String, Operator> = entries.associateBy(Operator::wire)
 
         /** The operator spelled exactly [wire], or `null`. */
@@ -71,8 +69,7 @@ public enum class Operator(
 /**
  * A condition over one resource's fields, with every value already carried as its kind's type.
  *
- * Comparisons follow SQL: a comparison never matches a NULL column value (`ne` and `nin` included); only
- * `isnull` matches NULL. Invariants are checked at construction, so a store never has to decide what an
+ * Comparisons follow SQL: a comparison never matches a NULL column value; only `isnull` matches NULL. Invariants are checked at construction, so a store never has to decide what an
  * incoherent predicate meant.
  */
 public sealed interface Predicate {

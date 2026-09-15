@@ -1,0 +1,3 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Seq Scan", "Parent Relationship": "Outer", "Relation Name": "books", "Schema": "public", "Alias": "books", "Filter": "(books.shelf = 'a'::text)"}
+]}}]

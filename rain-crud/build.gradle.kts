@@ -5,6 +5,7 @@
  */
 plugins {
     id("rain.spring-module")
+    `java-test-fixtures`
 }
 
 dependencies {
@@ -13,6 +14,9 @@ dependencies {
 
     // The servlet API is the container's; rain-crud does not choose one for the application.
     compileOnly("jakarta.servlet:jakarta.servlet-api")
+
+    // The plan proof an application runs against its own database: rain-crud's statements, explained by rain-test.
+    testFixturesApi(project(":rain-test"))
 
     testImplementation(project(":rain-test"))
     testImplementation("jakarta.servlet:jakarta.servlet-api")

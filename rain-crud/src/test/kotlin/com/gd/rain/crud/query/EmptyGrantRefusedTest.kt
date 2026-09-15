@@ -30,42 +30,29 @@ class EmptyGrantRefusedTest {
     fun `a grant naming a field the schema does not declare is a declaration problem`() {
         val rules =
             QueryRules(
-                filterable = FieldGrant.only("title", "nope"),
-                sortable = FieldGrant.None,
-                selectable = FieldGrant.All,
+                shapes = listOf(QueryShape.of(SortKey.NONE)),
+                selectable = FieldGrant.only("title", "nope"),
                 includable = FieldGrant.None,
-                searchFields = emptyList(),
-                pagination = Pagination(10, 50, 100, setOf(SortKey.NONE), null),
+                pagination = Pagination(10, 50, 100, null),
             )
 
         assertThat(rules.problems(Books.SCHEMA, emptySet()).map { it.path to it.message })
-            .containsExactly("crud:books.filterable" to "grants nope, which is not a field")
+            .containsExactly("crud:books.selectable" to "grants nope, which is not a field")
     }
 
     @Test
-    fun `a resource that grants None refuses every use of that kind`() {
+    fun `a resource that grants None refuses every selection and every inclusion`() {
         val rules =
             QueryRules(
-                filterable = FieldGrant.None,
-                sortable = FieldGrant.None,
+                shapes = listOf(QueryShape.of(SortKey.NONE)),
                 selectable = FieldGrant.None,
                 includable = FieldGrant.None,
-                searchFields = emptyList(),
-                pagination = Pagination(10, 50, 100, setOf(SortKey.NONE), null),
+                pagination = Pagination(10, 50, 100, null),
             )
-        val compiler = QueryCompiler(Books.SCHEMA, rules, emptySet())
+        val compiler = QueryCompiler(Books.SCHEMA, rules, setOf("reviews"))
 
-        val refused =
-            faultOf {
-                compiler.list(
-                    DialectV1.parse(mapOf("fields" to listOf("title"), "sort" to listOf("title"), "filter[title][eq]" to listOf("dune"))),
-                )
-            }
+        val refused = faultOf { compiler.list(DialectV1.parse(mapOf("fields" to listOf("title"), "include" to listOf("reviews")))) }
 
-        assertThat(refused.pointedCodes()).containsExactly(
-            "/filter/title/eq field_not_granted",
-            "/sort field_not_granted",
-            "/fields field_not_granted",
-        )
+        assertThat(refused.pointedCodes()).containsExactly("/fields field_not_granted", "/include field_not_granted")
     }
 }

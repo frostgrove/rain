@@ -1,0 +1,4 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Index Scan", "Parent Relationship": "Outer", "Index Name": "books_lower_title",
+   "Relation Name": "books", "Schema": "public", "Alias": "books", "Index Cond": "(lower(books.title) = 'dune'::text)"}
+]}}]

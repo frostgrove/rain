@@ -1,0 +1,8 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Merge Join", "Parent Relationship": "Outer", "Join Type": "Inner", "Inner Unique": false, "Plans": [
+    {"Node Type": "Index Scan", "Parent Relationship": "Outer", "Index Name": "books_shelf_created_at_id",
+     "Relation Name": "books", "Schema": "public", "Alias": "books", "Index Cond": "(books.shelf = 'a'::text)"},
+    {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Index Name": "shelves_pkey",
+     "Relation Name": "shelves", "Schema": "public", "Alias": "shelves", "Index Cond": "(shelves.code = books.shelf)"}
+  ]}
+]}}]

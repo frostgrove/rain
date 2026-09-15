@@ -19,7 +19,7 @@ public object RainCrudErrorCodes : ErrorCodeCatalog {
     /** A cursor that cannot be read, or one minted for a different order than the query asks for. */
     public val INVALID_CURSOR: ErrorCode = ErrorCode.of("invalid_cursor", "the cursor cannot continue this query")
 
-    /** Something the dialect knows that this resource does not declare, such as counting or search. */
+    /** Something the dialect knows that this resource does not declare: a query shape, or counting. */
     public val NOT_OFFERED: ErrorCode = ErrorCode.of("not_offered", "this resource does not offer that")
 
     override val codes: List<ErrorCode> = listOf(FIELD_NOT_GRANTED, UNKNOWN_OPERATOR, INVALID_CURSOR, NOT_OFFERED)
