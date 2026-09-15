@@ -21,12 +21,22 @@ class RainRuntimeEnvironmentPostProcessorTest {
     }
 
     @Test
+    fun `a command process prints no banner, whatever the deployment or the declaration states`() {
+        val environment = environmentOf("rain.runtime.command" to "seed", "spring.main.banner-mode" to "console")
+
+        processor.postProcessEnvironment(environment, SpringApplication())
+
+        assertThat(environment.getProperty(RainRuntimeEnvironmentPostProcessor.BANNER_MODE)).isEqualTo("off")
+    }
+
+    @Test
     fun `a process with roles is left as configured`() {
         val environment = environmentOf("rain.runtime.roles" to "api")
 
         processor.postProcessEnvironment(environment, SpringApplication())
 
         assertThat(environment.propertySources.contains(RainRuntimeEnvironmentPostProcessor.SOURCE_NAME)).isFalse()
+        assertThat(environment.getProperty(RainRuntimeEnvironmentPostProcessor.BANNER_MODE)).isNull()
     }
 
     @Test
@@ -39,12 +49,17 @@ class RainRuntimeEnvironmentPostProcessorTest {
     }
 
     @Test
-    fun `an invalid selection is left for the validator to report with everything else`() {
-        val environment = environmentOf("rain.runtime.command" to "nope")
+    fun `an invalid selection is left for the validator to report with everything else, and prints no banner before it`() {
+        val undeclared = environmentOf("rain.runtime.command" to "nope", "spring.main.banner-mode" to "console")
+        val withRoles = environmentOf("rain.runtime.command" to "seed", "rain.runtime.roles" to "api")
 
-        processor.postProcessEnvironment(environment, SpringApplication())
+        processor.postProcessEnvironment(undeclared, SpringApplication())
+        processor.postProcessEnvironment(withRoles, SpringApplication())
 
-        assertThat(environment.propertySources.contains(RainRuntimeEnvironmentPostProcessor.SOURCE_NAME)).isFalse()
+        listOf(undeclared, withRoles).forEach { environment ->
+            assertThat(environment.getProperty(RainRuntimeEnvironmentPostProcessor.BANNER_MODE)).isEqualTo("off")
+            assertThat(environment.getProperty("spring.main.web-application-type")).isNull()
+        }
     }
 
     @Test

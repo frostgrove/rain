@@ -16,13 +16,15 @@ import com.gd.rain.access.support.DatabaseKit
 import com.gd.rain.access.support.GRACE
 import com.gd.rain.access.support.IDLE_TTL
 import com.gd.rain.access.support.RecordingRevocationList
-import com.gd.rain.access.support.RedisServers
+import com.gd.rain.access.support.RedisFactories
 import com.gd.rain.access.support.SESSION_TTL
 import com.gd.rain.access.support.START
 import com.gd.rain.access.support.openSession
 import com.gd.rain.core.error.Fault
 import com.gd.rain.core.error.FaultKind
 import com.gd.rain.test.QueryPlans
+import com.gd.rain.test.RainRedis
+import com.gd.rain.test.RedisPolicy
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Tag
@@ -151,7 +153,7 @@ class RevocationReplayIT {
 
     @Test
     fun `the window is replayed in bounded runs from a watermark, ties included, and from the start once caught up`() {
-        val factory = RedisServers.factory(RedisServers.retaining)
+        val factory = RedisFactories.of(RainRedis.shared(RedisPolicy.RETAINING))
         try {
             val list = RedisRevocationList(StringRedisTemplate(factory), "replay-${UUID.randomUUID()}:", ACCESS_TTL, db.clock)
             val subject = SubjectRef(AGENT, UUID.randomUUID())

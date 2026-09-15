@@ -1,0 +1,10 @@
+# An application that declares no job definition, in the worker role: it states rain.jobs with no worker ceiling at all,
+# and names the recurring work rain-access contributes.
+rain:
+  jobs:
+    workers: {}
+    required-recurring: [access.session-retention]
+    drain-grace: 10s
+    reserved-connections: 2
+    scheduler:
+      poll-interval: 200ms

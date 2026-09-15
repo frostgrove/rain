@@ -5,6 +5,7 @@ import com.gd.rain.core.config.ConfigurationProblem
 import com.gd.rain.core.config.ProblemCode
 import com.gd.rain.core.lock.Exclusively
 import com.gd.rain.core.lock.keyOf
+import com.gd.rain.crud.CrudResource
 import com.gd.rain.jobs.Attempt
 import com.gd.rain.jobs.BackoffLadder
 import com.gd.rain.jobs.Dedupe
@@ -31,9 +32,9 @@ import com.gd.rain.resilience.BreakerDeclaration
 import com.gd.rain.resilience.BreakerName
 import com.gd.rain.resilience.BreakerRegistry
 import com.gd.rain.sample.config.TicketProperties
+import com.gd.rain.sample.ticket.Ticket
 import com.gd.rain.sample.ticket.TicketEvents
 import com.gd.rain.sample.ticket.TicketFields
-import com.gd.rain.sample.ticket.TicketResources
 import com.gd.rain.sample.ticket.TicketRows
 import org.springframework.ai.chat.messages.AssistantMessage
 import org.springframework.ai.chat.messages.UserMessage
@@ -203,7 +204,7 @@ class SummarizeTicketHandler(
 
 /** Orders a ticket's summary: one live order per ticket, at the ticket's priority, cancellable with the ticket. */
 class SummaryOrders(
-    private val resources: TicketResources,
+    private val tickets: CrudResource<Ticket>,
     private val queue: WorkQueue,
     private val definition: JobDefinition<SummarizeTicket>,
     private val retry: TransactionRetry,
@@ -216,7 +217,7 @@ class SummaryOrders(
             retry.run {
                 checkNotNull(
                     transaction.execute {
-                        val ticket = resources.forCaller().get(id, emptyMap())
+                        val ticket = tickets.get(id, emptyMap())
                         val ticketId = ticket.getValue(TicketFields.ID.name) as UUID
                         val subject = SummaryJobs.subjectOf(ticketId)
                         queue.enqueue(
@@ -362,10 +363,10 @@ class SummaryConfiguration {
 
     @Bean
     fun summaryOrders(
-        resources: TicketResources,
+        tickets: CrudResource<Ticket>,
         queue: WorkQueue,
         definition: JobDefinition<SummarizeTicket>,
         retry: TransactionRetry,
         transactions: PlatformTransactionManager,
-    ): SummaryOrders = SummaryOrders(resources, queue, definition, retry, transactions)
+    ): SummaryOrders = SummaryOrders(tickets, queue, definition, retry, transactions)
 }

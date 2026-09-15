@@ -2,6 +2,7 @@ package com.gd.rain.access.usecase
 
 import com.gd.rain.access.AccessErrorCodes
 import com.gd.rain.access.AccessPrincipal
+import com.gd.rain.access.AccessProperties
 import com.gd.rain.access.GrantedPermission
 import com.gd.rain.access.HolderSearch
 import com.gd.rain.access.SignUp
@@ -17,6 +18,7 @@ import com.gd.rain.access.internal.usecase.ProvisioningService
 import com.gd.rain.access.internal.usecase.RoleAdministration
 import com.gd.rain.access.internal.usecase.SubjectRegistry
 import com.gd.rain.access.internal.web.AccessAuthentication
+import com.gd.rain.access.internal.web.PageRequest
 import com.gd.rain.access.support.AGENT
 import com.gd.rain.access.support.AccessKit
 import com.gd.rain.access.support.MemoryDirectory
@@ -452,7 +454,7 @@ class GrantsLookupTest {
     }
 
     @Test
-    fun `a page of direct permissions holds one to max-size items, and any other limit is 422 out_of_range at limit`() {
+    fun `a page of direct permissions holds one to max-size items, and any other limit is refused as a list route refuses it`() {
         grantDirectly("alpha.read", "beta.read", "gamma.read", "delta.read")
 
         val first = lookup.directPermissionsOf(subject, null, 3)
@@ -462,9 +464,16 @@ class GrantsLookupTest {
         assertThat(first.next).isEqualTo(first.items.last().permissionId)
         assertThat(last.items).hasSize(1)
         assertThat(last.next).isNull()
+        val route = PageRequest(AccessProperties.Page(defaultSize = 2, maxSize = 3))
         listOf(0, 4).forEach { limit ->
-            assertThat(faultOf { lookup.directPermissionsOf(subject, null, limit) }.pointed())
-                .containsExactly("/limit" to RainErrorCodes.OUT_OF_RANGE)
+            val refused = faultOf { lookup.directPermissionsOf(subject, null, limit) }
+            val onRoute = faultOf { route.limit(MockHttpServletRequest().apply { addParameter(PageRequest.LIMIT, limit.toString()) }) }
+
+            assertThat(refused.kind to refused.code).isEqualTo(FaultKind.BAD_REQUEST to RainErrorCodes.BAD_QUERY)
+            assertThat(refused.pointed()).containsExactly("/limit" to RainErrorCodes.OUT_OF_RANGE)
+            assertThat(
+                listOf(onRoute.kind, onRoute.code, onRoute.pointed()),
+            ).isEqualTo(listOf(refused.kind, refused.code, refused.pointed()))
         }
     }
 

@@ -11,8 +11,8 @@ import com.gd.rain.access.support.AccessDatabase
 import com.gd.rain.access.support.IDLE_TTL
 import com.gd.rain.access.support.PlanShape
 import com.gd.rain.access.support.START
-import com.gd.rain.access.support.ScalePlans
 import com.gd.rain.access.support.openSession
+import com.gd.rain.test.PlanVerdict
 import com.gd.rain.test.QueryPlan
 import com.gd.rain.test.QueryPlans
 import org.assertj.core.api.Assertions.assertThat
@@ -24,20 +24,44 @@ import org.junit.jupiter.api.TestFactory
 import java.time.Duration
 import java.util.UUID
 
+private const val SCHEMA = "rain_access"
+
 private fun AccessDatabase.plan(query: Query): QueryPlan = QueryPlans.explain(dataSource, dsl.renderInlined(query), generic = false)
 
-private fun AccessDatabase.pagePlan(query: Query): QueryPlan = ScalePlans.explain(dataSource, dsl.renderInlined(query))
-
-private class Page(
+/** One statement to prove: the index it is written for, when it names one, and every table it reads. */
+private class Statement(
     val name: String,
-    val index: String,
     val query: Query,
-    val conditioned: Boolean = true,
-)
+    val index: String?,
+    vararg relations: String,
+) {
+    val relations: List<String> = relations.toList()
+}
+
+/**
+ * Plan criterion v3 ([QueryPlan.boundedScan]) for every table [statement] reads, and the index it is written for: a
+ * statement whose plan passes reads the same number of rows from a table of ten rows and of ten million.
+ */
+private fun AccessDatabase.assertBounded(statement: Statement) {
+    val plan = plan(statement.query)
+    statement.index?.let { assertThat(plan.usesIndex(it)).describedAs("${statement.name} uses $it:\n$plan").isTrue() }
+    statement.relations.forEach { relation ->
+        assertThat(
+            plan.boundedScan(SCHEMA, relation),
+        ).describedAs("${statement.name} reads $SCHEMA.$relation:\n$plan").isEqualTo(PlanVerdict.Bounded)
+    }
+}
 
 private val ACCESS_TABLES = listOf("permissions", "roles", "role_permissions", "subject_roles", "subject_permissions")
 
-/** Gap 22: the per-request question reads the asked codes and the subject's own grants through indexes, whatever the tables hold. */
+/**
+ * Gap 22: the per-request question reads the asked codes and the subject's own grants through indexes, whatever the tables hold.
+ *
+ * Plan criterion v3 does not decide this statement: each asked code's row answers a correlated `EXISTS`, a SubPlan run
+ * once per row of the unique code lookup, and v3 accepts a scan only when it runs once or is the inner input of a nested
+ * loop. The bound — the asked codes times the subject's roles — is read from the plan's shape instead: every scan is an
+ * index scan by condition, and the only `Filter` is that `EXISTS` on the rows the unique code index returned.
+ */
 @Tag("integration")
 class PermissionCheckBoundedCostIT {
     private val db = AccessDatabase.fresh("access_permission_cost")
@@ -67,7 +91,7 @@ class PermissionCheckBoundedCostIT {
     }
 }
 
-/** Gap 22: a subject's sessions are a keyset page of `ix_sessions_live`. */
+/** Gap 22: a subject's sessions are a keyset page of `ix_sessions_live`, bounded by plan criterion v3. */
 @Tag("integration")
 class SessionPagesKeysetIT {
     private val db = AccessDatabase.fresh("access_session_pages")
@@ -76,15 +100,19 @@ class SessionPagesKeysetIT {
     @Test
     fun `the first page and every next one is a keyset read of ix_sessions_live`() {
         listOf(null, SessionCursor(START.minusSeconds(60), UUID.randomUUID())).forEach { after ->
-            PlanShape.assertKeysetPage(
-                db.pagePlan(db.sessions.livePageQuery(subject, START, START.minus(IDLE_TTL), after, 51)),
-                "ix_sessions_live",
+            db.assertBounded(
+                Statement(
+                    "a page of live sessions",
+                    db.sessions.livePageQuery(subject, after, 51),
+                    "ix_sessions_live",
+                    "sessions",
+                ),
             )
         }
     }
 
     @Test
-    fun `pages list only open, unexpired, recently used sessions, newest first, each once`() {
+    fun `pages list only open, unexpired, recently used sessions, newest first, each once, reading no more than a page each`() {
         val live = List(5) { db.openSession(subject, START.minus(Duration.ofHours(10L - it))) }
         db.openSession(subject, START.minus(Duration.ofDays(40)), START.minusSeconds(1))
         db.openSession(subject, START.minus(Duration.ofDays(8)))
@@ -104,11 +132,12 @@ class SessionPagesKeysetIT {
         } while (after != null)
 
         assertThat(seen).containsExactlyElementsOf(live.reversed())
-        assertThat(pages).isEqualTo(3)
+        // Five usable sessions, then the idle and the expired one read by pages of their own: the last page lists nothing.
+        assertThat(pages).isEqualTo(4)
     }
 }
 
-/** Gap 22: every directory page rain-access serves is a keyset read of an index of its own. */
+/** Gap 22: every directory page rain-access serves is a keyset read of an index of its own, bounded by plan criterion v3. */
 @Tag("integration")
 class DirectoryPagesKeysetIT {
     private val db = AccessDatabase.fresh("access_directory_pages")
@@ -118,43 +147,148 @@ class DirectoryPagesKeysetIT {
 
     @TestFactory
     fun `every page is a keyset read of its own index`(): List<DynamicTest> {
+        val grants = db.grants
+        val sessions = db.sessions
         val pages =
             listOf(
-                Page("roles", "uq_roles_slug", db.grants.rolesPageQuery(null, 51), conditioned = false),
-                Page("roles after a slug", "uq_roles_slug", db.grants.rolesPageQuery("support-lead", 51)),
-                Page("permissions", "uq_permissions_code", db.grants.permissionsPageQuery(null, 51), conditioned = false),
-                Page("permissions after a code", "uq_permissions_code", db.grants.permissionsPageQuery("ticket.read", 51)),
-                Page("a role's permissions", "pk_role_permissions", db.grants.rolePermissionsPageQuery(role, null, 51)),
-                Page(
-                    "a role's permissions after one",
+                Statement("roles", grants.rolesPageQuery(null, 51), "uq_roles_slug", "roles"),
+                Statement("roles after a slug", grants.rolesPageQuery("support-lead", 51), "uq_roles_slug", "roles"),
+                Statement("permissions", grants.permissionsPageQuery(null, 51), "uq_permissions_code", "permissions"),
+                Statement("permissions after a code", grants.permissionsPageQuery("ticket.read", 51), "uq_permissions_code", "permissions"),
+                Statement(
+                    "a role's permissions",
+                    grants.rolePermissionsPageQuery(role, null, 51),
                     "pk_role_permissions",
-                    db.grants.rolePermissionsPageQuery(role, UUID.randomUUID(), 51),
+                    "role_permissions",
+                    "permissions",
                 ),
-                Page("a subject's roles", "pk_subject_roles", db.grants.subjectRolesPageQuery(subject, null, 51)),
-                Page("a subject's roles after one", "pk_subject_roles", db.grants.subjectRolesPageQuery(subject, UUID.randomUUID(), 51)),
-                Page("a subject's permissions", "pk_subject_permissions", db.grants.subjectPermissionsPageQuery(subject, null, 51)),
-                Page(
-                    "a subject's permissions after one",
+                Statement(
+                    "a role's permissions after one",
+                    grants.rolePermissionsPageQuery(role, UUID.randomUUID(), 51),
+                    "pk_role_permissions",
+                    "role_permissions",
+                    "permissions",
+                ),
+                Statement(
+                    "a subject's roles",
+                    grants.subjectRolesPageQuery(subject, null, 51),
+                    "pk_subject_roles",
+                    "subject_roles",
+                    "roles",
+                ),
+                Statement(
+                    "a subject's roles after one",
+                    grants.subjectRolesPageQuery(subject, UUID.randomUUID(), 51),
+                    "pk_subject_roles",
+                    "subject_roles",
+                    "roles",
+                ),
+                Statement(
+                    "a subject's permissions",
+                    grants.subjectPermissionsPageQuery(subject, null, 51),
                     "pk_subject_permissions",
-                    db.grants.subjectPermissionsPageQuery(subject, UUID.randomUUID(), 51),
+                    "subject_permissions",
+                    "permissions",
                 ),
-                Page("a role's holders", "ix_subject_roles_role", db.grants.holdersPageQuery(role, null, 101)),
-                Page("a role's holders after one", "ix_subject_roles_role", db.grants.holdersPageQuery(role, subject, 101)),
-                Page("closed sessions to replay", "ix_sessions_revoked", db.sessions.revokedPageQuery(since, START, null, 500)),
-                Page(
-                    "closed sessions to replay after a watermark",
+                Statement(
+                    "a subject's permissions after one",
+                    grants.subjectPermissionsPageQuery(subject, UUID.randomUUID(), 51),
+                    "pk_subject_permissions",
+                    "subject_permissions",
+                    "permissions",
+                ),
+                Statement("a role's holders", grants.holdersPageQuery(role, null, 101), "ix_subject_roles_role", "subject_roles"),
+                Statement(
+                    "a role's holders after one",
+                    grants.holdersPageQuery(role, subject, 101),
+                    "ix_subject_roles_role",
+                    "subject_roles",
+                ),
+                Statement(
+                    "closed sessions to replay",
+                    sessions.revokedPageQuery(since, START, null, 500),
                     "ix_sessions_revoked",
-                    db.sessions.revokedPageQuery(since, START, RevokedSession(UUID.randomUUID(), START.minusSeconds(60)), 500),
+                    "sessions",
                 ),
-                Page("cutoffs to replay", "ix_subject_cutoffs_cutoff", db.sessions.cutoffPageQuery(since, START, null, 500)),
-                Page(
-                    "cutoffs to replay after a watermark",
+                Statement(
+                    "closed sessions to replay after a watermark",
+                    sessions.revokedPageQuery(since, START, RevokedSession(UUID.randomUUID(), START.minusSeconds(60)), 500),
+                    "ix_sessions_revoked",
+                    "sessions",
+                ),
+                Statement(
+                    "cutoffs to replay",
+                    sessions.cutoffPageQuery(since, START, null, 500),
                     "ix_subject_cutoffs_cutoff",
-                    db.sessions.cutoffPageQuery(since, START, SubjectCutoff(subject, START.minusSeconds(60), null), 500),
+                    "subject_cutoffs",
+                ),
+                Statement(
+                    "cutoffs to replay after a watermark",
+                    sessions.cutoffPageQuery(since, START, SubjectCutoff(subject, START.minusSeconds(60), null), 500),
+                    "ix_subject_cutoffs_cutoff",
+                    "subject_cutoffs",
                 ),
             )
-        return pages.map { page ->
-            DynamicTest.dynamicTest(page.name) { PlanShape.assertKeysetPage(db.pagePlan(page.query), page.index, page.conditioned) }
-        }
+        return pages.map { page -> DynamicTest.dynamicTest(page.name) { db.assertBounded(page) } }
+    }
+}
+
+/**
+ * The statements that closed a subject's sessions, removed a role's holders and permissions, found which holders sign in
+ * with a password and read the catalogue's permission ids had no plan proof. Each is now proven by plan criterion v3; two
+ * failed it and were rewritten: closing a batch of sessions excluded the kept session with `id <> ?`, a `Filter` on the
+ * limited range (the page is now read without it, and without the row lock that kept the partial index's predicate as a
+ * `Filter`, and the kept session is left out of a close by primary key); a role's holders and permissions were deleted by
+ * their key and their role, which PostgreSQL merged with every holder of the role (they are now deleted by the whole key
+ * alone, each row looked up from the limited page); and the password question read a two-column unique key by `= ANY`
+ * with no `LIMIT` (it now reads at most one row per id).
+ */
+@Tag("integration")
+class WriteAndLookupStatementsBoundedIT {
+    private val db = AccessDatabase.fresh("access_statement_plans")
+    private val subject = SubjectRef(AGENT, UUID.randomUUID())
+    private val role = UUID.randomUUID()
+    private val ids = List(100) { UUID(0, it.toLong()) }
+    private val codes = List(500) { "module.permission-$it" }
+
+    @TestFactory
+    fun `every statement is bounded by plan criterion v3`(): List<DynamicTest> {
+        val sessions = db.sessions
+        val statements =
+            listOf(
+                Statement(
+                    "a batch of sessions to close",
+                    sessions.revokePageQuery(subject, START, null, 500),
+                    "ix_sessions_live",
+                    "sessions",
+                ),
+                Statement(
+                    "the next batch of sessions to close",
+                    sessions.revokePageQuery(subject, START, SessionCursor(START.minusSeconds(60), UUID.randomUUID()), 500),
+                    "ix_sessions_live",
+                    "sessions",
+                ),
+                Statement(
+                    "closing a batch of sessions",
+                    sessions.closeAllQuery(ids.take(500), START, "signed-out-everywhere"),
+                    null,
+                    "sessions",
+                ),
+                Statement("a batch of a role's holders removed", db.grants.revokeHoldersBatchQuery(role, 500), null, "subject_roles"),
+                Statement(
+                    "a batch of a role's permissions detached",
+                    db.grants.detachPermissionsBatchQuery(role, 500),
+                    null,
+                    "role_permissions",
+                ),
+                Statement(
+                    "which holders have a password",
+                    db.credentials.withPasswordQuery(AGENT, ids),
+                    "uq_credentials_subject_password",
+                    "credentials",
+                ),
+                Statement("the ids of declared codes", db.catalogue.permissionIdsQuery(codes), "uq_permissions_code", "permissions"),
+            )
+        return statements.map { statement -> DynamicTest.dynamicTest(statement.name) { db.assertBounded(statement) } }
     }
 }

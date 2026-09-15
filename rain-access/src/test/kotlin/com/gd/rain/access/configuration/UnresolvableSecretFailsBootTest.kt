@@ -2,8 +2,8 @@ package com.gd.rain.access.configuration
 
 import com.gd.rain.access.support.AccessApplication
 import com.gd.rain.access.support.accessProperties
-import com.gd.rain.access.support.startAccessApplication
 import com.gd.rain.core.config.ConfigurationProblemsException
+import com.gd.rain.test.RainApplication
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -26,11 +26,12 @@ class UnresolvableSecretFailsBootTest {
     fun `the start is refused naming rain-access-token-signing-key`(written: String) {
         val failure =
             runCatching {
-                startAccessApplication(
-                    AccessApplication::class.java,
-                    WebApplicationType.NONE,
-                    *accessProperties("rain.access.token.signing-key=$written"),
-                ).close()
+                RainApplication
+                    .start(
+                        listOf(AccessApplication::class.java),
+                        WebApplicationType.NONE,
+                        accessProperties("rain.access.token.signing-key=$written").toList(),
+                    ).close()
             }.exceptionOrNull()
 
         val refusal = generateSequence(failure, Throwable::cause).filterIsInstance<ConfigurationProblemsException>().firstOrNull()

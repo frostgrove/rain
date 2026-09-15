@@ -1,6 +1,5 @@
 package com.gd.rain.sample.ticket
 
-import com.gd.rain.access.GrantsLookup
 import com.gd.rain.audit.AuditEventType
 import com.gd.rain.audit.AuditRecorder
 import com.gd.rain.boot.runtime.ConditionalOnRainRole
@@ -8,6 +7,7 @@ import com.gd.rain.boot.runtime.RuntimeRole
 import com.gd.rain.core.error.ErrorCodeCatalog
 import com.gd.rain.core.id.IdGenerator
 import com.gd.rain.crud.CallerLookup
+import com.gd.rain.crud.CrudResource
 import com.gd.rain.crud.persistence.JooqResourceStore
 import com.gd.rain.crud.persistence.RowReader
 import com.gd.rain.crud.web.CountBody
@@ -51,26 +51,28 @@ import java.time.Duration
 
 /**
  * The ticket resource's routes: list, count and item through rain-crud, create, change and delete through
- * [TicketWrites]. Their access comes from the resource's policy, through [TicketResources.mounted].
+ * [TicketWrites]. Their access comes from the resource's policy, through [TicketDeclarations.mounted].
  */
 @RestController
 @RequestMapping(TicketDeclarations.PREFIX)
 @ConditionalOnRainRole(RuntimeRole.API)
 class TicketResourceController(
-    private val resources: TicketResources,
+    private val tickets: CrudResource<Ticket>,
     private val writes: TicketWrites,
 ) : DeclaresItsOwnAccess {
+    private val mounted = TicketDeclarations.mounted(tickets)
+
     @GetMapping
-    fun list(request: HttpServletRequest): PageBody<Ticket> = CrudMvc.list(resources.forCaller(), request)
+    fun list(request: HttpServletRequest): PageBody<Ticket> = CrudMvc.list(tickets, request)
 
     @GetMapping("/count")
-    fun count(request: HttpServletRequest): CountBody = CrudMvc.count(resources.forCaller(), request)
+    fun count(request: HttpServletRequest): CountBody = CrudMvc.count(tickets, request)
 
     @GetMapping("/{id}")
     fun get(
         @PathVariable id: String,
         request: HttpServletRequest,
-    ): Ticket = CrudMvc.get(resources.forCaller(), id, request)
+    ): Ticket = CrudMvc.get(tickets, id, request)
 
     @PostMapping
     fun create(
@@ -91,7 +93,7 @@ class TicketResourceController(
         return DeletedBody(1)
     }
 
-    override fun accessDeclarations(): List<EndpointDeclaration> = resources.mounted.declarations()
+    override fun accessDeclarations(): List<EndpointDeclaration> = mounted.declarations()
 }
 
 /** What an agent does to one ticket besides changing its fields: close it, order its summary, watch it. */
@@ -134,7 +136,7 @@ class TicketActionController(
  * missed. The stream is served on its request thread and ends before `rain.web.request-budget` (a configuration rule).
  */
 class TicketEventStream(
-    private val resources: TicketResources,
+    private val tickets: CrudResource<Ticket>,
     private val listener: RealtimeListener,
     private val settings: TicketProperties.Events,
     private val json: JsonMapper,
@@ -144,10 +146,9 @@ class TicketEventStream(
         id: String,
         response: HttpServletResponse,
     ) {
-        val resource = resources.forCaller()
-        val ticketId = TicketWrites.idOf(resource.get(id, emptyMap()))
+        val ticketId = TicketWrites.idOf(tickets.get(id, emptyMap()))
         listener.subscribe(TicketEvents.channelOf(ticketId), settings.subscribeTimeout).use { subscription ->
-            val current = resource.get(id, emptyMap())
+            val current = tickets.get(id, emptyMap())
             response.status = HttpServletResponse.SC_OK
             response.contentType = CONTENT_TYPE
             response.setHeader("Cache-Control", "no-store")
@@ -224,18 +225,13 @@ class TicketConfiguration {
         ids: IdGenerator,
     ): JooqResourceStore<Ticket> = JooqResourceStore(TicketFields.SCHEMA, dsl, ids, RowReader.fields(TicketFields.SCHEMA))
 
+    /** One resource for every agent: the policy's scope gives each caller its rows. */
     @Bean
-    fun ticketResources(
+    fun ticketResource(
         store: JooqResourceStore<Ticket>,
         callers: CallerLookup,
-        grants: GrantsLookup,
         properties: TicketProperties,
-    ): TicketResources =
-        TicketResources(
-            TicketDeclarations.every(store, callers, properties.pages),
-            TicketDeclarations.assigned(store, callers, properties.pages),
-            grants,
-        )
+    ): CrudResource<Ticket> = TicketDeclarations.resource(store, callers, properties.pages)
 
     @Bean
     fun ticketRows(dsl: DSLContext): TicketRows = TicketRows(dsl)
@@ -248,7 +244,7 @@ class TicketConfiguration {
 
     @Bean
     fun ticketWrites(
-        resources: TicketResources,
+        tickets: CrudResource<Ticket>,
         rows: TicketRows,
         audit: AuditRecorder,
         events: TicketEvents,
@@ -256,7 +252,7 @@ class TicketConfiguration {
         retry: TransactionRetry,
         transactions: PlatformTransactionManager,
         clock: Clock,
-    ): TicketWrites = TicketWrites(resources, rows, audit, events, jobs, retry, transactions, clock)
+    ): TicketWrites = TicketWrites(tickets, rows, audit, events, jobs, retry, transactions, clock)
 
     /** The listener runs only where the `api` role does, and so do the streams it feeds. */
     @Configuration(proxyBeanMethods = false)
@@ -264,11 +260,11 @@ class TicketConfiguration {
     class Streaming {
         @Bean
         fun ticketEventStream(
-            resources: TicketResources,
+            tickets: CrudResource<Ticket>,
             listener: RealtimeListener,
             properties: TicketProperties,
             json: JsonMapper,
             clock: Clock,
-        ): TicketEventStream = TicketEventStream(resources, listener, properties.events, json, clock)
+        ): TicketEventStream = TicketEventStream(tickets, listener, properties.events, json, clock)
     }
 }

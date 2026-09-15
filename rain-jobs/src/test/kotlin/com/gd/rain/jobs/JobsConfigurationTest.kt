@@ -45,10 +45,25 @@ class JobsConfigurationTest {
     fun `the section is required, and each required leaf is named`() {
         assertThat(validate().map { it.path to it.code }).containsExactly("rain.jobs" to ProblemCode.REQUIRED)
         assertThat(validate("rain.jobs.drain-grace" to "20s").map { it.path to it.code }).containsExactlyInAnyOrder(
-            "rain.jobs.workers" to ProblemCode.REQUIRED,
             "rain.jobs.required-recurring" to ProblemCode.REQUIRED,
             "rain.jobs.reserved-connections" to ProblemCode.REQUIRED,
         )
+    }
+
+    @Test
+    fun `an application that declares no job definition states no worker ceiling, and the section binds with none`() {
+        val stated = complete.filterNot { it.first.startsWith("rain.jobs.workers.") }.toTypedArray()
+
+        assertThat(validate(*stated)).isEmpty()
+        val environment = MockEnvironment()
+        stated.forEach { (key, value) -> environment.setProperty(key, value) }
+        assertThat(
+            Binder
+                .get(environment)
+                .bind(JobsProperties.PREFIX, JobsProperties::class.java)
+                .get()
+                .workers,
+        ).isEmpty()
     }
 
     @Test

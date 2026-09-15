@@ -154,7 +154,8 @@ public class RefreshUseCase(
 /**
  * Closing every session of a subject issued up to an instant, except one: the cutoff row is written inside the caller's
  * transaction; after it commits the cutoff is announced — one revocation key whatever the number of sessions — and the
- * sessions are marked closed in bounded batches, each in a transaction of its own. Until the batches finish, the
+ * sessions are marked closed in batches of `session.revoke-batch`, each in a transaction of its own, each continuing after
+ * the last session the previous one locked, until a batch locks fewer. Until the batches finish, the
  * cutoff is what refuses those sessions: at rotation, in the session list and at every request.
  */
 public class SessionClosing(
@@ -184,13 +185,15 @@ public class SessionClosing(
                 failed
             }
         var closed = 0L
+        var after: SessionCursor? = null
         do {
-            val changed =
+            val done =
                 transactions.inTransaction {
-                    sessions.revokeBatch(cutoff.subject, cutoff.cutoffAt, cutoff.keptSession, clock.instant(), reason, batch)
+                    sessions.revokeBatch(cutoff.subject, cutoff.cutoffAt, cutoff.keptSession, after, clock.instant(), reason, batch)
                 }
-            closed += changed
-        } while (changed == batch)
+            closed += done.closed
+            after = done.next
+        } while (after != null)
         if (unannounced != null) throw unannounced
         return closed
     }
@@ -273,7 +276,11 @@ public data class SessionPage(
     public val next: SessionCursor?,
 )
 
-/** A subject's open sessions, newest first, a keyset page at a time; a session a cutoff closed is not listed. */
+/**
+ * A subject's usable sessions, newest first, a keyset page at a time. A page reads `limit + 1` open sessions and lists
+ * those that are neither expired, nor idle past `session.idle-ttl`, nor closed by a cutoff; so it can hold fewer than
+ * `limit` sessions, even none, and still have a `next`.
+ */
 public class SessionsQuery(
     private val sessions: SessionStore,
     private val idleTtl: Duration,
@@ -285,10 +292,16 @@ public class SessionsQuery(
         limit: Int,
     ): SessionPage {
         val now = clock.instant()
+        val idleSince = now.minus(idleTtl)
         val cutoff = sessions.cutoffOf(subject)
-        val rows = sessions.livePage(subject, now, now.minus(idleTtl), after, limit + 1)
+        val rows = sessions.livePage(subject, after, limit + 1)
         val page = rows.take(limit)
         val next = if (rows.size > limit) page.last().let { SessionCursor(it.createdAt, it.id) } else null
-        return SessionPage(page.filterNot { cutoff?.closes(it.id, it.createdAt) == true }, next)
+        val usable =
+            page.filter { session ->
+                session.expiresAt.isAfter(now) && session.lastUsedAt.isAfter(idleSince) &&
+                    cutoff?.closes(session.id, session.createdAt) != true
+            }
+        return SessionPage(usable, next)
     }
 }

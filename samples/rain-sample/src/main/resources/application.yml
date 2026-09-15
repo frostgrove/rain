@@ -11,7 +11,8 @@ spring:
   application:
     name: rain-sample
   main:
-    # A command's result is its standard output; the banner is not part of it.
+    # No process of this image prints a banner: rain-boot turns it off in every command, and a serving process, or one whose
+    # configuration is refused, keeps standard output as quiet as a command's.
     banner-mode: "off"
   threads:
     virtual:

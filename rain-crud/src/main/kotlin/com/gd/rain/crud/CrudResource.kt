@@ -459,24 +459,48 @@ public class CrudResource<T>(
         return caller
     }
 
-    private fun scopeFor(caller: Caller.Authenticated): RowScope =
+    /**
+     * The rows the policy's scope gives [caller] — what every operation of this caller is confined to. A plan proof states
+     * the scopes it explains with it, so it proves the scopes the policy yields rather than predicates written again.
+     */
+    public fun scopeOf(caller: Caller.Authenticated): RowScope =
         when (val rule = policy.scope) {
             ScopeRule.Unrestricted -> {
                 RowScope.Everything
             }
 
             is ScopeRule.Rows -> {
-                val predicate = rule.of(caller)
-                val foreign =
-                    predicate
-                        .fields()
-                        .filterNot(schema::owns)
-                        .map(SchemaField::name)
-                        .toSet()
-                check(foreign.isEmpty()) { "the scope of ${schema.name} reads fields it does not declare: ${foreign.sorted()}" }
-                RowScope.Matching(predicate)
+                rowsOf(rule, caller)
+            }
+
+            is ScopeRule.EveryRowWhenHolding -> {
+                if (caller.holdsAll(
+                        rule.permissions,
+                    )
+                ) {
+                    RowScope.Everything
+                } else {
+                    rowsOf(rule.otherwise, caller)
+                }
             }
         }
+
+    private fun scopeFor(caller: Caller.Authenticated): RowScope = scopeOf(caller)
+
+    private fun rowsOf(
+        rule: ScopeRule.Rows,
+        caller: Caller.Authenticated,
+    ): RowScope {
+        val predicate = rule.of(caller)
+        val foreign =
+            predicate
+                .fields()
+                .filterNot(schema::owns)
+                .map(SchemaField::name)
+                .toSet()
+        check(foreign.isEmpty()) { "the scope of ${schema.name} reads fields it does not declare: ${foreign.sorted()}" }
+        return RowScope.Matching(predicate)
+    }
 
     /**
      * Every problem of a write, refused together as `422 validation_failed` with the violations its input carried: a

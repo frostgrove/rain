@@ -6,13 +6,15 @@ import com.gd.rain.access.SubjectRef
 import com.gd.rain.access.internal.audit.AccessAuditTypes
 import com.gd.rain.access.support.AccessApplication
 import com.gd.rain.access.support.DEFAULT_PASSWORD
-import com.gd.rain.access.support.Http
 import com.gd.rain.access.support.RecordingAuditRecorder
+import com.gd.rain.access.support.TICKET_READ
 import com.gd.rain.access.support.accessProperties
 import com.gd.rain.access.support.directory
-import com.gd.rain.access.support.port
-import com.gd.rain.access.support.startAccessApplication
+import com.gd.rain.test.ApplicationHttp
+import com.gd.rain.test.RainApplication
 import com.gd.rain.test.RainPostgres
+import com.gd.rain.web.route.DeclaresItsOwnAccess
+import com.gd.rain.web.route.EndpointDeclaration
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
@@ -20,11 +22,12 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.boot.WebApplicationType
-import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.RestController
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.net.http.HttpResponse
@@ -45,19 +48,19 @@ private fun credentials(identifier: String): String = """{"identifier":"$identif
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AccessHttpIT {
     private lateinit var context: ConfigurableApplicationContext
-    private lateinit var http: Http
+    private lateinit var http: ApplicationHttp
 
     @BeforeAll
     fun start() {
         val database = RainPostgres.freshDatabase("access_http")
-        context =
-            startAccessApplication(
-                AccessApplication::class.java,
+        val application =
+            RainApplication.start(
+                listOf(AccessApplication::class.java, LedgerRoutes::class.java),
                 WebApplicationType.SERVLET,
-                *accessProperties("server.port=0"),
-                *database.springProperties().toTypedArray(),
+                accessProperties("server.port=0").toList() + database.springProperties(),
             )
-        http = Http(context.port())
+        context = application.context
+        http = application.http
     }
 
     @AfterAll
@@ -142,6 +145,21 @@ class AccessHttpIT {
     }
 
     @Test
+    fun `HEAD on a route a DeclaresItsOwnAccess controller declares is held to its GET declaration, never a 500`() {
+        val subject = enrolled("ledger@example.test")
+        val bearer = "Authorization" to "Bearer ${signIn("ledger@example.test", "body").json()["accessToken"].asString()}"
+
+        val anonymous = http.send("HEAD", "/ledger")
+        val unpermitted = http.send("HEAD", "/ledger", null, bearer)
+        context.getBean(AccessProvisioning::class.java).grantRole(subject, "administrator")
+        val permitted = http.send("HEAD", "/ledger", null, bearer)
+
+        assertThat(listOf(anonymous, unpermitted, permitted).map { it.statusCode() }).containsExactly(401, 403, 200)
+        assertThat(permitted.body()).isEmpty()
+        assertThat(http.send("GET", "/ledger", null, bearer).body()).isEqualTo("[\"first\"]")
+    }
+
+    @Test
     fun `a permissioned route is 401 anonymous, 403 without the permission and 200 once a role grants it`() {
         val subject = enrolled("tickets@example.test")
         val bearer = "Authorization" to "Bearer ${signIn("tickets@example.test", "body").json()["accessToken"].asString()}"
@@ -186,6 +204,22 @@ class AccessHttpIT {
     }
 }
 
+/** A controller whose routes come from a table, as rain-crud's resources' do: it wears no `@Access` and answers its declaration. */
+@RestController
+class LedgerController : DeclaresItsOwnAccess {
+    @GetMapping("/ledger")
+    fun ledger(): List<String> = listOf("first")
+
+    override fun accessDeclarations(): List<EndpointDeclaration> =
+        listOf(EndpointDeclaration("GET", "/ledger", permissions = listOf(TICKET_READ)))
+}
+
+@Configuration(proxyBeanMethods = false)
+class LedgerRoutes {
+    @Bean
+    fun ledgerController(): LedgerController = LedgerController()
+}
+
 /** An audit recorder that refuses the signed-in event, standing in for an audit store that is down. */
 @Configuration(proxyBeanMethods = false)
 class FailingSignInAudit {
@@ -199,16 +233,17 @@ class AuditFailureLoginIT {
     @Test
     fun `a sign-in whose audit row cannot be written is 503 audit_unavailable, with no session and no cookie`() {
         val database = RainPostgres.freshDatabase("access_audit_failure")
-        SpringApplicationBuilder(AccessApplication::class.java, FailingSignInAudit::class.java)
-            .web(WebApplicationType.SERVLET)
-            .logStartupInfo(false)
-            .properties(*accessProperties("server.port=0"), *database.springProperties().toTypedArray())
-            .run()
-            .use { context ->
+        RainApplication
+            .start(
+                listOf(AccessApplication::class.java, FailingSignInAudit::class.java),
+                WebApplicationType.SERVLET,
+                accessProperties("server.port=0").toList() + database.springProperties(),
+            ).use { application ->
+                val context = application.context
                 val audit = context.getBean(RecordingAuditRecorder::class.java)
                 val subject = context.directory().add("ada@example.test")
                 context.getBean(AccessProvisioning::class.java).enrolPassword(subject, "ada@example.test", DEFAULT_PASSWORD)
-                val http = Http(context.port())
+                val http = application.http
 
                 val refused = http.send("POST", "/api/auth/agent/login", credentials("ada@example.test"), "Rain-Auth-Delivery" to "cookies")
 

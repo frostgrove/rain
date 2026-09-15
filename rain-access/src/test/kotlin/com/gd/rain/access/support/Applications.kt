@@ -5,31 +5,14 @@ import com.gd.rain.access.MountedSubject
 import com.gd.rain.access.PermissionDef
 import com.gd.rain.access.SubjectDirectory
 import com.gd.rain.access.SystemRoleDeclaration
-import com.gd.rain.jobs.Attempt
-import com.gd.rain.jobs.BackoffLadder
-import com.gd.rain.jobs.JobDefinition
-import com.gd.rain.jobs.JobHandler
-import com.gd.rain.jobs.JobProfile
 import com.gd.rain.web.route.Access
-import org.springframework.boot.WebApplicationType
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration
-import org.springframework.boot.builder.SpringApplicationBuilder
-import org.springframework.boot.web.server.context.WebServerApplicationContext
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.time.Duration
 import java.util.Base64
-
-data class Note(
-    val text: String,
-)
 
 const val TICKET_READ: String = "ticket.read"
 
@@ -40,7 +23,10 @@ class TicketController {
     fun tickets(): List<String> = listOf("first", "second")
 }
 
-/** A helpdesk-shaped application: one kind of subject, one module of grants, one system role, one job to satisfy rain-jobs. */
+/**
+ * A helpdesk-shaped application: one kind of subject, one module of grants, one system role. It declares no job of its own:
+ * rain-access's recurring work runs on rain-jobs whatever the application enqueues (`AccessWithoutJobDefinitionsIT`).
+ */
 @Configuration(proxyBeanMethods = false)
 @EnableAutoConfiguration
 class AccessApplication {
@@ -58,32 +44,6 @@ class AccessApplication {
 
     @Bean
     fun ticketController(): TicketController = TicketController()
-
-    @Bean
-    fun standardProfile(): JobProfile =
-        JobProfile(
-            "standard",
-            Duration.ofMinutes(1),
-            Duration.ofSeconds(30),
-            BackoffLadder(Duration.ofSeconds(1), Duration.ofSeconds(5)),
-            1,
-            1,
-            Duration.ofDays(1),
-        )
-
-    @Bean
-    fun notes(): JobDefinition<Note> = JobDefinition.of("notes.write", "standard")
-
-    @Bean
-    fun notesHandler(): JobHandler<Note> =
-        object : JobHandler<Note> {
-            override val definition: JobDefinition<Note> = JobDefinition.of("notes.write", "standard")
-
-            override fun handle(
-                payload: Note,
-                attempt: Attempt,
-            ) = Unit
-        }
 }
 
 /** The directory the application declared, for a test to add subjects to. */
@@ -106,7 +66,6 @@ fun accessProperties(vararg overrides: String): Array<String> {
             "rain.web.client-address" to "direct",
             "server.forward-headers-strategy" to "none",
             "rain.health.checks.database" to "informational",
-            "rain.jobs.workers.notes.write" to "1",
             "rain.jobs.required-recurring" to "",
             "rain.jobs.drain-grace" to "10s",
             "rain.jobs.reserved-connections" to "2",
@@ -140,42 +99,4 @@ fun accessProperties(vararg overrides: String): Array<String> {
         base[key] = value
     }
     return base.map { (key, value) -> "$key=$value" }.toTypedArray()
-}
-
-fun startAccessApplication(
-    source: Class<*>,
-    web: WebApplicationType,
-    vararg properties: String,
-): ConfigurableApplicationContext =
-    SpringApplicationBuilder(source)
-        .web(web)
-        .logStartupInfo(false)
-        .properties(*properties)
-        .run()
-
-fun ConfigurableApplicationContext.port(): Int = checkNotNull((this as WebServerApplicationContext).webServer).port
-
-/** A minimal HTTP client over a started application, carrying no cookie jar: every header a test sends is explicit. */
-class Http(
-    private val port: Int,
-) {
-    private val client: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
-
-    fun send(
-        method: String,
-        path: String,
-        body: String? = null,
-        vararg headers: Pair<String, String>,
-    ): HttpResponse<String> {
-        val request =
-            HttpRequest
-                .newBuilder(URI.create("http://127.0.0.1:$port$path"))
-                .timeout(Duration.ofSeconds(30))
-                .method(method, body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody())
-        if (body != null && headers.none { it.first.equals("Content-Type", ignoreCase = true) }) {
-            request.header("Content-Type", "application/json")
-        }
-        headers.forEach { (name, value) -> request.header(name, value) }
-        return client.send(request.build(), HttpResponse.BodyHandlers.ofString())
-    }
 }

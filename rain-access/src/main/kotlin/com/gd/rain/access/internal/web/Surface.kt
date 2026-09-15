@@ -41,9 +41,21 @@ public sealed interface DeclarationLookup {
 }
 
 /**
+ * The declaration of [method] at [pattern] among [declarations] (keyed `METHOD pattern`). A `GET` route also answers
+ * `HEAD` (RFC 9110 §9.3.2), so a `HEAD` with no declaration of its own is held to the `GET` declaration of its pattern —
+ * for a table-derived request mapping and a functional route alike.
+ */
+public fun declarationFor(
+    declarations: Map<String, EndpointDeclaration>,
+    method: String,
+    pattern: String,
+): EndpointDeclaration? = declarations["$method $pattern"] ?: declarations["GET $pattern"]?.takeIf { method == "HEAD" }
+
+/**
  * Where a handler's declaration comes from, for both the start-up verification and the enforcement of each request: a
  * [SurfaceExemption] for the handler's type, else its `@Access` (on the method, else on the class, composed annotations
- * included), else — for a handler that [DeclaresItsOwnAccess] — its declaration for the method and pattern.
+ * included), else — for a handler that [DeclaresItsOwnAccess] — its declaration for the method and pattern, a `HEAD`
+ * held to the `GET` declaration ([declarationFor]).
  */
 public class AccessDeclarations(
     private val exemptions: List<SurfaceExemption>,
@@ -64,7 +76,7 @@ public class AccessDeclarations(
             resource?.let { owner ->
                 derived.computeIfAbsent(owner) { it.accessDeclarations().associateBy(EndpointDeclaration::key) }
             }
-        return declared?.get("$method $pattern")?.let(DeclarationLookup::Declared) ?: DeclarationLookup.Undeclared
+        return declared?.let { declarationFor(it, method, pattern) }?.let(DeclarationLookup::Declared) ?: DeclarationLookup.Undeclared
     }
 
     public fun annotationOf(
@@ -137,8 +149,7 @@ public class AccessEnforcementInterceptor(
         val pattern =
             request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE) as? String
                 ?: error("a request routed to a functional route carries no matched pattern")
-        return functional["${request.method} $pattern"]
-            ?: functional["GET $pattern"]?.takeIf { request.method == "HEAD" }
+        return declarationFor(functional, request.method, pattern)
             ?: error("${request.method} $pattern is a functional route that declares no access; the start-up verification refuses that")
     }
 
@@ -161,8 +172,10 @@ public class AccessEnforcementInterceptor(
  * The start-up verification that the mounted surface and the declared surface are one: every request mapping declares
  * its access or is exempted by a [SurfaceExemption]; every functional route ([FunctionalRoutes]) is declared by a
  * `MountsItsOwnSurface`, and one the verification cannot read is refused; a mapping without a method stands for every method no other mapping
- * of its pattern names; nothing is declared twice or declared without being mounted; every declaration is well formed;
- * and every permission a declaration names is one a `ModuleGrants` declares.
+ * of its pattern names, and its `HEAD` is held to its pattern's `GET` declaration; nothing is declared twice; no
+ * `DeclaresItsOwnAccess` declaration names a route nothing mounts (a `MountsItsOwnSurface` declaration may: it can declare
+ * a route of another handler mapping); every declaration is well formed; and every permission a declaration names is one a
+ * `ModuleGrants` declares.
  */
 public class AccessSurfaceVerifier(
     private val mapping: () -> RequestMappingHandlerMapping?,
@@ -209,7 +222,8 @@ public class AccessSurfaceVerifier(
             found += declarationProblems(declaration, codes)
         }
         found += functionalProblems()
-        return found
+        // A HEAD entry held to its pattern's GET declaration checks that declaration a second time.
+        return found.distinct()
     }
 
     private fun functionalProblems(): List<ConfigurationProblem> {

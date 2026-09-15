@@ -19,7 +19,7 @@ import com.gd.rain.test.MutableClock
 import com.gd.rain.test.QueryPlan
 import com.gd.rain.test.RainDatabase
 import com.gd.rain.test.RainPostgres
-import org.assertj.core.api.Assertions.assertThat
+import com.gd.rain.test.RedisServer
 import org.flywaydb.core.Flyway
 import org.jooq.DSLContext
 import org.jooq.SQLDialect
@@ -31,10 +31,11 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy
 import org.springframework.transaction.support.TransactionTemplate
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
+import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 import kotlin.reflect.KClass
 
@@ -86,20 +87,11 @@ class AccessDatabase private constructor(
     }
 }
 
-/** The three Redis servers the revocation tests need, one container each for the whole test JVM. */
-object RedisServers {
-    const val IMAGE: String = "redis:8-alpine"
-    const val PORT: Int = 6379
+/** Connection factories to rain-test's Redis servers, and to a server that does not exist. */
+object RedisFactories {
+    fun of(server: RedisServer): LettuceConnectionFactory = of(server.host, server.port)
 
-    val retaining: GenericContainer<*> by lazy { start("--maxmemory-policy", "noeviction") }
-    val evicting: GenericContainer<*> by lazy { start("--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru") }
-
-    /** What a managed Redis looks like: it answers, and will not discuss its configuration. */
-    val silent: GenericContainer<*> by lazy { start("--maxmemory-policy", "noeviction", "--rename-command", "CONFIG", "") }
-
-    fun factory(container: GenericContainer<*>): LettuceConnectionFactory = factory(container.host, container.getMappedPort(PORT))
-
-    fun factory(
+    fun of(
         host: String,
         port: Int,
     ): LettuceConnectionFactory =
@@ -109,38 +101,27 @@ object RedisServers {
         }
 
     /** A factory whose server does not exist. */
-    fun unreachable(): LettuceConnectionFactory = factory("127.0.0.1", 1)
-
-    private fun start(vararg arguments: String): GenericContainer<*> =
-        GenericContainer(DockerImageName.parse(IMAGE))
-            .withExposedPorts(PORT)
-            .withCommand("redis-server", *arguments)
-            .also { it.start() }
+    fun unreachable(): LettuceConnectionFactory = of("127.0.0.1", 1)
 }
 
 /**
- * The plan PostgreSQL chooses once the shortcuts an almost empty test table invites are priced out: no sequential scan, no
- * bitmap scan and no sort wherever any other path exists. PostgreSQL marks a node it could not avoid as disabled, so a plan
- * with no disabled node reaches its rows the way it would in a table of any size.
+ * Re-evaluates [condition] until it holds. Each pause between two evaluations is a bounded wait on a latch nobody counts
+ * down, and the wait fails once [bound] has passed.
  */
-object ScalePlans {
-    fun explain(
-        dataSource: DataSource,
-        sql: String,
-    ): QueryPlan =
-        dataSource.connection.use { connection ->
-            connection.createStatement().use { statement ->
-                listOf("enable_seqscan", "enable_bitmapscan", "enable_sort").forEach { statement.execute("SET $it = off") }
-                statement.executeQuery("EXPLAIN (FORMAT JSON) $sql").use { rows ->
-                    check(rows.next()) { "EXPLAIN returned no plan" }
-                    // The page assertions below read node types and index names; no index descriptions are needed.
-                    QueryPlan(rows.getString(1), emptyList())
-                }
-            }
-        }
+fun awaitUntil(
+    what: String,
+    bound: Duration = Duration.ofSeconds(60),
+    condition: () -> Boolean,
+) {
+    val deadline = System.nanoTime() + bound.toNanos()
+    val pause = CountDownLatch(1)
+    while (!condition()) {
+        check(System.nanoTime() < deadline) { "timed out waiting for $what" }
+        pause.await(20, TimeUnit.MILLISECONDS)
+    }
 }
 
-/** The shape of a query plan, read from its JSON: which index scans carry a filter, and whether a sort sits under the limit. */
+/** The nodes of a query plan, read from its JSON, for an assertion plan criterion v3 does not make. */
 object PlanShape {
     private val json: JsonMapper = JsonMapper.builder().build()
 
@@ -153,30 +134,6 @@ object PlanShape {
         }
         json.readTree(plan.json).forEach { walk(it.get("Plan")) }
         return found
-    }
-
-    /**
-     * A keyset page proven bounded: [index] is used under a `Limit`, nothing is scanned sequentially, no `Sort` sits beneath
-     * the `Limit`, no node is one the planner could only use disabled, and the scans of [index] carry no `Filter` — every
-     * condition is an index condition, and a [conditioned] page (anything but an unconditioned first page) has one.
-     */
-    fun assertKeysetPage(
-        plan: QueryPlan,
-        index: String,
-        conditioned: Boolean = true,
-    ) {
-        val nodes = nodes(plan)
-        assertThat(plan.usesIndex(index)).describedAs("uses $index:\n${plan.json}").isTrue()
-        assertThat(plan.hasLimit()).describedAs("has a Limit:\n${plan.json}").isTrue()
-        assertThat(nodes.none { it.get("Node Type")?.asString() == "Seq Scan" }).describedAs("no sequential scan:\n${plan.json}").isTrue()
-        assertThat(nodes.none { it.get("Node Type")?.asString() == "Sort" }).describedAs("no sort:\n${plan.json}").isTrue()
-        val scans = nodes.filter { it.get("Index Name")?.asString() == index }
-        assertThat(scans).describedAs("scans of $index").isNotEmpty()
-        assertThat(nodes.none { it.get("Disabled")?.asBoolean() == true }).describedAs("no disabled node:\n${plan.json}").isTrue()
-        scans.forEach { scan ->
-            assertThat(scan.has("Filter")).describedAs("a filter on $index:\n${plan.json}").isFalse()
-            if (conditioned) assertThat(scan.has("Index Cond")).describedAs("index conditions on $index:\n${plan.json}").isTrue()
-        }
     }
 }
 

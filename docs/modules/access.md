@@ -37,7 +37,8 @@ store as `redis` adds Spring Boot's Data Redis module (`spring-boot-starter-data
 which brings Lettuce); without it the start is refused.
 
 What it brings comes with its own requirements: `rain.web`, `rain.persistence.statement-timeout` and `rain.jobs` are
-required, and a `worker` runs rain-access's recurring work on rain-jobs' schedulers.
+required, and a `worker` runs rain-access's recurring work on rain-jobs' schedulers. An application that declares no job
+of its own states no `rain.jobs.workers` (`AccessWithoutJobDefinitionsIT`).
 
 ## Concepts
 
@@ -102,7 +103,7 @@ With Spring Data Redis on the classpath and `revocation.store: redis`:
 
 | Bean | Role | What it is |
 |---|---|---|
-| `accessRevocationRedis` | every | the `RedisConnectionFactory` named or qualified `rainRevocation`, otherwise the application's one factory |
+| `accessRevocationRedis` | every | the `RedisConnectionFactory` named or qualified `rainRevocation`, otherwise the application's one factory — the only one, or the primary one; anything else refuses the start ([below](#what-the-deployment-states-besides-rainaccess)) |
 | `accessRevocationList` | every | the revocation list on that server |
 | `accessRevocationServerCheck` | `api`, `worker` | the server keeps every key it is given |
 | `accessRevocationHealthCheck` | `api`, `worker` | the `access.revocation` check |
@@ -112,7 +113,7 @@ With Spring Data Redis on the classpath and `attempts.store: redis`:
 
 | Bean | Role | What it is |
 |---|---|---|
-| `accessAttemptsRedis` | every | the `RedisConnectionFactory` named or qualified `rainAttempts`, otherwise the application's one factory |
+| `accessAttemptsRedis` | every | the `RedisConnectionFactory` named or qualified `rainAttempts`, otherwise the application's one factory, chosen as for the revocation list |
 | `accessRedisAttemptLimiter` | every | attempt counters on that server |
 | `accessAttemptsServerCheck` | `api` | the server keeps every key it is given |
 | `accessAttemptsHealthCheck` | `api` | the `access.attempts` check |
@@ -155,7 +156,7 @@ bound is refused, never corrected.
 | `rain.access.web.base-path` | required | the path every rain-access route is mounted under; the refresh cookie's path derives from it | one or more path segments with no trailing slash, `^(/[A-Za-z0-9._~-]+)+$` |
 | `rain.access.web.delivery` | required | where a sign-in's credentials go: `cookies`, `body` or `both` ([delivery](#delivery)) | one of the three |
 | `rain.access.web.page.default-size` | `50` | items of a list route that states no `limit` | at least 1 |
-| `rain.access.web.page.max-size` | `200` | the largest `limit` a list route and `GrantsLookup.directPermissionsOf` accept | at least 1; not below `default-size` (`contradicts`) |
+| `rain.access.web.page.max-size` | `200` | the largest `limit` a list route and `GrantsLookup.directPermissionsOf` accept; both refuse any other as `400 bad_query` with `out_of_range` at `/limit` | at least 1; not below `default-size` (`contradicts`) |
 | `rain.access.token.issuer` | required | the token's `iss`, and the only one accepted | not blank |
 | `rain.access.token.audience` | required | the token's `aud`, and the only one accepted | not blank |
 | `rain.access.token.signing-key` | required | the HS256 key ([signing key](#signing-key)) | resolves to at least 32 bytes; in `prod` not a raw literal, and from an environment variable |
@@ -164,7 +165,7 @@ bound is refused, never corrected.
 | `rain.access.session.idle-ttl` | required | a session not rotated for this long is unusable | positive; not longer than `session.ttl` (`contradicts`) |
 | `rain.access.session.refresh-grace` | `10s` | how long after a rotation the superseded refresh credential still rotates | positive; shorter than `session.idle-ttl` (`contradicts`) |
 | `rain.access.session.rotation-attempts` | `3` | how many times a rotation that lost its compare-and-set reads the session again | at least 1 |
-| `rain.access.session.revoke-batch` | `500` | sessions closed per transaction when every session of a subject is closed; also holders and permissions removed per transaction when a role is deleted | at least 1 |
+| `rain.access.session.revoke-batch` | `500` | sessions closed per transaction when every session of a subject is closed | at least 1 |
 | `rain.access.session.retention.keep-for` | required | how long an expired or closed session is kept | positive |
 | `rain.access.session.retention.interval` | required | how often retention runs | positive |
 | `rain.access.session.retention.batch` | `500` | rows one retention statement deletes | at least 1 |
@@ -197,6 +198,7 @@ bound is refused, never corrected.
 | `rain.access.gate.throttle.burst` | required | that bucket's size | at least 1 |
 | `rain.access.gate.throttle.callers` | required | client addresses the throttle tracks at once | at least 1 |
 | `rain.access.grants.max-roles-per-subject` | required | the most roles one subject may hold; it bounds the permission question | at least 1 |
+| `rain.access.grants.role-deletion-batch` | `500` | holders, then permissions, removed per transaction when an application role is deleted | at least 1 |
 | `rain.access.provisioning.holder-page-size` | `100` | holders one page of `usableHolderOf` reads | at least 1 |
 | `rain.access.provisioning.holder-page-budget` | `10` | pages `usableHolderOf` reads before it answers not evaluated | at least 1 |
 | `rain.access.catalogue.chunk-size` | `500` | declared permissions written per statement by the catalogue synchronisation | at least 1 |
@@ -256,7 +258,9 @@ rain:
 
 A store that should live on a server of its own is given one by the application: a `RedisConnectionFactory` bean named
 or qualified `rainRevocation` serves the revocation list, one named or qualified `rainAttempts` the attempt counters.
-Without one, the store uses the application's `RedisConnectionFactory`.
+Without one, the store uses the application's `RedisConnectionFactory`: the only one, or the one marked primary. Two
+factories qualified for one store, several factories with none primary and none qualified, or no factory at all refuse
+the start, for every store stated as `redis` at once, with a problem that names both qualifiers.
 
 ### Bean-time problems
 
@@ -272,6 +276,7 @@ Without one, the store uses the application's `RedisConnectionFactory`.
 | `resilience4j.bulkhead.instances.rain-access-hashing.max-concurrent-calls`, `.max-wait-duration` | `required` / `invalid` | not stated on the instance / below 1, negative | every process |
 | `resilience4j.bulkhead.instances.rain-access-hashing` | `contradicts` | a `BulkheadConfigCustomizer` names the instance | every process |
 | `rain.access.revocation.store`, `rain.access.attempts.store` | `contradicts` | `redis` without Spring Data Redis on the classpath | every process |
+| `rain.access.revocation.redis`, `rain.access.attempts.redis` | `contradicts` / `required` | a store on Redis has two factories named or qualified for it, or none and several application factories with none primary / no `RedisConnectionFactory` bean exists; reported when the store's connection is created, naming `rainRevocation` and `rainAttempts` | every process |
 | `access.surface:<METHOD path>` | `required` / `contradicts` / `invalid` | see [the surface](#the-surface-verification) | `api` |
 | `access.surface:functional-route` | `invalid` | a functional route the verification cannot read | `api` |
 | `rain.access.revocation.redis`, `rain.access.attempts.redis` | `invalid` | the server evicts keys, naming its policy, or is not reachable | revocation: `api`, `worker`; attempts: `api` |
@@ -372,7 +377,7 @@ A system role that grants every permission holds them; any other role is given t
 
 A system role refuses rename, delete and detach with `403 system_role`; attaching a permission to it is allowed. An
 application role is created with an explicit slug and deleted in bounded steps: its holders, then its permissions, are
-removed `session.revoke-batch` rows per transaction, then the role row. A bulk delete reads every named role first — an
+removed `grants.role-deletion-batch` rows per transaction, then the role row. A bulk delete reads every named role first — an
 unknown id is `404`, a system role `403 system_role` — and deletes nothing unless every one may go; each deletion is
 recorded on its own.
 
@@ -452,8 +457,8 @@ A functional route with no method predicate answers every method. The one exempt
 
 `AccessEnforcementInterceptor` runs before every handler of a request mapping or a functional route, before the handler's
 arguments — its body included — are read. It finds the declaration the verification checked: for a request mapping by
-the handler and its best-matching pattern, for a functional route by `METHOD pattern`, where a `HEAD` request with no
-`HEAD` declaration is held to the route's `GET` declaration (a `GET` route answers `HEAD`, RFC 9110 §9.3.2). A public
+the handler and its best-matching pattern, for a functional route by `METHOD pattern`; for either, a `HEAD` request with no
+`HEAD` declaration is held to the pattern's `GET` declaration (a `GET` route answers `HEAD`, RFC 9110 §9.3.2). A public
 declaration passes; otherwise the request needs a principal, and a permissioned one asks `GrantsLookup.heldBy` for exactly
 the named codes, once per request. A request that reaches a handler with no declaration is an internal failure, never a
 pass. A route another handler mapping serves — a WebSocket upgrade — is not enforced here: its `MountsItsOwnSurface`
@@ -496,7 +501,7 @@ request; `getName()` is `type:id`. It carries no permission list.
 |---|---|
 | `principalOf()` | the principal of the request running on this thread, or null |
 | `heldBy(subject, codes)` | the subset of `codes` the subject holds, in one bounded statement over exactly those codes; a code nothing declares is held by nobody; inside a servlet request, what was found is remembered for the rest of the request |
-| `directPermissionsOf(subject, after, limit)` | a keyset page of permissions granted to the subject directly, in permission-id order; `PermissionPage(items, next)`; `limit` 1 to `web.page.max-size`, otherwise `422 out_of_range` |
+| `directPermissionsOf(subject, after, limit)` | a keyset page of permissions granted to the subject directly, in permission-id order; `PermissionPage(items, next)`; `limit` 1 to `web.page.max-size`, otherwise `400 bad_query` with `out_of_range` at `/limit`, as a list route refuses it |
 | `directoryOf(type)` | the directory of a served type, or null |
 
 ```kotlin
@@ -607,8 +612,9 @@ The sessions page, `GET /api/auth/sessions?limit=10`:
 ```
 
 `userAgent` (at most 256 characters) and `address` are absent when the sign-in recorded none. `next` is always present,
-null on the last page; the session cursor is `<epoch microseconds>_<session id>`. A session a cutoff closed is left out of
-its page after the page is read, so a page can hold fewer than `limit` items and still have a `next`.
+null on the last page; the session cursor is `<epoch microseconds>_<session id>`. A page reads `limit + 1` open sessions;
+one that has expired, has been idle past `session.idle-ttl` or was closed by a cutoff is left out after the page is read, so
+a page can hold fewer than `limit` items — even none — and still have a `next`.
 
 ### Administration routes
 
@@ -634,8 +640,9 @@ its page after the page is read, so a page can hold fewer than `limit` items and
 
 A role is `{"id","slug","name","system","grantsEveryPermission","createdAt"}`; a permission
 `{"id","code","name","module","createdAt"}`. A page is `{"items":[…],"next":…}` with `next` the cursor of the following
-page or null. `limit` is 1 to `web.page.max-size` and defaults to `web.page.default-size`; a limit outside it or a
-parameter stated twice is `400 bad_query`, a cursor that cannot be read `400 invalid_cursor`. A list names no relation to
+page or null. `limit` is 1 to `web.page.max-size` and defaults to `web.page.default-size`; a limit outside it is
+`400 bad_query` with `out_of_range` at `/limit` (`invalid_format` when it is not a whole number), a parameter stated twice
+`400 bad_query`, a cursor that cannot be read `400 invalid_cursor`. A list names no relation to
 load alongside: a role's permissions are their own page.
 
 `PUT …/password` takes the identifier from the directory's profile, normalised the way sign-in normalises what it looks
@@ -760,7 +767,8 @@ told is `503 revocation_unavailable` after the session is closed in the database
 1. in one transaction, the subject's cutoff — "every session issued up to this instant is closed, except this one" — is
    written to `subject_cutoffs` with its evidence; a cutoff never replaces a later one;
 2. after it commits, the cutoff is announced as one revocation key, whatever the number of sessions;
-3. the sessions are marked closed `session.revoke-batch` per transaction, until a batch closes fewer.
+3. the sessions are marked closed in batches of `session.revoke-batch`, each read after the last session the one before
+   read and in a transaction of its own, until a batch reads fewer.
 
 From the commit on, the cutoff is what refuses those sessions: at every request, at rotation and in the session list. A
 list that could not be told is reported after the batches ran. Closing seven sessions costs one cutoff announcement and no
@@ -1013,22 +1021,23 @@ previous digest, a generation from 1, a version from 0. `sessions.revoked_reason
 | roles, permissions, a role's permissions, a subject's roles and direct permissions, a role's holders | `uq_roles_slug`, `uq_permissions_code`, `pk_role_permissions`, `pk_subject_roles`, `pk_subject_permissions`, `ix_subject_roles_role` | `limit + 1` rows, keyset; no total | `DirectoryPagesKeysetIT` |
 | replay pages | `ix_sessions_revoked`, `ix_subject_cutoffs_cutoff` | `replay.page-size` × `replay.pages-per-run` per kind per run | `DirectoryPagesKeysetIT`, `RevocationReplayIT` |
 | retention | `ix_sessions_expired`, `ix_sessions_revoked`, `ix_subject_cutoffs_cutoff` | `retention.batch` rows per statement, `retention.batches-per-run` per kind per run | `SessionsRetentionIT` |
-| closing every session of a subject | one cutoff row, one revocation key; then `session.revoke-batch` sessions per transaction | independent of the number of sessions until the batches | `LogoutAllWritesOneRedisKeyTest`, `SessionStoreIT` |
-| deleting a role | `session.revoke-batch` holders, then permissions, per transaction | independent of the number of holders per statement | `RoleAdministrationIT` |
-| catalogue synchronisation | inserts that keep existing rows, an indexed read of each chunk's codes | proportional to the declarations, never to what the tables hold | `CatalogueSynchronizerTest`, `AccessAggregateRoundTripIT` |
+| closing every session of a subject | one cutoff row, one revocation key; then a keyset batch of `ix_sessions_live`, closed by primary key | `session.revoke-batch` sessions per transaction, independent of the number of sessions | `LogoutAllWritesOneRedisKeyTest`, `SessionStoreIT`, `WriteAndLookupStatementsBoundedIT` |
+| deleting a role | a limited page of `ix_subject_roles_role`, then of `pk_role_permissions`, each row deleted by its primary key | `grants.role-deletion-batch` rows per transaction, independent of the number of holders | `RoleAdministrationIT`, `WriteAndLookupStatementsBoundedIT` |
+| catalogue synchronisation | inserts that keep existing rows, an indexed read of each chunk's codes | proportional to the declarations, never to what the tables hold | `CatalogueSynchronizerTest`, `AccessAggregateRoundTripIT`, `WriteAndLookupStatementsBoundedIT` |
 | the role ceiling | `subject_roles` counted up to `grants.max-roles-per-subject` | at most the ceiling | `AccessAggregateRoundTripIT` |
-| a usable holder | `ix_subject_roles_role`, then the page's ids through the credential indexes | `holder-page-size` × `holder-page-budget`, then `NotEvaluated` | `AccessProvisioningTest` |
+| a usable holder | `ix_subject_roles_role`, then the page's ids through `uq_credentials_subject_password`, at most one row per id | `holder-page-size` × `holder-page-budget`, then `NotEvaluated` | `AccessProvisioningTest`, `WriteAndLookupStatementsBoundedIT` |
 | sign-in, rotation, sign-out | `uq_credentials_identifier`; `uq_sessions_token_hash`, `ix_sessions_previous_token_hash`, the primary key | one row | — |
 | the revocation check | one `MGET` of two keys | per request | `RevocationListIT` |
 | attempt limiting | Redis: one script per key; memory: one heap root per room made | per attempt | `RedisAttemptLimiterIT`, `AttemptLimiterCapacityTest` |
 | hashing | the bulkhead's permits and `hashing.queue` | no pooled connection held while hashing | `LoginHoldsNoConnectionWhileHashingIT`, `HashingBulkheadTest` |
 
-The keyset pages are proven from the query plan with sequential scans, bitmap scans and sorts priced out: the named index
-under a `Limit`, no sequential scan, no sort, no node the planner could only use disabled, and no `Filter` on the index —
-every condition an index condition. The permission question is proven with rain-test's `QueryPlans`: no sequential scan of
-any grant table, the named indexes read by condition, and the one `Filter` allowed a correlated `EXISTS` over rows a lookup
-of the unique code index returned. Retention statements use their index under a `Limit`. None of these statements counts
-rows.
+The pages, the batches that close sessions and delete a role, the password question and the catalogue's id lookup are
+proven by plan criterion v3 of rain-test's `QueryPlan.boundedScan` for every table they read, with the named index: each
+reads its table by an index range under a `Limit`, or by a unique key a limited page drives. A joined page is limited
+before the join, so each joined row is a primary-key lookup. The permission question is proven with rain-test's
+`QueryPlans` by its shape instead — v3 does not accept a SubPlan run once per asked code — no sequential scan of any grant
+table, the named indexes read by condition, and the one `Filter` allowed a correlated `EXISTS` over rows a lookup of the
+unique code index returned. Retention statements use their index under a `Limit`. None of these statements counts rows.
 
 ## Recurring work, commands
 

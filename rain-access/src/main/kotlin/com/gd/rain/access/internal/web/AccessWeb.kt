@@ -11,6 +11,7 @@ import com.gd.rain.access.internal.store.PermissionRow
 import com.gd.rain.access.internal.store.RoleRow
 import com.gd.rain.access.internal.store.SessionCursor
 import com.gd.rain.access.internal.store.StoredSession
+import com.gd.rain.access.internal.usecase.AccessFaults
 import com.gd.rain.access.internal.usecase.Agent
 import com.gd.rain.access.internal.usecase.IssuedCredentials
 import com.gd.rain.core.error.ErrorCode
@@ -237,12 +238,15 @@ public class JsonBody private constructor(
 public class PageRequest(
     private val page: AccessProperties.Page,
 ) {
+    /**
+     * The stated limit, or the declared default. One that is not a whole number is `400 bad_query` with `invalid_format` at
+     * `/limit`; one outside 1..`max-size` is `400 bad_query` with `out_of_range` there, as a rain-crud list refuses it.
+     */
     public fun limit(request: HttpServletRequest): Int {
         val written = single(request, LIMIT) ?: return page.defaultSize
-        val limit = if (DIGITS.matches(written)) written.toIntOrNull() else null
-        if (limit == null || limit < 1 || limit > page.maxSize) {
-            throw Fault(FaultKind.BAD_REQUEST, RainErrorCodes.BAD_QUERY, "limit is a whole number from 1 to ${page.maxSize}")
-        }
+        if (!DIGITS.matches(written)) throw AccessFaults.badQuery(LIMIT, RainErrorCodes.INVALID_FORMAT, "is not a whole number")
+        val limit = written.toInt()
+        if (limit !in 1..page.maxSize) throw limitOutOfRange(page.maxSize)
         return limit
     }
 
@@ -287,6 +291,10 @@ public class PageRequest(
     public companion object {
         public const val LIMIT: String = "limit"
         public const val AFTER: String = "after"
+
+        /** A limit outside 1..[maximum]: `400 bad_query` with `out_of_range` at `/limit`, on a route and through `GrantsLookup` alike. */
+        public fun limitOutOfRange(maximum: Int): Fault =
+            AccessFaults.badQuery(LIMIT, RainErrorCodes.OUT_OF_RANGE, "is a whole number from 1 to $maximum")
 
         private val DIGITS = Regex("^[0-9]{1,9}$")
 

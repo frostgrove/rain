@@ -17,10 +17,10 @@ import com.gd.rain.access.internal.password.PasswordHasher
 import com.gd.rain.access.internal.store.CredentialInsert
 import com.gd.rain.access.internal.store.CredentialStore
 import com.gd.rain.access.internal.store.GrantStore
+import com.gd.rain.access.internal.web.PageRequest
 import com.gd.rain.audit.AuditDetail
 import com.gd.rain.audit.AuditEvent
 import com.gd.rain.audit.AuditOutcome
-import com.gd.rain.core.error.RainErrorCodes
 import com.gd.rain.core.id.IdGenerator
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.context.request.RequestAttributes
@@ -197,9 +197,7 @@ public class GrantsService(
         after: UUID?,
         limit: Int,
     ): PermissionPage {
-        if (limit !in 1..maxPageSize) {
-            throw AccessFaults.invalid("limit", RainErrorCodes.OUT_OF_RANGE, "a page holds 1..$maxPageSize items")
-        }
+        if (limit !in 1..maxPageSize) throw PageRequest.limitOutOfRange(maxPageSize)
         val page = pageOf(grants.subjectPermissionsPage(subject, after, limit + 1), limit) { it.permissionId }
         return PermissionPage(page.items, page.next)
     }

@@ -7,26 +7,21 @@ import com.gd.rain.sample.SampleApplication
 import com.gd.rain.sample.agent.AgentRegistry
 import com.gd.rain.sample.agent.Agents
 import com.gd.rain.sample.seed.RolesSeeder
+import com.gd.rain.test.ApplicationHttp
+import com.gd.rain.test.RainApplication
 import com.gd.rain.test.RainDatabase
+import com.gd.rain.test.RainRedis
+import com.gd.rain.test.RedisPolicy
 import org.assertj.core.api.Assertions.assertThat
-import org.springframework.boot.SpringApplication
 import org.springframework.boot.WebApplicationType
-import org.springframework.boot.builder.SpringApplicationBuilder
-import org.springframework.boot.web.server.context.WebServerApplicationContext
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.jdbc.core.JdbcTemplate
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.time.Duration
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -34,14 +29,12 @@ import java.util.concurrent.TimeUnit
 import kotlin.reflect.KClass
 
 /**
- * What every started sample shares in one test JVM: rain-test's PostgreSQL (a fresh database per test) and one Redis
- * that never evicts, as the deployment's revocation list and attempt counters need. Each process states only what a
- * deployment states per process — its stage, its role or command, where its dependencies are, its secrets — on top of
- * the sample's own `application.yml`.
+ * What every started sample shares in one test JVM: rain-test's PostgreSQL (a fresh database per test) and rain-test's
+ * Redis that never evicts, as the deployment's revocation list and attempt counters need. Each process states only what a
+ * deployment states per process — its stage, its role or command, where its dependencies are, its secrets — on top of the
+ * sample's own `application.yml`.
  */
 object Stand {
-    const val REDIS_IMAGE = "redis:8"
-    const val REDIS_PORT = 6379
     const val PASSWORD = "correct horse battery staple"
 
     /** A test deployment's signing key: 32 fixed bytes, stated from a file, which the `test` stage accepts. */
@@ -49,24 +42,19 @@ object Stand {
 
     val JSON: JsonMapper = JsonMapper.builder().build()
 
-    private val redis: GenericContainer<*> by lazy {
-        GenericContainer(DockerImageName.parse(REDIS_IMAGE))
-            .withExposedPorts(REDIS_PORT)
-            .withCommand("redis-server", "--maxmemory-policy", "noeviction")
-            .also { it.start() }
-    }
+    private val redis get() = RainRedis.shared(RedisPolicy.RETAINING)
 
     val redisHost: String get() = redis.host
-    val redisPort: Int get() = redis.getMappedPort(REDIS_PORT)
+    val redisPort: Int get() = redis.port
 
     /**
-     * The properties of one process against [database], as `--name=value` arguments, which outrank `application.yml`
-     * the way a deployment's environment does. [process] adds or replaces entries.
+     * The properties of one process against [database], as `name=value`; `RainApplication` states them as command-line
+     * arguments, which outrank `application.yml` the way a deployment's environment does. [process] adds or replaces entries.
      */
-    fun arguments(
+    fun properties(
         database: RainDatabase,
         vararg process: String,
-    ): Array<String> {
+    ): List<String> {
         val stated =
             linkedMapOf(
                 "rain.deployment.stage" to "test",
@@ -92,7 +80,7 @@ object Stand {
             val (key, value) = entry.split('=', limit = 2)
             stated[key] = value
         }
-        return stated.map { (key, value) -> "--$key=$value" }.toTypedArray()
+        return stated.map { (key, value) -> "$key=$value" }
     }
 
     /** Runs [command] to its end against [database], in this JVM, and answers its exit code and output. */
@@ -106,12 +94,13 @@ object Stand {
         val err = ByteArrayOutputStream()
         CapturedOutput.current = CommandOutput(PrintStream(out, true, Charsets.UTF_8), PrintStream(err, true, Charsets.UTF_8))
         try {
-            val context =
-                SpringApplicationBuilder(*(listOf(SampleApplication::class.java, CapturedOutput::class.java) + sources).toTypedArray())
-                    .web(WebApplicationType.NONE)
-                    .logStartupInfo(false)
-                    .run(*arguments(database, "rain.runtime.command=$command", *process))
-            val code = SpringApplication.exit(context)
+            val application =
+                RainApplication.start(
+                    listOf(SampleApplication::class.java, CapturedOutput::class.java) + sources,
+                    WebApplicationType.NONE,
+                    properties(database, "rain.runtime.command=$command", *process),
+                )
+            val code = application.exit()
             return CommandRun(code, out.toString(Charsets.UTF_8), err.toString(Charsets.UTF_8))
         } finally {
             CapturedOutput.current = null
@@ -147,18 +136,20 @@ class CapturedOutput {
     }
 }
 
-/** One started process of the sample. */
+/** One started process of the sample, served like a deployment's: a servlet application in its role. */
 class SampleProcess private constructor(
-    val context: ConfigurableApplicationContext,
+    private val application: RainApplication,
 ) : AutoCloseable {
-    val port: Int get() = checkNotNull((context as WebServerApplicationContext).webServer).port
+    val context: ConfigurableApplicationContext get() = application.context
 
-    val http: Http by lazy { Http(port) }
+    val port: Int get() = application.port
 
-    fun <T : Any> bean(type: KClass<T>): T = context.getBean(type.java)
+    val http: ApplicationHttp get() = application.http
+
+    fun <T : Any> bean(type: KClass<T>): T = application.bean(type)
 
     override fun close() {
-        context.close()
+        application.close()
     }
 
     companion object {
@@ -168,9 +159,11 @@ class SampleProcess private constructor(
             sources: List<Class<*>> = emptyList(),
         ): SampleProcess =
             SampleProcess(
-                SpringApplicationBuilder(*(listOf(SampleApplication::class.java) + sources).toTypedArray())
-                    .logStartupInfo(false)
-                    .run(*Stand.arguments(database, *process)),
+                RainApplication.start(
+                    listOf(SampleApplication::class.java) + sources,
+                    WebApplicationType.SERVLET,
+                    Stand.properties(database, *process),
+                ),
             )
 
         fun api(
@@ -185,40 +178,6 @@ class SampleProcess private constructor(
             sources: List<Class<*>> = emptyList(),
         ): SampleProcess = start(database, "rain.runtime.roles=worker", *process, sources = sources)
     }
-}
-
-/** A minimal HTTP client over a started process, with no cookie jar: every header a test sends is written by the test. */
-class Http(
-    private val port: Int,
-) {
-    val client: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
-
-    fun uri(path: String): URI = URI.create("http://127.0.0.1:$port$path")
-
-    fun send(
-        method: String,
-        path: String,
-        body: String? = null,
-        vararg headers: Pair<String, String>,
-    ): HttpResponse<String> {
-        val request =
-            HttpRequest
-                .newBuilder(uri(path))
-                .timeout(Duration.ofSeconds(60))
-                .method(method, body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody())
-        if (body != null &&
-            headers.none { it.first.equals("Content-Type", ignoreCase = true) }
-        ) {
-            request.header("Content-Type", "application/json")
-        }
-        headers.forEach { (name, value) -> request.header(name, value) }
-        return client.send(request.build(), HttpResponse.BodyHandlers.ofString())
-    }
-
-    fun get(
-        path: String,
-        vararg headers: Pair<String, String>,
-    ): HttpResponse<String> = send("GET", path, null, *headers)
 }
 
 fun HttpResponse<String>.json(): JsonNode = Stand.JSON.readTree(body())

@@ -7,6 +7,7 @@ import com.gd.rain.sample.stand.SampleProcess
 import com.gd.rain.sample.stand.Staff
 import com.gd.rain.sample.stand.Stand
 import com.gd.rain.sample.stand.json
+import com.gd.rain.test.RainApplication
 import com.gd.rain.test.RainDatabase
 import com.gd.rain.test.RainPostgres
 import org.assertj.core.api.Assertions.assertThat
@@ -15,7 +16,6 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.springframework.boot.SpringApplication
 import org.springframework.boot.WebApplicationType
-import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.context.annotation.Bean
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -254,15 +254,20 @@ class SeedCommandIT {
                 .CommandOutput(PrintStream(ByteArrayOutputStream(), true), PrintStream(ByteArrayOutputStream(), true))
         val seeding =
             try {
-                SpringApplicationBuilder(SampleApplication::class.java, CapturedOutput::class.java)
-                    .web(WebApplicationType.NONE)
-                    .logStartupInfo(false)
-                    .run(*Stand.arguments(database, "rain.runtime.command=seed"))
+                RainApplication.start(
+                    listOf(SampleApplication::class.java, CapturedOutput::class.java),
+                    WebApplicationType.NONE,
+                    Stand.properties(database, "rain.runtime.command=seed"),
+                )
             } finally {
                 CapturedOutput.current = null
             }
-        val seeders = seeding.getBeansOfType(Seeder::class.java).values.map { it.name }
-        SpringApplication.exit(seeding)
+        val seeders =
+            seeding.context
+                .getBeansOfType(Seeder::class.java)
+                .values
+                .map { it.name }
+        seeding.exit()
 
         assertThat(seeders).containsExactlyInAnyOrder("helpdesk.roles", "helpdesk.agents")
         SampleProcess.api(database).use { api -> assertThat(api.context.getBeansOfType(Seeder::class.java)).isEmpty() }

@@ -2,9 +2,11 @@ package com.gd.rain.access.it
 
 import com.gd.rain.access.EvictionPolicyAttestation
 import com.gd.rain.access.internal.revocation.EvictionPolicyCheck
-import com.gd.rain.access.support.RedisServers
+import com.gd.rain.access.support.RedisFactories
 import com.gd.rain.core.config.ConfigurationProblem
 import com.gd.rain.core.config.ProblemCode
+import com.gd.rain.test.RainRedis
+import com.gd.rain.test.RedisPolicy
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -28,13 +30,13 @@ class RevocationServerPolicyIT {
 
     @Test
     fun `a server configured noeviction passes`() {
-        assertThat(problems(RedisServers.factory(RedisServers.retaining))).isEmpty()
+        assertThat(problems(RedisFactories.of(RainRedis.shared(RedisPolicy.RETAINING)))).isEmpty()
     }
 
     @Test
     fun `a server that evicts under memory pressure is refused naming its policy, and an attestation does not overrule its answer`() {
         listOf(null, EvictionPolicyAttestation.NOEVICTION).forEach { attested ->
-            val found = problems(RedisServers.factory(RedisServers.evicting), attested)
+            val found = problems(RedisFactories.of(RainRedis.shared(RedisPolicy.EVICTING)), attested)
 
             assertThat(found).singleElement().matches(
                 { it.path == SERVER_PATH && it.code == ProblemCode.INVALID && it.message.contains("allkeys-lru") },
@@ -45,8 +47,8 @@ class RevocationServerPolicyIT {
 
     @Test
     fun `a server with CONFIG disabled is refused until the deployment attests noeviction, and then reported not evaluated`() {
-        val unattested = problems(RedisServers.factory(RedisServers.silent))
-        val attested = problems(RedisServers.factory(RedisServers.silent), EvictionPolicyAttestation.NOEVICTION)
+        val unattested = problems(RedisFactories.of(RainRedis.shared(RedisPolicy.SILENT)))
+        val attested = problems(RedisFactories.of(RainRedis.shared(RedisPolicy.SILENT)), EvictionPolicyAttestation.NOEVICTION)
 
         assertThat(unattested).singleElement().matches({ it.path == ATTESTATION_PATH && it.code == ProblemCode.REQUIRED }, "required")
         assertThat(
@@ -58,7 +60,7 @@ class RevocationServerPolicyIT {
     @Test
     fun `no server at all is refused, attested or not`() {
         listOf(null, EvictionPolicyAttestation.NOEVICTION).forEach { attested ->
-            assertThat(problems(RedisServers.unreachable(), attested)).singleElement().matches(
+            assertThat(problems(RedisFactories.unreachable(), attested)).singleElement().matches(
                 { it.path == SERVER_PATH && it.code == ProblemCode.INVALID && it.message.contains("not reachable") },
                 "unreachable",
             )

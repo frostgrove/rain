@@ -150,6 +150,44 @@ class TicketCrudE2E {
     }
 
     @Test
+    fun `HEAD on the ticket list is held to its GET declaration - 401 for nobody, 200 with no body for an agent`() {
+        val recent = "/v1/tickets" + query("sort" to "-updatedAt")
+        val anonymous = api.http.send("HEAD", recent)
+        val signedIn = api.http.send("HEAD", recent, null, supervisor)
+
+        assertThat(anonymous.statusCode()).isEqualTo(401)
+        assertThat(signedIn.statusCode()).describedAs(signedIn.headers().map().toString()).isEqualTo(200)
+        assertThat(signedIn.body()).isEmpty()
+    }
+
+    @Test
+    fun `a responder lists its own open tickets by priority with the shape a supervisor uses for any agent`() {
+        val (responder, bearer) = agent("prioritised")
+        val (other, _) = agent("unprioritised")
+        val mine = open(supervisor, "mine by priority", responder, priority = 70)["id"].asString()
+        open(supervisor, "theirs by priority", other, priority = 90)
+
+        val own =
+            api.http.get(
+                "/v1/tickets" +
+                    query(
+                        "filter[assignee][eq]" to responder.toString(),
+                        "filter[status][eq]" to "open",
+                        "sort" to "-priority",
+                    ),
+                bearer,
+            )
+        val another =
+            api.http.get(
+                "/v1/tickets" + query("filter[assignee][eq]" to other.toString(), "filter[status][eq]" to "open", "sort" to "-priority"),
+                bearer,
+            )
+
+        assertThat(ids(own.json())).containsExactly(mine)
+        assertThat(ids(another.json())).describedAs("the scope confines a filter naming another agent").isEmpty()
+    }
+
+    @Test
     fun `a query no declared shape serves is 400 not_offered`() {
         val bySort = api.http.get("/v1/tickets" + query("sort" to "title"), supervisor)
         val byFilter = api.http.get("/v1/tickets" + query("filter[priority][eq]" to "1"), supervisor)

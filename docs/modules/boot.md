@@ -223,6 +223,23 @@ do not run in it ([runtime roles and commands](../concepts/runtime-roles-and-com
 
 `seed` runs every `Seeder` bean by ascending `order`, then `name`.
 
+A command's result is its standard output. Every command runs with no web server and no banner:
+`RainRuntimeEnvironmentPostProcessor` states `spring.main.web-application-type=none` and `spring.main.banner-mode=off` with
+the highest precedence, the banner whatever the deployment or the command's declaration states. Log lines go where the
+application's logging configuration sends them; rain-boot reads none of it, and ships
+`com/gd/rain/boot/logging/logback/console-stderr-appender.xml` — Spring Boot's console appender, writing to standard error —
+for a `logback-spring.xml` to include in place of Boot's (`CommandKeepsStandardOutputTest`):
+
+```xml
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="com/gd/rain/boot/logging/logback/console-stderr-appender.xml"/>
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
+```
+
 ## Error codes, health checks, schema
 
 None.

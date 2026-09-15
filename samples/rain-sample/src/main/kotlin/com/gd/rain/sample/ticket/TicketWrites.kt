@@ -7,6 +7,7 @@ import com.gd.rain.audit.AuditRecorder
 import com.gd.rain.core.error.Fault
 import com.gd.rain.core.error.path
 import com.gd.rain.crud.CrudIds
+import com.gd.rain.crud.CrudResource
 import com.gd.rain.jobs.admin.JobAdministration
 import com.gd.rain.persistence.tx.TransactionRetry
 import com.gd.rain.realtime.Channel
@@ -50,7 +51,7 @@ class TicketEvents(
  * and the `NOTIFY` commit together or not at all. A transaction that fails with a SQLSTATE repetition fixes runs again.
  */
 class TicketWrites(
-    private val resources: TicketResources,
+    private val tickets: CrudResource<Ticket>,
     private val rows: TicketRows,
     private val audit: AuditRecorder,
     private val events: TicketEvents,
@@ -64,7 +65,7 @@ class TicketWrites(
     /** Opens a ticket from a client's write body, within the caller's scope (`403 outside_scope` otherwise). */
     fun create(body: String?): Ticket =
         inTransaction {
-            val created = resources.forCaller().create(TicketInputs.Create(body, clock))
+            val created = tickets.create(TicketInputs.Create(body, clock))
             audit.record(
                 AuditEvent(
                     TicketAudit.CREATED,
@@ -89,7 +90,7 @@ class TicketWrites(
     ): Ticket =
         inTransaction {
             val change = TicketInputs.Change(body, clock)
-            val written = resources.forCaller().update(id, change)
+            val written = tickets.update(id, change)
             val revision = revisionOf(written)
             audit.record(
                 AuditEvent(
@@ -106,12 +107,11 @@ class TicketWrites(
     /** Closes the ticket [id] within the caller's scope; a ticket that is closed already is `409 ticket_closed`. */
     fun close(id: String): Ticket =
         inTransaction {
-            val resource = resources.forCaller()
-            val ticketId = idOf(resource.get(id, NO_PARAMETERS))
+            val ticketId = idOf(tickets.get(id, NO_PARAMETERS))
             val locked = rows.lock(ticketId) ?: throw Fault.notFound()
             if (locked.status == TicketStatus.CLOSED) throw Fault.conflict(SampleErrorCodes.TICKET_CLOSED)
             val written =
-                resource.update(
+                tickets.update(
                     ticketId,
                     mapOf(
                         TicketFields.STATUS.name to TicketStatus.CLOSED,
@@ -135,7 +135,7 @@ class TicketWrites(
     /** Deletes the ticket [id] within the caller's scope and cancels every job about it, in the same transaction. */
     fun delete(id: String) {
         inTransaction {
-            resources.forCaller().delete(id)
+            tickets.delete(id)
             val ticketId = CrudIds.parse(id, path("id"))
             val cancelled = jobs.cancelBySubject(SummaryJobs.subjectOf(ticketId))
             audit.record(

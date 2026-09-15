@@ -39,4 +39,6 @@ dependencies {
     testImplementation("ch.qos.logback:logback-classic")
     testImplementation("org.junit.jupiter:junit-jupiter-params")
     testImplementation("org.testcontainers:testcontainers")
+    // A configuration file a test application imports, as a deployment writes one.
+    testImplementation("org.yaml:snakeyaml")
 }

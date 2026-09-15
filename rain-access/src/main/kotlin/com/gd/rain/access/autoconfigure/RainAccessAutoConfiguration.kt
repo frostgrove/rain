@@ -12,6 +12,8 @@ import com.gd.rain.access.SurfaceExemption
 import com.gd.rain.access.SystemRoleDeclaration
 import com.gd.rain.access.internal.HashingBulkheadCheck
 import com.gd.rain.access.internal.RedisClientCheck
+import com.gd.rain.access.internal.RedisConnectionChoice
+import com.gd.rain.access.internal.RedisQualifiers
 import com.gd.rain.access.internal.UnavailableAttemptLimiter
 import com.gd.rain.access.internal.UnavailableRevocationList
 import com.gd.rain.access.internal.attempt.AttemptLimiter
@@ -117,6 +119,7 @@ import io.github.resilience4j.common.bulkhead.configuration.BulkheadConfigCustom
 import io.github.resilience4j.common.bulkhead.configuration.CommonBulkheadConfigurationProperties
 import jakarta.servlet.Filter
 import org.jooq.DSLContext
+import org.springframework.beans.factory.ListableBeanFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.AutoConfiguration
@@ -500,7 +503,7 @@ public class RainAccessAutoConfiguration {
         ids: IdGenerator,
         properties: AccessProperties,
         clock: Clock,
-    ): RoleAdministration = RoleAdministration(grants, audit, transactions, ids, properties.session.revokeBatch, clock)
+    ): RoleAdministration = RoleAdministration(grants, audit, transactions, ids, properties.grants.roleDeletionBatch, clock)
 
     @Bean
     @ConditionalOnMissingBean
@@ -590,7 +593,10 @@ public class RainAccessAutoConfiguration {
             )
     }
 
-    /** Redis-backed stores; the client is the application's, and the connection factory is Boot's or one it qualifies. */
+    /**
+     * Redis-backed stores; the client is the application's, and each store's connection factory is the one named or qualified
+     * for it, or the application's one factory ([RedisConnectionChoice]).
+     */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = [REDIS_CONNECTION_FACTORY])
     public class RedisStores {
@@ -599,9 +605,17 @@ public class RainAccessAutoConfiguration {
         public class Revocation {
             @Bean
             public fun accessRevocationRedis(
-                @Qualifier(REVOCATION_QUALIFIER) qualified: ObjectProvider<RedisConnectionFactory>,
-                any: ObjectProvider<RedisConnectionFactory>,
-            ): AccessRedisConnection = AccessRedisConnection(qualified.ifAvailable ?: any.getObject())
+                properties: AccessProperties,
+                @Qualifier(REVOCATION_QUALIFIER) revocation: ObjectProvider<RedisConnectionFactory>,
+                @Qualifier(ATTEMPTS_QUALIFIER) attempts: ObjectProvider<RedisConnectionFactory>,
+                application: ObjectProvider<RedisConnectionFactory>,
+                beans: ListableBeanFactory,
+            ): AccessRedisConnection =
+                AccessRedisConnection(
+                    RedisConnectionChoice
+                        .forStores(properties, revocation, attempts, application, factoryNames(beans))
+                        .factoryOf(REVOCATION_QUALIFIER),
+                )
 
             @Bean
             public fun accessRevocationList(
@@ -647,9 +661,17 @@ public class RainAccessAutoConfiguration {
         public class Attempts {
             @Bean
             public fun accessAttemptsRedis(
-                @Qualifier(ATTEMPTS_QUALIFIER) qualified: ObjectProvider<RedisConnectionFactory>,
-                any: ObjectProvider<RedisConnectionFactory>,
-            ): AccessAttemptsRedisConnection = AccessAttemptsRedisConnection(qualified.ifAvailable ?: any.getObject())
+                properties: AccessProperties,
+                @Qualifier(REVOCATION_QUALIFIER) revocation: ObjectProvider<RedisConnectionFactory>,
+                @Qualifier(ATTEMPTS_QUALIFIER) attempts: ObjectProvider<RedisConnectionFactory>,
+                application: ObjectProvider<RedisConnectionFactory>,
+                beans: ListableBeanFactory,
+            ): AccessAttemptsRedisConnection =
+                AccessAttemptsRedisConnection(
+                    RedisConnectionChoice
+                        .forStores(properties, revocation, attempts, application, factoryNames(beans))
+                        .factoryOf(ATTEMPTS_QUALIFIER),
+                )
 
             @Bean
             public fun accessRedisAttemptLimiter(
@@ -678,6 +700,11 @@ public class RainAccessAutoConfiguration {
 
             private fun attempts(properties: AccessProperties): AccessProperties.RedisAttempts =
                 checkNotNull(properties.attempts.redis) { "rain.access.attempts.redis is validated as stated" }
+        }
+
+        private companion object {
+            fun factoryNames(beans: ListableBeanFactory): List<String> =
+                beans.getBeanNamesForType(RedisConnectionFactory::class.java).sorted()
         }
     }
 
@@ -893,10 +920,10 @@ public class RainAccessAutoConfiguration {
         public const val MODULE: String = "access"
 
         /** The bean name or qualifier of a connection factory dedicated to the revocation list. */
-        public const val REVOCATION_QUALIFIER: String = "rainRevocation"
+        public const val REVOCATION_QUALIFIER: String = RedisQualifiers.REVOCATION
 
         /** The bean name or qualifier of a connection factory dedicated to the attempt counters. */
-        public const val ATTEMPTS_QUALIFIER: String = "rainAttempts"
+        public const val ATTEMPTS_QUALIFIER: String = RedisQualifiers.ATTEMPTS
 
         public const val REVOCATION_HEALTH: String = "access.revocation"
         public const val ATTEMPTS_HEALTH: String = "access.attempts"

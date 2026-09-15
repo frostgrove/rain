@@ -4,6 +4,7 @@ import com.gd.rain.access.jooq.Tables.PERMISSIONS
 import com.gd.rain.access.jooq.Tables.ROLES
 import com.gd.rain.access.jooq.Tables.ROLE_PERMISSIONS
 import org.jooq.DSLContext
+import org.jooq.Select
 import org.jooq.impl.DSL
 import java.time.Instant
 import java.util.UUID
@@ -56,11 +57,16 @@ public class JooqCatalogueStore(
 
     override fun permissionIds(codes: Collection<String>): Map<String, UUID> {
         if (codes.isEmpty()) return emptyMap()
+        return dsl.fetch(permissionIdsQuery(codes)).associate { it[PERMISSIONS.CODE] to it[PERMISSIONS.ID] }
+    }
+
+    /** The statement [permissionIds] runs: a lookup of `uq_permissions_code` by exactly the asked codes. */
+    public fun permissionIdsQuery(codes: Collection<String>): Select<*> {
+        require(codes.isNotEmpty()) { "a lookup of permission ids names at least one code" }
         return dsl
             .select(PERMISSIONS.CODE, PERMISSIONS.ID)
             .from(PERMISSIONS)
             .where(PERMISSIONS.CODE.`in`(codes))
-            .fetchMap(PERMISSIONS.CODE, PERMISSIONS.ID)
     }
 
     override fun declareSystemRole(

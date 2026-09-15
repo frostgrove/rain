@@ -77,9 +77,15 @@ public interface DeclaresItsOwnAccess {
 }
 
 /**
- * Routes a component mounts outside request mappings, with the access each declares, verified against what is mounted.
- * A functional `RouterFunction` route is enforced from its declaration like an `@Access` handler; a route mounted
- * through any other handler mapping (a WebSocket upgrade) must check the access it declares itself, before it serves.
+ * Routes a component mounts outside request mappings, with the access each declares.
+ *
+ * What the surface verification checks (rain-access's): every functional `RouterFunction` route it can read is declared
+ * by some `MountsItsOwnSurface`, and one it cannot read refuses the start; every declaration is well formed, names only
+ * permissions a module declares, and is not declared twice. A declaration that matches no mounted route is not refused:
+ * a route of another handler mapping (a WebSocket upgrade) is declared here too, and the verification cannot see it.
+ *
+ * A functional route is enforced from its declaration like an `@Access` handler; a route mounted through any other
+ * handler mapping must check the access it declares itself, before it serves.
  */
 public interface MountsItsOwnSurface {
     public fun mountedDeclarations(): List<EndpointDeclaration>

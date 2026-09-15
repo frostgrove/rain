@@ -290,20 +290,29 @@ public class JooqGrantStore(
         limit: Int,
     ): List<PermissionRow> = dsl.fetch(rolePermissionsPageQuery(role, afterPermission, limit)).map { permissionOf(it) }
 
+    /** A keyset page of the role's permission ids, limited before each is joined to its permission by primary key. */
     public fun rolePermissionsPageQuery(
         role: UUID,
         afterPermission: UUID?,
         limit: Int,
-    ): Select<*> =
-        dsl
+    ): Select<*> {
+        val page =
+            dsl
+                .select(ROLE_PERMISSIONS.PERMISSION_ID)
+                .from(ROLE_PERMISSIONS)
+                .where(ROLE_PERMISSIONS.ROLE_ID.eq(role))
+                .and(afterPermission?.let(ROLE_PERMISSIONS.PERMISSION_ID::gt) ?: DSL.noCondition())
+                .orderBy(ROLE_PERMISSIONS.PERMISSION_ID)
+                .limit(bounded(limit))
+                .asTable(PAGE)
+        val permission = checkNotNull(page.field(ROLE_PERMISSIONS.PERMISSION_ID))
+        return dsl
             .select(PERMISSIONS.fields().toList())
-            .from(ROLE_PERMISSIONS)
+            .from(page)
             .join(PERMISSIONS)
-            .on(PERMISSIONS.ID.eq(ROLE_PERMISSIONS.PERMISSION_ID))
-            .where(ROLE_PERMISSIONS.ROLE_ID.eq(role))
-            .and(afterPermission?.let(ROLE_PERMISSIONS.PERMISSION_ID::gt) ?: DSL.noCondition())
-            .orderBy(ROLE_PERMISSIONS.PERMISSION_ID)
-            .limit(bounded(limit))
+            .on(PERMISSIONS.ID.eq(permission))
+            .orderBy(permission)
+    }
 
     override fun attach(
         role: UUID,
@@ -411,24 +420,37 @@ public class JooqGrantStore(
         limit: Int,
     ): List<HeldRole> =
         dsl.fetch(subjectRolesPageQuery(subject, afterRole, limit)).map {
-            HeldRole(it[SUBJECT_ROLES.ROLE_ID], it[ROLES.SLUG], it[SUBJECT_ROLES.GRANTED_AT].toInstant())
+            HeldRole(
+                it.get(SUBJECT_ROLES.ROLE_ID.name, UUID::class.java),
+                it[ROLES.SLUG],
+                it.get(SUBJECT_ROLES.GRANTED_AT.name, java.time.OffsetDateTime::class.java).toInstant(),
+            )
         }
 
+    /** A keyset page of the subject's roles, limited before each is joined to its role by primary key for the slug. */
     public fun subjectRolesPageQuery(
         subject: SubjectRef,
         afterRole: UUID?,
         limit: Int,
-    ): Select<*> =
-        dsl
-            .select(SUBJECT_ROLES.ROLE_ID, ROLES.SLUG, SUBJECT_ROLES.GRANTED_AT)
-            .from(SUBJECT_ROLES)
+    ): Select<*> {
+        val page =
+            dsl
+                .select(SUBJECT_ROLES.ROLE_ID, SUBJECT_ROLES.GRANTED_AT)
+                .from(SUBJECT_ROLES)
+                .where(SUBJECT_ROLES.SUBJECT_TYPE.eq(subject.type.name))
+                .and(SUBJECT_ROLES.SUBJECT_ID.eq(subject.id))
+                .and(afterRole?.let(SUBJECT_ROLES.ROLE_ID::gt) ?: DSL.noCondition())
+                .orderBy(SUBJECT_ROLES.ROLE_ID)
+                .limit(bounded(limit))
+                .asTable(PAGE)
+        val role = checkNotNull(page.field(SUBJECT_ROLES.ROLE_ID))
+        return dsl
+            .select(role.`as`(SUBJECT_ROLES.ROLE_ID.name), ROLES.SLUG, checkNotNull(page.field(SUBJECT_ROLES.GRANTED_AT)))
+            .from(page)
             .join(ROLES)
-            .on(ROLES.ID.eq(SUBJECT_ROLES.ROLE_ID))
-            .where(SUBJECT_ROLES.SUBJECT_TYPE.eq(subject.type.name))
-            .and(SUBJECT_ROLES.SUBJECT_ID.eq(subject.id))
-            .and(afterRole?.let(SUBJECT_ROLES.ROLE_ID::gt) ?: DSL.noCondition())
-            .orderBy(SUBJECT_ROLES.ROLE_ID)
-            .limit(bounded(limit))
+            .on(ROLES.ID.eq(role))
+            .orderBy(role)
+    }
 
     override fun subjectPermissionsPage(
         subject: SubjectRef,
@@ -436,24 +458,40 @@ public class JooqGrantStore(
         limit: Int,
     ): List<GrantedPermission> =
         dsl.fetch(subjectPermissionsPageQuery(subject, afterPermission, limit)).map {
-            GrantedPermission(it[SUBJECT_PERMISSIONS.PERMISSION_ID], it[PERMISSIONS.CODE], it[SUBJECT_PERMISSIONS.GRANTED_AT].toInstant())
+            GrantedPermission(
+                it.get(SUBJECT_PERMISSIONS.PERMISSION_ID.name, UUID::class.java),
+                it[PERMISSIONS.CODE],
+                it.get(SUBJECT_PERMISSIONS.GRANTED_AT.name, java.time.OffsetDateTime::class.java).toInstant(),
+            )
         }
 
+    /** A keyset page of the subject's direct permissions, limited before each is joined to its permission for the code. */
     public fun subjectPermissionsPageQuery(
         subject: SubjectRef,
         afterPermission: UUID?,
         limit: Int,
-    ): Select<*> =
-        dsl
-            .select(SUBJECT_PERMISSIONS.PERMISSION_ID, PERMISSIONS.CODE, SUBJECT_PERMISSIONS.GRANTED_AT)
-            .from(SUBJECT_PERMISSIONS)
+    ): Select<*> {
+        val page =
+            dsl
+                .select(SUBJECT_PERMISSIONS.PERMISSION_ID, SUBJECT_PERMISSIONS.GRANTED_AT)
+                .from(SUBJECT_PERMISSIONS)
+                .where(SUBJECT_PERMISSIONS.SUBJECT_TYPE.eq(subject.type.name))
+                .and(SUBJECT_PERMISSIONS.SUBJECT_ID.eq(subject.id))
+                .and(afterPermission?.let(SUBJECT_PERMISSIONS.PERMISSION_ID::gt) ?: DSL.noCondition())
+                .orderBy(SUBJECT_PERMISSIONS.PERMISSION_ID)
+                .limit(bounded(limit))
+                .asTable(PAGE)
+        val permission = checkNotNull(page.field(SUBJECT_PERMISSIONS.PERMISSION_ID))
+        return dsl
+            .select(
+                permission.`as`(SUBJECT_PERMISSIONS.PERMISSION_ID.name),
+                PERMISSIONS.CODE,
+                checkNotNull(page.field(SUBJECT_PERMISSIONS.GRANTED_AT)),
+            ).from(page)
             .join(PERMISSIONS)
-            .on(PERMISSIONS.ID.eq(SUBJECT_PERMISSIONS.PERMISSION_ID))
-            .where(SUBJECT_PERMISSIONS.SUBJECT_TYPE.eq(subject.type.name))
-            .and(SUBJECT_PERMISSIONS.SUBJECT_ID.eq(subject.id))
-            .and(afterPermission?.let(SUBJECT_PERMISSIONS.PERMISSION_ID::gt) ?: DSL.noCondition())
-            .orderBy(SUBJECT_PERMISSIONS.PERMISSION_ID)
-            .limit(bounded(limit))
+            .on(PERMISSIONS.ID.eq(permission))
+            .orderBy(permission)
+    }
 
     override fun holdersPage(
         role: UUID,
@@ -482,37 +520,52 @@ public class JooqGrantStore(
     override fun revokeHoldersBatch(
         role: UUID,
         batch: Int,
-    ): Int {
+    ): Int = dsl.execute(revokeHoldersBatchQuery(role, batch))
+
+    /**
+     * The statement [revokeHoldersBatch] runs: the first [batch] holders in `ix_subject_roles_role` order, deleted by their
+     * whole primary key and by nothing else — a condition on the role besides the key would let PostgreSQL merge the page
+     * with every holder of the role instead of looking each row up.
+     */
+    public fun revokeHoldersBatchQuery(
+        role: UUID,
+        batch: Int,
+    ): org.jooq.Query {
         val chosen =
             dsl
-                .select(SUBJECT_ROLES.SUBJECT_TYPE, SUBJECT_ROLES.SUBJECT_ID)
+                .select(SUBJECT_ROLES.SUBJECT_TYPE, SUBJECT_ROLES.SUBJECT_ID, SUBJECT_ROLES.ROLE_ID)
                 .from(SUBJECT_ROLES)
                 .where(SUBJECT_ROLES.ROLE_ID.eq(role))
                 .orderBy(SUBJECT_ROLES.SUBJECT_TYPE, SUBJECT_ROLES.SUBJECT_ID)
                 .limit(bounded(batch))
         return dsl
             .deleteFrom(SUBJECT_ROLES)
-            .where(SUBJECT_ROLES.ROLE_ID.eq(role))
-            .and(DSL.row(SUBJECT_ROLES.SUBJECT_TYPE, SUBJECT_ROLES.SUBJECT_ID).`in`(chosen))
-            .execute()
+            .where(DSL.row(SUBJECT_ROLES.SUBJECT_TYPE, SUBJECT_ROLES.SUBJECT_ID, SUBJECT_ROLES.ROLE_ID).`in`(chosen))
     }
 
     override fun detachPermissionsBatch(
         role: UUID,
         batch: Int,
-    ): Int {
+    ): Int = dsl.execute(detachPermissionsBatchQuery(role, batch))
+
+    /**
+     * The statement [detachPermissionsBatch] runs: the first [batch] permissions in `pk_role_permissions` order, deleted by
+     * their whole primary key and by nothing else, for the reason [revokeHoldersBatchQuery] gives.
+     */
+    public fun detachPermissionsBatchQuery(
+        role: UUID,
+        batch: Int,
+    ): org.jooq.Query {
         val chosen =
             dsl
-                .select(ROLE_PERMISSIONS.PERMISSION_ID)
+                .select(ROLE_PERMISSIONS.ROLE_ID, ROLE_PERMISSIONS.PERMISSION_ID)
                 .from(ROLE_PERMISSIONS)
                 .where(ROLE_PERMISSIONS.ROLE_ID.eq(role))
                 .orderBy(ROLE_PERMISSIONS.PERMISSION_ID)
                 .limit(bounded(batch))
         return dsl
             .deleteFrom(ROLE_PERMISSIONS)
-            .where(ROLE_PERMISSIONS.ROLE_ID.eq(role))
-            .and(ROLE_PERMISSIONS.PERMISSION_ID.`in`(chosen))
-            .execute()
+            .where(DSL.row(ROLE_PERMISSIONS.ROLE_ID, ROLE_PERMISSIONS.PERMISSION_ID).`in`(chosen))
     }
 
     override fun deleteRole(id: UUID): Int =
@@ -547,6 +600,11 @@ public class JooqGrantStore(
             .set(SUBJECT_DEFAULT_ROLES.UPDATED_AT, now.utc())
             .where(SUBJECT_DEFAULT_ROLES.ROLE_ID.ne(role))
             .execute() == 1
+
+    private companion object {
+        /** The derived table a joined page is limited in. */
+        const val PAGE = "page"
+    }
 
     private fun bounded(limit: Int): Int {
         require(limit >= 1) { "a page or batch holds at least one row, got $limit" }

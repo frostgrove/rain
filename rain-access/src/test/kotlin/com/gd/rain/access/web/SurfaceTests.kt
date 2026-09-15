@@ -10,9 +10,11 @@ import com.gd.rain.access.SurfaceExemption
 import com.gd.rain.access.internal.web.AccessDeclarations
 import com.gd.rain.access.internal.web.AccessEnforcementInterceptor
 import com.gd.rain.access.internal.web.AccessSurfaceVerifier
+import com.gd.rain.access.internal.web.DeclarationLookup
 import com.gd.rain.access.internal.web.FunctionalRoute
 import com.gd.rain.access.internal.web.FunctionalRoutes
 import com.gd.rain.access.internal.web.PageRequest
+import com.gd.rain.access.internal.web.declarationFor
 import com.gd.rain.access.support.AGENT
 import com.gd.rain.access.support.START
 import com.gd.rain.core.config.ConfigurationProblem
@@ -307,7 +309,7 @@ class MethodlessMappingCoversAllMethodsTest {
 
         assertThat(problems.map { it.path })
             .contains("access.surface:POST /api/rows", "access.surface:DELETE /api/rows", "access.surface:TRACE /api/rows")
-            .doesNotContain("access.surface:GET /api/rows")
+            .doesNotContain("access.surface:GET /api/rows", "access.surface:HEAD /api/rows")
     }
 
     @Test
@@ -359,14 +361,67 @@ class RoleListRefusesPreloadParameterTest {
 
         assertThat(pages.limit(request)).isEqualTo(25)
         assertThat(pages.after(request, PageRequest::slug)).isEqualTo("triage")
-        listOf("0", "201", "ten", "-1").forEach { written ->
+        mapOf(
+            "0" to RainErrorCodes.OUT_OF_RANGE,
+            "201" to RainErrorCodes.OUT_OF_RANGE,
+            "ten" to RainErrorCodes.INVALID_FORMAT,
+            "-1" to RainErrorCodes.INVALID_FORMAT,
+        ).forEach { (written, code) ->
             assertThatThrownBy { pages.limit(MockHttpServletRequest().apply { addParameter("limit", written) }) }
-                .matches({ (it as Fault).code == RainErrorCodes.BAD_QUERY }, "bad query")
+                .matches(
+                    {
+                        (it as Fault).code == RainErrorCodes.BAD_QUERY &&
+                            it.violations.map { v -> v.pointer to v.code } == listOf("/limit" to code)
+                    },
+                    "400 bad_query with $code at /limit",
+                )
         }
     }
 }
 
 private val OK: HandlerFunction<ServerResponse> = HandlerFunction { ServerResponse.ok().build() }
+
+/**
+ * A table-derived `GET` route answers `HEAD` too. Its declaration used to be looked up as `HEAD <pattern>`, which a
+ * `DeclaresItsOwnAccess` controller never declares, so every `HEAD` request was a 500; it is held to the `GET`
+ * declaration, as a functional route's already was.
+ */
+class HeadHeldToGetDeclarationTest {
+    private val table = TableController()
+    private val handler = HandlerMethod(table, TableController::class.java.getMethod("dead"))
+
+    private fun head(): MockHttpServletRequest =
+        MockHttpServletRequest(
+            "HEAD",
+            "/api/jobs/dead",
+        ).apply { setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/jobs/dead") }
+
+    private fun interceptor(grants: GrantsLookup): AccessEnforcementInterceptor =
+        AccessEnforcementInterceptor(AccessDeclarations(emptyList()), grants) { emptyMap() }
+
+    @Test
+    fun `a HEAD request to a table-derived GET route is enforced from the GET declaration`() {
+        assertThat(interceptor(HeldGrants(PRINCIPAL, setOf(THING_READ))).preHandle(head(), MockHttpServletResponse(), handler)).isTrue()
+        assertThatThrownBy { interceptor(HeldGrants(null, emptySet())).preHandle(head(), MockHttpServletResponse(), handler) }
+            .matches({ (it as Fault).kind == FaultKind.UNAUTHORIZED }, "401")
+        assertThatThrownBy { interceptor(HeldGrants(PRINCIPAL, setOf(THING_WRITE))).preHandle(head(), MockHttpServletResponse(), handler) }
+            .matches({ (it as Fault).kind == FaultKind.FORBIDDEN }, "403")
+    }
+
+    @Test
+    fun `only HEAD is held to GET, and only where the pattern declares GET`() {
+        val declarations = AccessDeclarations(emptyList())
+
+        val head = declarations.of(TableController::class.java, handler, table, "HEAD", "/api/jobs/dead")
+        val post = declarations.of(TableController::class.java, handler, table, "POST", "/api/jobs/dead")
+
+        assertThat((head as DeclarationLookup.Declared).declaration.key).isEqualTo("GET /api/jobs/dead")
+        assertThat(post).isEqualTo(DeclarationLookup.Undeclared)
+        assertThat(
+            declarationFor(mapOf("PUT /x" to EndpointDeclaration("PUT", "/x", authenticated = true, why = "w")), "HEAD", "/x"),
+        ).isNull()
+    }
+}
 
 /** Functional routes are read from their predicates; a predicate that does not reduce to methods and a path is unreadable. */
 class FunctionalRoutesTest {

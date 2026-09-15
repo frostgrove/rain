@@ -244,6 +244,36 @@ Plans the criterion refuses, with a reason it names (`QueryPlanBoundedScanTest`,
 | an index the plan carries no description of | `the plan carries no description of index public.books_shelf_created_at_id` |
 | another relation only | `the plan reads no relation named public.authors` |
 
+### Redis servers
+
+| Member | Behaviour |
+|---|---|
+| `RainRedis.IMAGE` | `redis:8-alpine` |
+| `RedisPolicy.RETAINING` | `maxmemory-policy noeviction`: every key is kept for as long as it was written for |
+| `RedisPolicy.EVICTING` | `maxmemory 64mb`, `maxmemory-policy allkeys-lru` |
+| `RedisPolicy.SILENT` | `noeviction` with `CONFIG` renamed away: a server that answers and will not say how it is configured, as a managed Redis does |
+| `RainRedis.shared(policy)` | the JVM's one server of that policy, started on first use; a test names its keys under a prefix of its own, and `close()` on it is refused |
+| `RainRedis.start(policy)` | a server of the test's own, started now; the test closes it, for instance to stop it mid-test |
+| `RedisServer.host`, `port`, `springProperties()` | where it listens; `spring.data.redis.host` and `.port` for an application context |
+
+### A real application
+
+`RainApplication.start(sources, web, properties, singletons = emptyMap())` starts a real Spring Boot application —
+listeners, environment post-processors and auto-configuration all take part. Every `name=value` of `properties` is passed
+as a command-line argument, which outranks the application's own configuration files as a deployment's environment does
+and which a command reads as its arguments; nothing else is stated for the test. `singletons` are registered by name
+before any bean is created, a test's `Clock` for instance.
+
+| Member | Behaviour |
+|---|---|
+| `context` | the running `ConfigurableApplicationContext` |
+| `port` | the port the web server published (`local.server.port`); refused for an application with no web server |
+| `http` | an `ApplicationHttp` over `port` |
+| `bean(type)` | a bean of the context |
+| `exit()` | closes the context and answers the exit code its `ExitCodeGenerator`s agree on, a command's for one |
+| `close()` | closes the context |
+| `ApplicationHttp(port)` | `send(method, path, body, headers)` and `get(path, headers)` with no cookie jar; a body with no `Content-Type` of its own is sent as `application/json`; `uri(path)`, `client` |
+
 ### Time
 
 `MutableClock(now, zone = UTC)` is a `java.time.Clock` that moves only when a test moves it: `advance(by)` and
@@ -256,7 +286,7 @@ None.
 
 ## What it does not do
 
-- It starts no application context of its own and hides no roles or stage.
+- It starts no application context unless a test calls `RainApplication.start`, and states no role, stage or property for it.
 - It does not share a database between tests, migrate a template database or truncate tables.
-- It offers no container for any service other than PostgreSQL.
+- It offers no container for any service other than PostgreSQL and Redis.
 - It judges a plan by its structure, never by its cost estimates, row estimates or timing.

@@ -5,11 +5,10 @@ import com.gd.rain.access.Enrolment
 import com.gd.rain.access.SubjectRef
 import com.gd.rain.access.support.AccessApplication
 import com.gd.rain.access.support.DEFAULT_PASSWORD
-import com.gd.rain.access.support.Http
 import com.gd.rain.access.support.accessProperties
 import com.gd.rain.access.support.directory
-import com.gd.rain.access.support.port
-import com.gd.rain.access.support.startAccessApplication
+import com.gd.rain.test.ApplicationHttp
+import com.gd.rain.test.RainApplication
 import com.gd.rain.test.RainPostgres
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll
@@ -59,7 +58,7 @@ private fun credentials(
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DirectorySurfaceIT {
     private lateinit var context: ConfigurableApplicationContext
-    private lateinit var http: Http
+    private lateinit var http: ApplicationHttp
     private lateinit var jdbc: JdbcTemplate
     private lateinit var operator: String
     private lateinit var stranger: String
@@ -67,14 +66,15 @@ class DirectorySurfaceIT {
     @BeforeAll
     fun start() {
         val database = RainPostgres.freshDatabase("access_directory_surface")
-        context =
-            startAccessApplication(
-                AccessApplication::class.java,
+        val application =
+            RainApplication.start(
+                listOf(AccessApplication::class.java),
                 WebApplicationType.SERVLET,
-                *accessProperties("server.port=0", "rain.access.grants.max-roles-per-subject=4", "rain.access.web.max-bulk-ids=3"),
-                *database.springProperties().toTypedArray(),
+                accessProperties("server.port=0", "rain.access.grants.max-roles-per-subject=4", "rain.access.web.max-bulk-ids=3").toList() +
+                    database.springProperties(),
             )
-        http = Http(context.port())
+        context = application.context
+        http = application.http
         jdbc = JdbcTemplate(database.dataSource())
         context.getBean(AccessProvisioning::class.java).grantRole(enrolled("operator@example.test"), "administrator")
         operator = bearerOf("operator@example.test")
@@ -470,8 +470,13 @@ class DirectorySurfaceIT {
         val subject = enrolled("paged@example.test")
         val role = createRole("paged")
 
-        listOf("limit=0", "limit=201", "limit=ten", "limit=1&limit=2").forEach { query ->
-            assertThat(call("GET", "/api/roles?$query").refusal()).describedAs(query).isEqualTo(Refusal(400, "bad_query"))
+        mapOf(
+            "limit=0" to Refusal(400, "bad_query", listOf("/limit" to "out_of_range")),
+            "limit=201" to Refusal(400, "bad_query", listOf("/limit" to "out_of_range")),
+            "limit=ten" to Refusal(400, "bad_query", listOf("/limit" to "invalid_format")),
+            "limit=1&limit=2" to Refusal(400, "bad_query"),
+        ).forEach { (query, refusal) ->
+            assertThat(call("GET", "/api/roles?$query").refusal()).describedAs(query).isEqualTo(refusal)
         }
         assertThat(call("GET", "/api/roles?include=permissions").refusal()).isEqualTo(Refusal(400, "unknown_parameter"))
         assertThat(call("GET", "/api/roles/$role?limit=1").refusal()).isEqualTo(Refusal(400, "unknown_parameter"))

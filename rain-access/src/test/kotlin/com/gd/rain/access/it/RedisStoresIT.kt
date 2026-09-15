@@ -14,9 +14,11 @@ import com.gd.rain.access.internal.store.RevokedSession
 import com.gd.rain.access.internal.store.SubjectCutoff
 import com.gd.rain.access.support.ACCESS_TTL
 import com.gd.rain.access.support.AGENT
-import com.gd.rain.access.support.RedisServers
+import com.gd.rain.access.support.RedisFactories
 import com.gd.rain.access.support.START
 import com.gd.rain.test.MutableClock
+import com.gd.rain.test.RainRedis
+import com.gd.rain.test.RedisPolicy
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
@@ -30,7 +32,7 @@ import java.util.concurrent.TimeUnit
 /** The revocation list on a real Redis: what it records, for how long, and that it fails closed. */
 @Tag("integration")
 class RevocationListIT {
-    private val factory = RedisServers.factory(RedisServers.retaining)
+    private val factory = RedisFactories.of(RainRedis.shared(RedisPolicy.RETAINING))
     private val redis = StringRedisTemplate(factory)
     private val clock = MutableClock(START)
     private val prefix = "revocations-${UUID.randomUUID()}:"
@@ -83,7 +85,7 @@ class RevocationListIT {
 
     @Test
     fun `a list that cannot be reached fails closed on every call`() {
-        val unreachable = RedisServers.unreachable()
+        val unreachable = RedisFactories.unreachable()
         try {
             val down = RedisRevocationList(StringRedisTemplate(unreachable), prefix, ACCESS_TTL, clock)
 
@@ -101,7 +103,7 @@ class RevocationListIT {
 /** Gap 18: attempt counters on a real Redis, shared by every replica, each key expiring on its own. */
 @Tag("integration")
 class RedisAttemptLimiterIT {
-    private val factory = RedisServers.factory(RedisServers.retaining)
+    private val factory = RedisFactories.of(RainRedis.shared(RedisPolicy.RETAINING))
     private val redis = StringRedisTemplate(factory)
     private val prefix = "attempts-${UUID.randomUUID()}:"
     private val policy = AttemptPolicy(perIdentifier = 3, perAddress = 5, window = Duration.ofMinutes(15), lockFor = Duration.ofMinutes(10))
@@ -157,7 +159,7 @@ class RedisAttemptLimiterIT {
 
     @Test
     fun `an unreachable store refuses instead of admitting`() {
-        val unreachable = RedisServers.unreachable()
+        val unreachable = RedisFactories.unreachable()
         try {
             val down = RedisAttemptLimiter(StringRedisTemplate(unreachable), prefix, policy)
 
