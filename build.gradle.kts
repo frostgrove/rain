@@ -18,6 +18,8 @@ val mainScopes = listOf("api", "implementation", "compileOnly", "runtimeOnly")
 val declaredGraph: Map<String, Set<String>> =
     mapOf(
         "rain-core" to setOf(),
+        // Checks every module in its test scope only; it has no production code.
+        "rain-architecture" to setOf(),
         "rain-boot" to setOf("rain-core"),
         "rain-test" to setOf("rain-boot", "rain-core"),
         "rain-observability" to setOf("rain-boot", "rain-core"),
