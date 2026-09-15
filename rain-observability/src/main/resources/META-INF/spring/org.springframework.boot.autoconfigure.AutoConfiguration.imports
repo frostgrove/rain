@@ -1,0 +1,3 @@
+com.gd.rain.observability.autoconfigure.RainHealthAutoConfiguration
+com.gd.rain.observability.autoconfigure.RainActuatorHealthAutoConfiguration
+com.gd.rain.observability.logging.RainOpenTelemetryLoggingAutoConfiguration

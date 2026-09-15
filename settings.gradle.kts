@@ -24,7 +24,9 @@ include(
     "rain-core",
     "rain-boot",
     "rain-test",
+    "rain-observability",
     "rain-persistence",
     "rain-data-jdbc",
+    "rain-web",
     "rain-audit",
 )

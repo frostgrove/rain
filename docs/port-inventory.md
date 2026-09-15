@@ -100,7 +100,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `config/DeploymentConfiguration.kt` | dropped | dropped | closed product tree replaced by ConfigurationContributor sections |
 | main | `config/DeploymentStage.kt` | rain-boot | ported | required rain.deployment.stage, no profile inference (gap 36) |
 | main | `config/DurationFormat.kt` | rain-core | ported | rain-boot config/Formats.kt |
-| main | `config/HttpProperties.kt` | rain-web | pending | rain.web |
+| main | `config/HttpProperties.kt` | rain-web | ported | rain-web RainWebProperties + RainWebConfigurationContributor (rain.web, required) |
 | main | `config/JobsProperties.kt` | rain-jobs | pending | DEFAULT_WORKERS dropped |
 | main | `config/RealtimeProperties.kt` | rain-realtime | pending |  |
 | main | `config/RedisProperties.kt` | dropped | pending | Boot spring.data.redis.*; revocation settings → rain-access |
@@ -131,37 +131,37 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `crud/query/QueryDocument.kt` | rain-crud | pending |  |
 | main | `crud/query/QueryRequest.kt` | rain-crud | pending |  |
 | main | `crud/query/ResourceSchema.kt` | rain-crud | pending |  |
-| main | `http/Access.kt` | rain-web | pending |  |
-| main | `http/ApiPaths.kt` | dropped | pending | required rain.access.web.base-path |
-| main | `http/CrossOriginFilter.kt` | rain-web | pending |  |
-| main | `http/RequestLogConfiguration.kt` | rain-web | pending |  |
-| main | `http/RequestLogFilter.kt` | rain-web | pending |  |
-| main | `http/RootProbeController.kt` | rain-web | pending |  |
-| main | `http/SocketDeadlines.kt` | rain-web | pending |  |
-| main | `http/TomcatDeadlineCustomizer.kt` | rain-web | pending |  |
-| main | `http/TransportBodyLimits.kt` | rain-web | pending |  |
-| main | `http/TransportConfiguration.kt` | rain-web | pending |  |
-| main | `http/error/EnvelopeErrorController.kt` | rain-web | pending |  |
-| main | `http/error/EnvelopeWriter.kt` | rain-web | pending |  |
+| main | `http/Access.kt` | rain-web | ported | rain-web com.gd.rain.web.route (Access, EndpointDeclaration, DeclaresItsOwnAccess, MountsItsOwnSurface) |
+| main | `http/ApiPaths.kt` | dropped | dropped | product constant |
+| main | `http/CrossOriginFilter.kt` | rain-web | dropped | Spring CorsFilter + ProblemCorsProcessor over rain.web.cors |
+| main | `http/RequestLogConfiguration.kt` | rain-web | ported | RainWebFilterAutoConfiguration |
+| main | `http/RequestLogFilter.kt` | rain-web | ported | rain-web RequestLogFilter + CorrelationId rule; RequestPrincipal SPI in web.route |
+| main | `http/RootProbeController.kt` | rain-web | ported | rain-web ProbeController (rain.web.probes.*); / and favicon dropped |
+| main | `http/SocketDeadlines.kt` | rain-web | dropped | replaced by Boot server.tomcat.* settings |
+| main | `http/TomcatDeadlineCustomizer.kt` | rain-web | dropped | replaced by Boot server.tomcat.* settings |
+| main | `http/TransportBodyLimits.kt` | rain-web | dropped | replaced by server.tomcat.* and spring.servlet.multipart.*; int bound validated on rain.web.body-limit (gap 32) |
+| main | `http/TransportConfiguration.kt` | rain-web | ported | RainWebFilterAutoConfiguration with WebFilterOrder |
+| main | `http/error/EnvelopeErrorController.kt` | rain-web | ported | rain-web RainErrorController |
+| main | `http/error/EnvelopeWriter.kt` | rain-web | ported | rain-web ProblemRenderer + ProblemWriter |
 | main | `http/error/ErrorCodes.kt` | rain-core | ported | RainErrorCodes catalog + ErrorCodeRegistry (duplicates refused); DOMAIN codes dropped (gap 35) |
-| main | `http/error/ErrorEnvelope.kt` | rain-web | pending |  |
-| main | `http/error/ErrorEnvelopeAdvice.kt` | rain-web | pending |  |
+| main | `http/error/ErrorEnvelope.kt` | rain-web | ported | RFC 9457 problem format v1 (ProblemFormat) |
+| main | `http/error/ErrorEnvelopeAdvice.kt` | rain-web | ported | rain-web RainExceptionHandler + StatusTable (gaps 30, 31) |
 | main | `http/error/Fault.kt` | rain-core | ported | rain-core Fault with typed ErrorCode and construction invariants |
 | main | `http/error/FaultKind.kt` | rain-core | ported | status as Int, total kind table (gap 31 core half) |
 | main | `http/error/Groups.kt` | rain-core | dropped | validation/general grouping replaced by the problem+json errors list |
-| main | `http/error/StaleDocumentBody.kt` | dropped | pending | product body; problem extensions instead |
+| main | `http/error/StaleDocumentBody.kt` | dropped | dropped | product body |
 | main | `http/error/Violation.kt` | rain-core | ported | RFC 6901 pointer path, deterministic order |
-| main | `http/filter/BodyLimitFilter.kt` | rain-web | pending |  |
-| main | `http/filter/CrossSiteFilter.kt` | rain-web | pending |  |
-| main | `http/filter/RequestBudgetFilter.kt` | rain-web | pending |  |
-| main | `http/filter/RequestDeadline.kt` | rain-web | pending |  |
-| main | `http/filter/SafeMethods.kt` | rain-web | pending |  |
-| main | `http/filter/SecurityHeadersFilter.kt` | rain-web | pending |  |
-| main | `http/limit/CallerTable.kt` | rain-web | pending |  |
+| main | `http/filter/BodyLimitFilter.kt` | rain-web | ported | rain-web BodyLimitFilter |
+| main | `http/filter/CrossSiteFilter.kt` | rain-web | ported | rain-web CrossSiteFilter (cross_site) |
+| main | `http/filter/RequestBudgetFilter.kt` | rain-web | ported | rain-web RequestBudgetFilter + RequestBudgetTimer (gap 30) |
+| main | `http/filter/RequestDeadline.kt` | rain-web | ported | rain-web RequestDeadline |
+| main | `http/filter/SafeMethods.kt` | rain-web | ported | rain-web filter/Requests.kt |
+| main | `http/filter/SecurityHeadersFilter.kt` | rain-web | ported | rain-web SecurityHeadersFilter, configurable (gap 34) |
+| main | `http/limit/CallerTable.kt` | rain-web | ported | rain-web CallerTable, refusedBecauseFull counter (gap 33) |
 | main | `http/limit/CredentialGate.kt` | rain-access | pending |  |
 | main | `http/limit/CredentialGateFilter.kt` | rain-access | pending |  |
 | main | `http/limit/JsonOnlyFilter.kt` | rain-web | pending |  |
-| main | `http/limit/TokenBucketThrottle.kt` | rain-web | pending |  |
+| main | `http/limit/TokenBucketThrottle.kt` | rain-web | ported | rain-web TokenBucketThrottle |
 | main | `llm/LlmConfiguration.kt` | rain-llm | pending |  |
 | main | `llm/LlmErrors.kt` | rain-llm | pending |  |
 | main | `llm/LlmGateway.kt` | rain-llm | pending |  |
@@ -177,13 +177,13 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `lock/LockKey.kt` | rain-persistence | ported | rain-core lock key derivation (FNV-1a 64) and guards |
 | main | `lock/LockProperties.kt` | rain-persistence | ported | rain.locks section |
 | main | `lock/persistence/AdvisoryLockRepository.kt` | rain-persistence | ported | JooqAdvisoryLockStore |
-| main | `observability/LoggingConfiguration.kt` | rain-observability | pending |  |
-| main | `observability/health/ActuatorHealthContributors.kt` | rain-observability | pending |  |
-| main | `observability/health/DatabaseHealthIndicator.kt` | rain-persistence | pending |  |
-| main | `observability/health/HealthCache.kt` | rain-observability | pending |  |
-| main | `observability/health/HealthConfiguration.kt` | rain-observability | pending |  |
-| main | `observability/health/HealthModel.kt` | rain-observability | pending |  |
-| main | `observability/health/HealthRegistry.kt` | rain-observability | pending |  |
+| main | `observability/LoggingConfiguration.kt` | rain-observability | ported | rain-observability RainOpenTelemetryLoggingAutoConfiguration |
+| main | `observability/health/ActuatorHealthContributors.kt` | rain-observability | ported | rain-observability ActuatorHealthBridge (gap 44) |
+| main | `observability/health/DatabaseHealthIndicator.kt` | rain-persistence | ported | rain-observability DatabaseHealthContribution, importance from rain.health.database.importance |
+| main | `observability/health/HealthCache.kt` | rain-observability | ported | rain-observability HealthCache |
+| main | `observability/health/HealthConfiguration.kt` | rain-observability | ported | RainHealthAutoConfiguration + RainActuatorHealthAutoConfiguration |
+| main | `observability/health/HealthModel.kt` | rain-observability | ported | rain-observability HealthModel (readiness contract) |
+| main | `observability/health/HealthRegistry.kt` | rain-observability | ported | rain-observability HealthRegistry (gap 44) |
 | main | `persistence/AssignIdCallback.kt` | rain-data-jdbc | ported | rain-data-jdbc |
 | main | `persistence/ConnectionBudget.kt` | dropped | pending | replaced by ConnectionDemandCheck in rain-jobs |
 | main | `persistence/CurrentActor.kt` | rain-persistence | ported | rain-core Actor(type, id) + CurrentActor |
@@ -267,32 +267,32 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `crud/query/ContractQueryFixture.kt` | dropped | pending | Lease schema; replaced by a sample fixture |
 | test | `crud/query/QueryDialectTest.kt` | rain-crud | pending |  |
 | test | `http/CredentialGateOnTomcatTest.kt` | rain-web | pending |  |
-| test | `http/CrossOriginFilterTest.kt` | rain-web | pending |  |
-| test | `http/Refusals.kt` | rain-web | pending |  |
-| test | `http/RequestLogFilterTest.kt` | rain-web | pending |  |
-| test | `http/RootProbeControllerTest.kt` | rain-web | pending |  |
-| test | `http/RootProbeRefusalTest.kt` | rain-web | pending |  |
-| test | `http/TomcatDeadlineCustomizerTest.kt` | rain-web | pending |  |
-| test | `http/TransportChainTest.kt` | rain-web | pending |  |
-| test | `http/TransportDeadlinesTest.kt` | rain-web | pending |  |
-| test | `http/TransportWiringTest.kt` | rain-web | pending |  |
-| test | `http/error/ApiError.kt` | rain-web | pending |  |
-| test | `http/error/ApiErrorContractTest.kt` | rain-web | pending |  |
-| test | `http/error/EnvelopeErrorControllerTest.kt` | rain-web | pending |  |
-| test | `http/error/ErrorCodesParityTest.kt` | dropped | pending | Go/Lease code parity |
-| test | `http/error/ErrorEnvelopeGoldenTest.kt` | rain-web | pending |  |
-| test | `http/error/ErrorEnvelopeTest.kt` | rain-web | pending |  |
+| test | `http/CrossOriginFilterTest.kt` | rain-web | dropped | filter dropped; replaced by rain-web CorsTest |
+| test | `http/Refusals.kt` | rain-web | ported | rain-web WebTestSupport problem()/problemCode() |
+| test | `http/RequestLogFilterTest.kt` | rain-web | ported | rain-web RequestLogFilterTest |
+| test | `http/RootProbeControllerTest.kt` | rain-web | ported | rain-web ProbeStatusMappingTest |
+| test | `http/RootProbeRefusalTest.kt` | rain-web | ported | rain-web ProbeStatusMappingTest |
+| test | `http/TomcatDeadlineCustomizerTest.kt` | rain-web | dropped | customizer dropped |
+| test | `http/TransportChainTest.kt` | rain-web | ported | SecurityHeadersOnPreSecurityRefusalTest, StatusTableCoversSpringErrorResponsesTest, CorsTest; gate cases to rain-access |
+| test | `http/TransportDeadlinesTest.kt` | rain-web | dropped | deadlines dropped |
+| test | `http/TransportWiringTest.kt` | rain-web | ported | rain-web RainWebAutoConfigurationTest; gate cases to rain-access |
+| test | `http/error/ApiError.kt` | rain-web | dropped | client reader of the old envelope |
+| test | `http/error/ApiErrorContractTest.kt` | rain-web | dropped | old envelope client contract; ProblemFormatTest covers v1 |
+| test | `http/error/EnvelopeErrorControllerTest.kt` | rain-web | ported | rain-web RainExceptionHandlerTest (error dispatch) |
+| test | `http/error/ErrorCodesParityTest.kt` | dropped | dropped | Go/Lease code parity |
+| test | `http/error/ErrorEnvelopeGoldenTest.kt` | rain-web | ported | rain-web ProblemFormatTest (exact bytes) |
+| test | `http/error/ErrorEnvelopeTest.kt` | rain-web | ported | rain-web ProblemFormatTest |
 | test | `http/error/FaultKindTest.kt` | rain-web | ported | rain-core FaultTest (kinds, invariants) |
-| test | `http/error/UnreadableBodyTest.kt` | rain-web | pending |  |
-| test | `http/filter/BodyLimitFilterTest.kt` | rain-web | pending |  |
-| test | `http/filter/CrossSiteFilterTest.kt` | rain-web | pending |  |
-| test | `http/filter/MountedPathTest.kt` | rain-web | pending |  |
-| test | `http/filter/RequestBudgetFilterTest.kt` | rain-web | pending |  |
-| test | `http/filter/SecurityHeadersFilterTest.kt` | rain-web | pending |  |
+| test | `http/error/UnreadableBodyTest.kt` | rain-web | ported | StatusTableCoversSpringErrorResponsesTest (not readable to 400) |
+| test | `http/filter/BodyLimitFilterTest.kt` | rain-web | ported | rain-web BodyLimitFilterTest |
+| test | `http/filter/CrossSiteFilterTest.kt` | rain-web | ported | rain-web CrossSiteFilterTest |
+| test | `http/filter/MountedPathTest.kt` | rain-web | ported | rain-web MountedPathTest |
+| test | `http/filter/RequestBudgetFilterTest.kt` | rain-web | ported | rain-web RequestBudgetFilterTest |
+| test | `http/filter/SecurityHeadersFilterTest.kt` | rain-web | ported | rain-web SecurityHeadersOnPreSecurityRefusalTest |
 | test | `http/limit/CredentialGateFilterTest.kt` | rain-web | pending |  |
 | test | `http/limit/CredentialGateTest.kt` | rain-web | pending |  |
 | test | `http/limit/JsonOnlyFilterTest.kt` | rain-web | pending |  |
-| test | `http/limit/TokenBucketThrottleTest.kt` | rain-web | pending |  |
+| test | `http/limit/TokenBucketThrottleTest.kt` | rain-web | ported | rain-web TokenBucketThrottleTest; timing case replaced by CallerTableFullTest |
 | test | `llm/LlmGatewaySpringAiTest.kt` | rain-llm | pending |  |
 | test | `llm/LlmPortTest.kt` | rain-llm | pending |  |
 | test | `llm/SpringAiConfigurationTest.kt` | rain-llm | pending |  |
@@ -300,17 +300,17 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `lock/AdvisoryLocksTest.kt` | rain-persistence | ported | rain-persistence PersistenceUnitTest |
 | test | `lock/LockKeyTest.kt` | rain-persistence | ported | rain-core LockKeyTest with the same reference vectors |
 | test | `lock/LockPropertiesTest.kt` | rain-persistence | ported | rain-persistence PersistenceContributorTest |
-| test | `observability/ApplicationLogLevelTest.kt` | rain-observability | pending |  |
-| test | `observability/LokiOffTest.kt` | rain-observability | pending |  |
-| test | `observability/MutableClock.kt` | rain-observability | pending |  |
-| test | `observability/OtelAppenderInstalledTest.kt` | rain-observability | pending |  |
-| test | `observability/Transcript.kt` | rain-observability | pending |  |
-| test | `observability/health/ActuatorHealthTest.kt` | rain-observability | pending |  |
-| test | `observability/health/DatabaseHealthIndicatorTest.kt` | rain-observability | pending |  |
-| test | `observability/health/FakeCheck.kt` | rain-observability | pending |  |
-| test | `observability/health/HealthCacheTest.kt` | rain-observability | pending |  |
-| test | `observability/health/HealthRegistryTest.kt` | rain-observability | pending |  |
-| test | `observability/health/ReadinessMappingTest.kt` | rain-observability | pending |  |
+| test | `observability/ApplicationLogLevelTest.kt` | rain-observability | dropped | Lease app logging-level boot test |
+| test | `observability/LokiOffTest.kt` | rain-observability | dropped | Lease deployment configuration |
+| test | `observability/MutableClock.kt` | rain-observability | ported | rain-observability test helper |
+| test | `observability/OtelAppenderInstalledTest.kt` | rain-observability | ported | rain-observability OtelAppenderInstalledTest |
+| test | `observability/Transcript.kt` | rain-observability | ported | rain-web test helper |
+| test | `observability/health/ActuatorHealthTest.kt` | rain-observability | ported | rain-observability ActuatorHealthTest |
+| test | `observability/health/DatabaseHealthIndicatorTest.kt` | rain-observability | ported | rain-observability DatabaseHealthContributionTest |
+| test | `observability/health/FakeCheck.kt` | rain-observability | ported | rain-observability test helper |
+| test | `observability/health/HealthCacheTest.kt` | rain-observability | ported | rain-observability HealthCacheTest |
+| test | `observability/health/HealthRegistryTest.kt` | rain-observability | ported | rain-observability HealthRegistryTest |
+| test | `observability/health/ReadinessMappingTest.kt` | rain-observability | ported | rain-observability ReadinessMappingTest |
 | test | `persistence/AssignIdCallbackTest.kt` | rain-persistence | ported | rain-data-jdbc DataJdbcUnitTest |
 | test | `persistence/ConversionRegistrationTest.kt` | rain-persistence | ported | rain-data-jdbc DataJdbcUnitTest |
 | test | `persistence/FlywayMigrationSettingsTest.kt` | rain-persistence | dropped | replaced by SchemaDescriptorTest and the schema migration IT |

@@ -1,0 +1,3 @@
+com.gd.rain.web.autoconfigure.RainWebErrorAutoConfiguration
+com.gd.rain.web.autoconfigure.RainWebFilterAutoConfiguration
+com.gd.rain.web.autoconfigure.RainProbeAutoConfiguration
