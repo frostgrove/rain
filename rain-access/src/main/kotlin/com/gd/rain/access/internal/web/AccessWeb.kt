@@ -22,6 +22,7 @@ import com.gd.rain.core.error.path
 import com.gd.rain.web.filter.isSafeMethod
 import com.gd.rain.web.filter.mountedPath
 import com.gd.rain.web.limit.TokenBucketThrottle
+import com.gd.rain.web.problem.ProblemFormat
 import com.gd.rain.web.problem.ProblemWriter
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
@@ -133,19 +134,26 @@ public object DeliveryDecision {
     }
 }
 
-/** A JSON request body, read field by field into violations that point at the field. */
-public class JsonBody(
+/**
+ * A JSON request body, read field by field into violations that point at the field.
+ *
+ * The body is an object naming only the fields its route reads: no body reads as an object with no fields, anything but
+ * an object is `400 malformed_body`, and a field the route does not read is `422 unknown_field` — a misspelt or
+ * unsupported field is heard rather than ignored, as a query parameter is.
+ */
+public class JsonBody private constructor(
     private val node: JsonNode?,
+    private val fields: Set<String>,
 ) {
     public fun requiredText(field: String): String {
-        val value = node?.get(field)
+        val value = read(field)
         if (value == null || value.isNull) throw violation(field, RainErrorCodes.REQUIRED, null)
         if (!value.isString) throw violation(field, RainErrorCodes.INVALID_FORMAT, "\"$field\" is a string")
         return value.asString()
     }
 
     public fun requiredBoolean(field: String): Boolean {
-        val value = node?.get(field)
+        val value = read(field)
         if (value == null || value.isNull) throw violation(field, RainErrorCodes.REQUIRED, null)
         if (!value.isBoolean) throw violation(field, RainErrorCodes.INVALID_FORMAT, "\"$field\" is true or false")
         return value.booleanValue()
@@ -153,7 +161,7 @@ public class JsonBody(
 
     /** An object of string values; absent is empty. */
     public fun textMap(field: String): Map<String, String> {
-        val value = node?.get(field)
+        val value = read(field)
         if (value == null || value.isNull) return emptyMap()
         if (!value.isObject) throw violation(field, RainErrorCodes.INVALID_FORMAT, "\"$field\" is an object of strings")
         return value.properties().associate { (key, entry) ->
@@ -162,14 +170,30 @@ public class JsonBody(
         }
     }
 
-    public fun canonicalIds(field: String): List<UUID> {
-        val value = node?.get(field)
+    /** A non-empty array of at most [maximum] canonical ids; more is `400 bad_request` before any id is read. */
+    public fun canonicalIds(
+        field: String,
+        maximum: Int,
+    ): List<UUID> {
+        val value = read(field)
         if (value == null || value.isNull) throw violation(field, RainErrorCodes.REQUIRED, null)
         if (!value.isArray || value.isEmpty) throw violation(field, RainErrorCodes.INVALID_FORMAT, "\"$field\" is a non-empty array of ids")
+        if (value.size() > maximum) {
+            throw Fault(
+                FaultKind.BAD_REQUEST,
+                RainErrorCodes.BAD_REQUEST,
+                violations = listOf(Violation.at(path(field), RainErrorCodes.OUT_OF_RANGE, "names more than $maximum ids")),
+            )
+        }
         return value.mapIndexed { index, element ->
             (if (element.isString) CanonicalIds.parse(element.asString()) else null)
                 ?: throw Fault.validation(listOf(Violation.at(path(field, index), RainErrorCodes.INVALID_ID)))
         }
+    }
+
+    private fun read(field: String): JsonNode? {
+        require(field in fields) { "the field $field is not one this body declares: ${fields.sorted()}" }
+        return node?.get(field)
     }
 
     private fun violation(
@@ -177,6 +201,36 @@ public class JsonBody(
         code: ErrorCode,
         message: String?,
     ): Fault = Fault.validation(listOf(Violation.at(path(field), code, message)))
+
+    public companion object {
+        /** The body of a route that reads exactly [fields]. */
+        public fun of(
+            node: JsonNode?,
+            vararg fields: String,
+        ): JsonBody {
+            val declared = fields.toSet()
+            if (node == null) return JsonBody(null, declared)
+            if (!node.isObject) {
+                throw Fault(FaultKind.BAD_REQUEST, RainErrorCodes.MALFORMED_BODY, "the body is a JSON object")
+            }
+            // At most one more than a problem names, so a body of many unknown fields costs no more than that to refuse.
+            val unknown =
+                node
+                    .propertyNames()
+                    .asSequence()
+                    .filterNot { it in declared }
+                    .take(ProblemFormat.MAX_ERRORS + 1)
+                    .toList()
+            if (unknown.isNotEmpty()) {
+                val named = unknown.take(ProblemFormat.MAX_ERRORS)
+                throw Fault.validation(
+                    named.map { Violation.at(path(it), RainErrorCodes.UNKNOWN_FIELD, "is not a field this route reads") },
+                    partial = named.size < unknown.size,
+                )
+            }
+            return JsonBody(node, declared)
+        }
+    }
 }
 
 /** A keyset page's query parameters: only those a route names, a limit within the declared page, and a cursor it can read. */

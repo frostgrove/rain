@@ -5,6 +5,7 @@ import com.gd.rain.access.PermissionDef
 import com.gd.rain.access.SubjectRef
 import com.gd.rain.access.SystemRoleDeclaration
 import com.gd.rain.access.internal.store.CredentialInsert
+import com.gd.rain.access.internal.store.SessionClosure
 import com.gd.rain.access.internal.store.SubjectCutoff
 import com.gd.rain.access.internal.token.RefreshCredential
 import com.gd.rain.access.internal.usecase.AccessTransactions
@@ -149,10 +150,10 @@ class SessionStoreIT {
         assertThat(db.sessions.revokeOne(stranger, id, START, RevocationReasons.CLOSED_BY_SUBJECT)).isNull()
         assertThat(
             db.sessions.revokeOne(subject, id, START.plusSeconds(1), RevocationReasons.CLOSED_BY_SUBJECT),
-        ).isEqualTo(START.plusSeconds(1))
+        ).isEqualTo(SessionClosure(START.plusSeconds(1), closedByThisCall = true))
         assertThat(
             db.sessions.revokeOne(subject, id, START.plusSeconds(9), RevocationReasons.CLOSED_BY_SUBJECT),
-        ).isEqualTo(START.plusSeconds(1))
+        ).isEqualTo(SessionClosure(START.plusSeconds(1), closedByThisCall = false))
     }
 
     @Test
@@ -269,8 +270,11 @@ class AccessAggregateRoundTripIT {
         assertThat(db.grants.rolesHeldUpTo(subject, 10)).isEqualTo(3)
         assertThat(db.grants.holdsRole(subject, requireNotNull(db.grants.roleBySlug("b-role")).id)).isTrue()
 
-        db.grants.bindDefaultRole(AGENT, requireNotNull(db.grants.roleBySlug("a-role")).id, START)
-        db.grants.bindDefaultRole(AGENT, requireNotNull(db.grants.roleBySlug("c-role")).id, START)
+        assertThat(db.grants.bindDefaultRole(AGENT, requireNotNull(db.grants.roleBySlug("a-role")).id, START)).isTrue()
+        assertThat(db.grants.bindDefaultRole(AGENT, requireNotNull(db.grants.roleBySlug("c-role")).id, START)).isTrue()
+        assertThat(db.grants.bindDefaultRole(AGENT, requireNotNull(db.grants.roleBySlug("c-role")).id, START))
+            .describedAs("binding the default it already has changes nothing")
+            .isFalse()
         assertThat(db.grants.defaultRoleOf(AGENT)?.slug).isEqualTo("c-role")
         assertThat(db.grants.defaultRoleOf(SERVICE)).isNull()
     }

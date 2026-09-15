@@ -49,7 +49,9 @@ public class ProvisioningService(
         permissions: Set<String>,
     ): UUID {
         require(SystemRoleDeclaration.isWellFormedSlug(slug)) { "a role slug matches ${SystemRoleDeclaration.SLUG_PATTERN}, got \"$slug\"" }
-        require(name.isNotBlank()) { "role $slug has a name" }
+        require(name.isNotBlank() && name.length <= SystemRoleDeclaration.MAX_NAME) {
+            "role $slug has a name of 1..${SystemRoleDeclaration.MAX_NAME} characters"
+        }
         return transactions.inTransaction {
             val now = clock.instant()
             val role =
@@ -75,8 +77,9 @@ public class ProvisioningService(
         subjects.served(type) ?: throw AccessFaults.unknownSubjectType(type.name, "type")
         transactions.inTransaction {
             val role = grants.roleBySlug(slug) ?: throw AccessFaults.unknownRole("slug")
-            grants.bindDefaultRole(type, role.id, clock.instant())
-            audit.record(AuditEvent(AccessAuditTypes.DEFAULT_ROLE_CHANGED, AuditOutcome.OK, type.name, AuditDetail.of("slug" to slug)))
+            if (grants.bindDefaultRole(type, role.id, clock.instant())) {
+                audit.record(AuditEvent(AccessAuditTypes.DEFAULT_ROLE_CHANGED, AuditOutcome.OK, type.name, AuditDetail.of("slug" to slug)))
+            }
         }
     }
 

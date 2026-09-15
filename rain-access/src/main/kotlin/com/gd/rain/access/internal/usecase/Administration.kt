@@ -244,13 +244,13 @@ public class RoleAdministration(
     }
 
     private fun checkName(name: String) {
-        if (name.isBlank() || name.length > SystemRoleDeclaration.MAX_NAME) {
-            throw AccessFaults.invalid(
-                "name",
-                RainErrorCodes.REQUIRED,
-                "a role has a name of 1..${SystemRoleDeclaration.MAX_NAME} characters",
-            )
-        }
+        val code =
+            when {
+                name.isBlank() -> RainErrorCodes.REQUIRED
+                name.length > SystemRoleDeclaration.MAX_NAME -> RainErrorCodes.TOO_LONG
+                else -> return
+            }
+        throw AccessFaults.invalid("name", code, "a role has a name of 1..${SystemRoleDeclaration.MAX_NAME} characters")
     }
 
     private fun roleChanged(

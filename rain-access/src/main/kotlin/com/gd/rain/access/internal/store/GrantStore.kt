@@ -140,11 +140,12 @@ public interface GrantStore {
 
     public fun defaultRoleOf(type: SubjectType): RoleRow?
 
+    /** Makes [role] the default of [type]; answers whether this call changed it — false when it already was. */
     public fun bindDefaultRole(
         type: SubjectType,
         role: UUID,
         now: Instant,
-    )
+    ): Boolean
 }
 
 public class JooqGrantStore(
@@ -534,7 +535,7 @@ public class JooqGrantStore(
         type: SubjectType,
         role: UUID,
         now: Instant,
-    ) {
+    ): Boolean =
         dsl
             .insertInto(SUBJECT_DEFAULT_ROLES)
             .set(SUBJECT_DEFAULT_ROLES.SUBJECT_TYPE, type.name)
@@ -545,8 +546,7 @@ public class JooqGrantStore(
             .set(SUBJECT_DEFAULT_ROLES.ROLE_ID, role)
             .set(SUBJECT_DEFAULT_ROLES.UPDATED_AT, now.utc())
             .where(SUBJECT_DEFAULT_ROLES.ROLE_ID.ne(role))
-            .execute()
-    }
+            .execute() == 1
 
     private fun bounded(limit: Int): Int {
         require(limit >= 1) { "a page or batch holds at least one row, got $limit" }

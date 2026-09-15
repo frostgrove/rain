@@ -58,6 +58,8 @@ public class LoginUseCase(
     private val fingerprints: SessionFingerprints,
     private val clock: Clock,
 ) {
+    private val failures = FailedAttempts(limiter, policy, audit)
+
     public fun signIn(
         subject: ServedSubject,
         presentedIdentifier: String,
@@ -120,6 +122,29 @@ public class LoginUseCase(
     }
 
     private fun fail(attempt: Attempt): Nothing {
+        failures.record(attempt)
+        throw AccessFaults.badCredentials()
+    }
+
+    private companion object {
+        /** The first verification, and the one repeat a credential that changed between the phases is allowed. */
+        const val PHASES = 2
+
+        val log = LoggerFactory.getLogger(LoginUseCase::class.java)
+    }
+}
+
+/**
+ * A password that did not prove itself — at sign-in, or as the current password of a password change: charged to the
+ * attempt limiter, recorded independently of the refused request, and one `lockout-opened` row for each key the failure
+ * locked. A failure a full attempt table could not count is logged.
+ */
+public class FailedAttempts(
+    private val limiter: AttemptLimiter,
+    private val policy: AttemptPolicy,
+    private val audit: AuditTrail,
+) {
+    public fun record(attempt: Attempt) {
         val recorded = limiter.recordFailure(attempt)
         audit.recordIndependently(
             AuditEvent(
@@ -155,18 +180,14 @@ public class LoginUseCase(
         if (recorded.uncounted.isNotEmpty()) {
             log
                 .atWarn()
-                .setMessage("a failed sign-in could not be counted: the attempt table is full")
+                .setMessage("a failed password attempt could not be counted: the attempt table is full")
                 .addKeyValue("subject_type", attempt.subjectType.name)
                 .log()
         }
-        throw AccessFaults.badCredentials()
     }
 
     private companion object {
-        /** The first verification, and the one repeat a credential that changed between the phases is allowed. */
-        const val PHASES = 2
-
-        val log = LoggerFactory.getLogger(LoginUseCase::class.java)
+        val log = LoggerFactory.getLogger(FailedAttempts::class.java)
     }
 }
 

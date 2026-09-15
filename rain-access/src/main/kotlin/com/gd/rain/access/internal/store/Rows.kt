@@ -57,6 +57,12 @@ public data class SessionCursor(
     public val id: UUID,
 )
 
+/** What closing one session found: when it was closed, and whether this call is what closed it. */
+public data class SessionClosure(
+    public val closedAt: Instant,
+    public val closedByThisCall: Boolean,
+)
+
 /** A session closed at [revokedAt]; what the revocation list is told. */
 public data class RevokedSession(
     public val id: UUID,

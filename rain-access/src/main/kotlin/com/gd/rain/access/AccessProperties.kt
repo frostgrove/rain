@@ -95,6 +95,8 @@ public data class AccessProperties(
         public val basePath: String,
         public val delivery: CredentialDelivery,
         public val page: Page = Page(),
+        /** The most ids one bulk request names; a request naming more is refused before any of them is read. */
+        public val maxBulkIds: Int = 100,
     ) : ConfigurationSection {
         public val authPath: String get() = "$basePath/auth"
         public val refreshPath: String get() = "$authPath/refresh"
@@ -254,6 +256,7 @@ public data class AccessProperties(
         expect(BASE_PATH.matches(web.basePath), "$PREFIX.web.base-path") {
             "is \"${web.basePath}\"; it is one or more path segments with no trailing slash, matching ${BASE_PATH.pattern}"
         }
+        count(web.maxBulkIds, "$PREFIX.web.max-bulk-ids")
         count(web.page.defaultSize, "$PREFIX.web.page.default-size")
         count(web.page.maxSize, "$PREFIX.web.page.max-size")
         expect(web.page.maxSize >= web.page.defaultSize, "$PREFIX.web.page.max-size", ProblemCode.CONTRADICTS) {

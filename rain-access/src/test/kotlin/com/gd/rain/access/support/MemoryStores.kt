@@ -13,6 +13,7 @@ import com.gd.rain.access.internal.store.NewSession
 import com.gd.rain.access.internal.store.PermissionRow
 import com.gd.rain.access.internal.store.RevokedSession
 import com.gd.rain.access.internal.store.RoleRow
+import com.gd.rain.access.internal.store.SessionClosure
 import com.gd.rain.access.internal.store.SessionCursor
 import com.gd.rain.access.internal.store.SessionStore
 import com.gd.rain.access.internal.store.StoredCredential
@@ -171,11 +172,12 @@ open class MemorySessionStore : SessionStore {
         session: UUID,
         now: Instant,
         reason: String,
-    ): Instant? =
+    ): SessionClosure? =
         lock.withLock {
             val row = rows[session]?.takeIf { it.subject == subject } ?: return null
-            if (row.revokedAt == null) rows[session] = row.copy(revokedAt = now, revokedReason = reason)
-            rows.getValue(session).revokedAt
+            val closing = row.revokedAt == null
+            if (closing) rows[session] = row.copy(revokedAt = now, revokedReason = reason)
+            SessionClosure(requireNotNull(rows.getValue(session).revokedAt), closing)
         }
 
     override fun revokeBatch(
@@ -528,9 +530,7 @@ class MemoryGrants :
         type: SubjectType,
         role: UUID,
         now: Instant,
-    ) {
-        lock.withLock { defaults[type] = role }
-    }
+    ): Boolean = lock.withLock { defaults.put(type, role) != role }
 
     override fun declarePermissions(
         permissions: List<DeclaredPermission>,

@@ -46,7 +46,9 @@ import org.springframework.web.servlet.function.RequestPredicates
 import org.springframework.web.servlet.function.RouterFunction
 import org.springframework.web.servlet.function.RouterFunctions
 import org.springframework.web.servlet.function.ServerResponse
+import org.springframework.web.servlet.function.support.RouterFunctionMapping
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
+import org.springframework.web.util.ServletRequestPathUtils
 import org.springframework.web.util.pattern.PathPatternParser
 import java.util.UUID
 import java.util.function.Consumer
@@ -441,10 +443,24 @@ class FunctionalRoutesAreVerifiedTest {
         ).containsExactly(ProblemCode.INVALID)
     }
 
+    /** A request carrying the pattern the way `RouterFunctionMapping` records it once it has routed the request. */
     private fun request(method: String): MockHttpServletRequest =
         MockHttpServletRequest(method, "/api/extra").apply {
-            setAttribute(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE, PathPatternParser.defaultInstance.parse("/api/extra"))
+            setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/extra")
         }
+
+    @Test
+    fun `a request Spring's own router mapping routed is enforced from the pattern that mapping recorded`() {
+        val request = MockHttpServletRequest("GET", "/api/extra")
+        ServletRequestPathUtils.parseAndCache(request)
+        val routed = checkNotNull(RouterFunctionMapping(routes).getHandler(request)) { "the router mapped nothing" }
+
+        assertThat(
+            interceptor(HeldGrants(PRINCIPAL, setOf(THING_READ))).preHandle(request, MockHttpServletResponse(), routed.handler),
+        ).isTrue()
+        assertThatThrownBy { interceptor(HeldGrants(null, emptySet())).preHandle(request, MockHttpServletResponse(), routed.handler) }
+            .matches({ (it as Fault).kind == FaultKind.UNAUTHORIZED }, "unauthorized")
+    }
 
     private fun interceptor(grants: GrantsLookup): AccessEnforcementInterceptor =
         AccessEnforcementInterceptor(AccessDeclarations(emptyList()), grants) { mapOf(extra.key to extra) }

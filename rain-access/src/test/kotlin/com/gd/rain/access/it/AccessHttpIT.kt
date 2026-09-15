@@ -173,6 +173,17 @@ class AccessHttpIT {
         assertThat(robot.statusCode() to robot.json()["code"].asString()).isEqualTo(400 to "unknown_subject_type")
         assertThat(register.statusCode()).isEqualTo(404)
     }
+
+    @Test
+    fun `the probes, functional routes declared public, answer without a credential and with one that authenticates nobody`() {
+        val live = http.send("GET", "/live")
+        val ready = http.send("GET", "/ready")
+        val withStaleToken = http.send("GET", "/ready", null, "Authorization" to "Bearer not-a-token")
+
+        assertThat(live.statusCode()).describedAs(live.body()).isEqualTo(200)
+        assertThat(ready.statusCode()).describedAs(ready.body()).isEqualTo(200)
+        assertThat(withStaleToken.statusCode()).describedAs(withStaleToken.body()).isEqualTo(200)
+    }
 }
 
 /** An audit recorder that refuses the signed-in event, standing in for an audit store that is down. */

@@ -90,7 +90,19 @@ class AccessKit(
     val everywhere = CloseEverywhereUseCase(closing, trail, transactions, clock)
     val sessionsQuery = SessionsQuery(sessions, IDLE_TTL, clock)
     val changePassword =
-        ChangePasswordUseCase(credentials, hasher, bulkhead, this.limiter, rules, closing, revokeOtherSessions, trail, transactions, clock)
+        ChangePasswordUseCase(
+            credentials,
+            hasher,
+            bulkhead,
+            this.limiter,
+            POLICY,
+            rules,
+            closing,
+            revokeOtherSessions,
+            trail,
+            transactions,
+            clock,
+        )
     val setPassword = SetSubjectPasswordUseCase(registry, credentials, hasher, bulkhead, rules, closing, trail, transactions, ids, clock)
     val grantsAdministration = GrantsAdministration(grants, noOpLocks(manager), trail, transactions, 4, clock)
     val roles = RoleAdministration(grants, trail, transactions, ids, 2, clock)

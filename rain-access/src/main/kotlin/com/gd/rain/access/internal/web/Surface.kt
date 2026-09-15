@@ -100,7 +100,7 @@ public class AccessEnforcementInterceptor(
                 is HandlerFunction<*> -> functionalDeclaration(request)
                 else -> return true
             }
-        enforce(declaration)
+        enforce(declaration, request)
         return true
     }
 
@@ -128,26 +128,30 @@ public class AccessEnforcementInterceptor(
     }
 
     /**
-     * The declaration of a functional route, by the pattern the route matched. A `GET` route also answers `HEAD`
-     * (RFC 9110 §9.3.2), so a `HEAD` request with no `HEAD` declaration of its own is held to the `GET` declaration.
+     * The declaration of a functional route, by the pattern the route matched — which `RouterFunctionMapping` records on
+     * the request as its best matching pattern, as a request mapping's is, once it has taken the router's own attribute
+     * off. A `GET` route also answers `HEAD` (RFC 9110 §9.3.2), so a `HEAD` request with no `HEAD` declaration of its own
+     * is held to the `GET` declaration.
      */
     private fun functionalDeclaration(request: HttpServletRequest): EndpointDeclaration {
         val pattern =
-            when (val matched = request.getAttribute(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE)) {
-                is PathPattern -> matched.patternString
-                is String -> matched
-                else -> error("a request routed to a functional route carries no matched pattern")
-            }
+            request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE) as? String
+                ?: error("a request routed to a functional route carries no matched pattern")
         return functional["${request.method} $pattern"]
             ?: functional["GET $pattern"]?.takeIf { request.method == "HEAD" }
             ?: error("${request.method} $pattern is a functional route that declares no access; the start-up verification refuses that")
     }
 
-    private fun enforce(declaration: EndpointDeclaration) {
+    /** A caller that presented a credential which authenticated nobody is refused for the reason the filter found. */
+    private fun enforce(
+        declaration: EndpointDeclaration,
+        request: HttpServletRequest,
+    ) {
         if (declaration.public) return
         val principal =
             grants.principalOf()
-                ?: throw Fault(FaultKind.UNAUTHORIZED, RainErrorCodes.UNAUTHENTICATED, "this route needs an authenticated caller")
+                ?: throw (request.getAttribute(AccessAuthenticationFilter.REFUSAL_ATTRIBUTE) as? Fault)
+                    ?: Fault(FaultKind.UNAUTHORIZED, RainErrorCodes.UNAUTHENTICATED, "this route needs an authenticated caller")
         val required = declaration.permissions.toSet()
         if (required.isNotEmpty() && grants.heldBy(principal.subject, required) != required) throw Fault.forbidden()
     }
