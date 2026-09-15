@@ -27,4 +27,5 @@ include(
     "rain-persistence",
     "rain-data-jdbc",
     "rain-audit",
+    "rain-jobs",
 )

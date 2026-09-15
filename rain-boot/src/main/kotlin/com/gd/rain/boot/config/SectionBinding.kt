@@ -188,6 +188,9 @@ internal class SectionBinder(
         return when {
             erased.isSubclassOf(Map::class) -> {
                 val value = type.arguments.getOrNull(1)?.type ?: return false
+                // Spring's MapBinder keys a map of scalars by the whole remaining name, dots included
+                // (`workers.tickets.summarize` is key `tickets.summarize`); only a structured value nests.
+                if (isScalar(value.jvmErasure)) return true
                 claimsValue(null, value, rest.drop(1))
             }
 
@@ -210,6 +213,9 @@ internal class SectionBinder(
         ConfigurationPropertySources.get(environment).any { source ->
             source.getConfigurationProperty(name) != null || source.containsDescendantOf(name) == ConfigurationPropertyState.PRESENT
         }
+
+    private fun isScalar(erased: KClass<*>): Boolean =
+        !erased.isSubclassOf(Map::class) && !erased.isSubclassOf(Collection::class) && !isSection(null, erased)
 
     private fun isSection(
         parameter: KParameter?,
