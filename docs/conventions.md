@@ -24,8 +24,8 @@ How that reads in rain:
 | an invocation of a definition the application does not declare | `dead` with `unknown_definition`; never retried under an assumed profile |
 | rows of a job profile the application no longer declares | kept and reported on every pass; no assumed retention |
 
-Rule sets that can change carry a version: problem format v1, status table v1, query dialect v1, `NotifyRules` version 1,
-the breaker configuration rules version 1.
+Rule sets that can change carry a version: problem format v1, status table v1, query dialect v1, cursor format v1, plan
+criterion v2, the rain-crud plan proof version 1, `NotifyRules` version 1, the breaker configuration rules version 1.
 
 ## Design for ten million rows
 
@@ -44,15 +44,22 @@ designed as though it holds ten million entries, from the first line.
 Examples in rain: audit and dead-letter pages are keyset over `(occurred_at|finished_at, id)` with at most 500 items and no
 total; cancellation by subject runs 500 rows per statement; job retention deletes in batches and stops at a run budget;
 the reaper takes one page `FOR UPDATE SKIP LOCKED`; an LLM slot is decided in one statement over one pool's index range;
-a throttle's caller table is bounded and finds room with one heap look; readiness detail is found by name in a map.
+a throttle's caller table is bounded and finds room with one heap look; readiness detail is found by name in a map; a
+rain-crud list answers only a declared query shape, reads `limit + 1` rows and counts no further than a declared cap.
 
 ### Plan-proven queries
 
-Scale is proven from the query plan, not from timing or row counts. An integration test renders the real statement and
-asserts with `QueryPlans` ([rain-test](modules/test.md)) that PostgreSQL, with sequential scans disabled, reads the named
-index under a `Limit`. A statement whose plan has that shape costs the same at ten rows and at ten million, so the test
-needs no large fixture. rain's own: `AuditIT`, `RetentionUsesIndexIT`, `DeadLetterKeysetIT`, `ReaperIT`,
-`CancelBySubjectIT`, `LlmSlotsIT`.
+Scale is proven from the query plan, not from timing or row counts. An integration test renders the real statement,
+explains it with `QueryPlans` ([rain-test](modules/test.md)) — sequential, bitmap and TID scans and parallel plans
+disabled — and asserts `QueryPlan.boundedScan`, plan criterion v2, for each table it reads: every read is a b-tree index
+scan without a `Filter` whose index conditions bound the scanned range, under a `Limit` or keyed by a bounded input, and
+run once — or a lookup of at most one entry of a unique index. A statement whose plan passes costs the same at ten rows
+and at ten million, so the test needs no large fixture. rain's own: `AuditIT`, `RetentionUsesIndexIT`,
+`DeadLetterKeysetIT`, `ReaperIT`, `CancelBySubjectIT`, `HeldReservationIsKeyedByInvocationIT`, `CursorPagingIT`,
+`CappedCountIT`; `LlmSlotsIT` asserts the indexes its statements read and that neither table is scanned sequentially.
+
+A rain-crud resource is proven as a whole: `CrudPlanProof` explains every statement of every declared query shape against
+the application's migrated, empty database ([rain-crud](modules/crud.md#the-plan-proof)).
 
 ## Configuration
 
@@ -143,7 +150,8 @@ code of a module that owns tables needs a PostgreSQL: a throwaway Testcontainers
   depends on a timer or a scheduler drives a fake by hand.
 - A test that starts a context states its stage and roles; there is no implicit test role.
 - Each integration test gets a database of its own (`RainPostgres.freshDatabase`).
-- A query over an extensible table has a plan assertion.
+- A query over an extensible table has a plan assertion (`QueryPlan.boundedScan`), and every rain-crud resource has a
+  `CrudPlanProof` test.
 
 ## Data access
 
