@@ -40,6 +40,7 @@ dependencies {
         api(project(":rain-crud"))
         api(project(":rain-resilience"))
         api(project(":rain-audit"))
+        api(project(":rain-access"))
         api(project(":rain-realtime"))
         api(project(":rain-jobs"))
         api(project(":rain-llm"))

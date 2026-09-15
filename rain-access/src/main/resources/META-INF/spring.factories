@@ -1,0 +1,4 @@
+com.gd.rain.boot.config.ConfigurationContributor=\
+com.gd.rain.access.AccessConfigurationContributor
+org.springframework.boot.autoconfigure.AutoConfigurationImportFilter=\
+com.gd.rain.access.internal.UserDetailsServiceExclusionFilter
