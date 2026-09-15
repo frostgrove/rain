@@ -10,6 +10,8 @@ import com.gd.rain.access.SurfaceExemption
 import com.gd.rain.access.internal.web.AccessDeclarations
 import com.gd.rain.access.internal.web.AccessEnforcementInterceptor
 import com.gd.rain.access.internal.web.AccessSurfaceVerifier
+import com.gd.rain.access.internal.web.FunctionalRoute
+import com.gd.rain.access.internal.web.FunctionalRoutes
 import com.gd.rain.access.internal.web.PageRequest
 import com.gd.rain.access.support.AGENT
 import com.gd.rain.access.support.START
@@ -21,11 +23,14 @@ import com.gd.rain.core.error.RainErrorCodes
 import com.gd.rain.web.route.Access
 import com.gd.rain.web.route.DeclaresItsOwnAccess
 import com.gd.rain.web.route.EndpointDeclaration
+import com.gd.rain.web.route.MountsItsOwnSurface
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.springframework.http.HttpMethod
+import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.thirdparty.VendorConsoleController
@@ -36,8 +41,15 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.context.support.StaticWebApplicationContext
 import org.springframework.web.method.HandlerMethod
 import org.springframework.web.servlet.HandlerMapping
+import org.springframework.web.servlet.function.HandlerFunction
+import org.springframework.web.servlet.function.RequestPredicates
+import org.springframework.web.servlet.function.RouterFunction
+import org.springframework.web.servlet.function.RouterFunctions
+import org.springframework.web.servlet.function.ServerResponse
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
+import org.springframework.web.util.pattern.PathPatternParser
 import java.util.UUID
+import java.util.function.Consumer
 
 private const val THING_READ = "thing.read"
 private const val THING_WRITE = "thing.write"
@@ -59,7 +71,7 @@ private fun verify(
     codes: Set<String> = setOf(THING_READ, THING_WRITE),
 ): List<ConfigurationProblem> {
     val mapping = mappingOf(*controllers)
-    return AccessSurfaceVerifier({ mapping }, AccessDeclarations(exemptions), resources, emptyList(), { codes }).problems()
+    return AccessSurfaceVerifier({ mapping }, { null }, AccessDeclarations(exemptions), resources, emptyList(), { codes }).problems()
 }
 
 private class HeldGrants(
@@ -249,6 +261,7 @@ class ThirdPartyControllerNotExemptTest {
             AccessEnforcementInterceptor(
                 AccessDeclarations(listOf(exemption)),
                 HeldGrants(null, emptySet()),
+                { emptyMap() },
             ).preHandle(request, MockHttpServletResponse(), handler),
         ).isTrue()
     }
@@ -274,12 +287,14 @@ class MethodlessMappingCoversAllMethodsTest {
             AccessEnforcementInterceptor(
                 AccessDeclarations(emptyList()),
                 HeldGrants(PRINCIPAL, setOf(THING_READ)),
+                { emptyMap() },
             ).preHandle(request, MockHttpServletResponse(), handler)
         }.matches({ (it as Fault).kind == FaultKind.FORBIDDEN }, "403")
         assertThat(
             AccessEnforcementInterceptor(
                 AccessDeclarations(emptyList()),
                 HeldGrants(PRINCIPAL, setOf(THING_WRITE)),
+                { emptyMap() },
             ).preHandle(request, MockHttpServletResponse(), handler),
         ).isTrue()
     }
@@ -305,6 +320,7 @@ class MethodlessMappingCoversAllMethodsTest {
             AccessEnforcementInterceptor(
                 AccessDeclarations(emptyList()),
                 HeldGrants(null, emptySet()),
+                { emptyMap() },
             ).preHandle(request, MockHttpServletResponse(), handler)
         }.matches({ (it as Fault).code == RainErrorCodes.UNAUTHENTICATED }, "401")
     }
@@ -345,5 +361,111 @@ class RoleListRefusesPreloadParameterTest {
             assertThatThrownBy { pages.limit(MockHttpServletRequest().apply { addParameter("limit", written) }) }
                 .matches({ (it as Fault).code == RainErrorCodes.BAD_QUERY }, "bad query")
         }
+    }
+}
+
+private val OK: HandlerFunction<ServerResponse> = HandlerFunction { ServerResponse.ok().build() }
+
+/** Functional routes are read from their predicates; a predicate that does not reduce to methods and a path is unreadable. */
+class FunctionalRoutesTest {
+    @Test
+    fun `method and path routes, nested paths and narrowing predicates are read`() {
+        val routes =
+            RouterFunctions
+                .route()
+                .GET("/a", OK)
+                .POST("/b", RequestPredicates.accept(MediaType.APPLICATION_JSON), OK)
+                .nest(RequestPredicates.path("/api"), Consumer<RouterFunctions.Builder> { it.GET("/x", OK) })
+                .build()
+
+        assertThat(FunctionalRoutes.read(routes)).containsExactly(
+            FunctionalRoute.Readable("GET", "/a"),
+            FunctionalRoute.Readable("POST", "/b"),
+            FunctionalRoute.Readable("GET", "/api/x"),
+        )
+    }
+
+    @Test
+    fun `a route with no method predicate answers every method`() {
+        val methods =
+            FunctionalRoutes.read(RouterFunctions.route(RequestPredicates.path("/any"), OK)).map {
+                (it as FunctionalRoute.Readable).method
+            }
+
+        assertThat(methods).containsExactly("DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE")
+    }
+
+    @Test
+    fun `a disjunction, a negation and a route with no path are unreadable`() {
+        listOf(
+            RouterFunctions.route(RequestPredicates.GET("/a").or(RequestPredicates.GET("/b")), OK),
+            RouterFunctions.route(RequestPredicates.GET("/a").negate(), OK),
+            RouterFunctions.route(RequestPredicates.method(HttpMethod.GET), OK),
+        ).forEach { routes ->
+            assertThat(
+                FunctionalRoutes.read(routes),
+            ).describedAs(routes.toString()).singleElement().isInstanceOf(FunctionalRoute.Unreadable::class.java)
+        }
+    }
+}
+
+/** A functional route declares its access through a MountsItsOwnSurface and is enforced from that declaration. */
+class FunctionalRoutesAreVerifiedTest {
+    private val extra = EndpointDeclaration("GET", "/api/extra", permissions = listOf(THING_READ))
+    private val routes = RouterFunctions.route().GET("/api/extra", OK).build()
+
+    private fun problems(
+        declared: List<EndpointDeclaration>,
+        function: RouterFunction<*>,
+    ): List<ConfigurationProblem> {
+        val surface =
+            object : MountsItsOwnSurface {
+                override fun mountedDeclarations(): List<EndpointDeclaration> = declared
+            }
+        return AccessSurfaceVerifier({
+            null
+        }, { function }, AccessDeclarations(emptyList()), emptyList(), listOf(surface), { setOf(THING_READ, THING_WRITE) })
+            .problems()
+    }
+
+    @Test
+    fun `an undeclared functional route is refused, a declared one verifies, and an unreadable one is refused`() {
+        assertThat(
+            problems(emptyList(), routes).map {
+                it.path to it.code
+            },
+        ).containsExactly("access.surface:GET /api/extra" to ProblemCode.REQUIRED)
+        assertThat(problems(listOf(extra), routes)).isEmpty()
+        assertThat(
+            problems(emptyList(), RouterFunctions.route(RequestPredicates.GET("/a").or(RequestPredicates.GET("/b")), OK)).map { it.code },
+        ).containsExactly(ProblemCode.INVALID)
+    }
+
+    private fun request(method: String): MockHttpServletRequest =
+        MockHttpServletRequest(method, "/api/extra").apply {
+            setAttribute(RouterFunctions.MATCHING_PATTERN_ATTRIBUTE, PathPatternParser.defaultInstance.parse("/api/extra"))
+        }
+
+    private fun interceptor(grants: GrantsLookup): AccessEnforcementInterceptor =
+        AccessEnforcementInterceptor(AccessDeclarations(emptyList()), grants) { mapOf(extra.key to extra) }
+
+    @Test
+    fun `a functional route is enforced from its declaration, and HEAD is held to the GET declaration`() {
+        assertThat(interceptor(HeldGrants(PRINCIPAL, setOf(THING_READ))).preHandle(request("GET"), MockHttpServletResponse(), OK)).isTrue()
+        assertThat(interceptor(HeldGrants(PRINCIPAL, setOf(THING_READ))).preHandle(request("HEAD"), MockHttpServletResponse(), OK)).isTrue()
+        assertThatThrownBy { interceptor(HeldGrants(null, emptySet())).preHandle(request("GET"), MockHttpServletResponse(), OK) }
+            .isInstanceOf(Fault::class.java)
+            .matches({ (it as Fault).kind == FaultKind.UNAUTHORIZED }, "unauthorized")
+        assertThatThrownBy {
+            interceptor(
+                HeldGrants(PRINCIPAL, setOf(THING_WRITE)),
+            ).preHandle(request("GET"), MockHttpServletResponse(), OK)
+        }.isInstanceOf(Fault::class.java)
+            .matches({ (it as Fault).kind == FaultKind.FORBIDDEN }, "forbidden")
+        assertThatThrownBy {
+            interceptor(
+                HeldGrants(PRINCIPAL, setOf(THING_READ)),
+            ).preHandle(request("POST"), MockHttpServletResponse(), OK)
+        }.isInstanceOf(IllegalStateException::class.java)
     }
 }

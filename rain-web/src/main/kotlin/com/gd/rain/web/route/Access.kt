@@ -77,9 +77,9 @@ public interface DeclaresItsOwnAccess {
 }
 
 /**
- * A route that is not a request mapping — mounted through another handler mapping, such as a
- * WebSocket upgrade — and checks its own access. An implementation must check the permissions it
- * declares itself, before it serves, because no `@Access` enforcement stands in front of it.
+ * Routes a component mounts outside request mappings, with the access each declares, verified against what is mounted.
+ * A functional `RouterFunction` route is enforced from its declaration like an `@Access` handler; a route mounted
+ * through any other handler mapping (a WebSocket upgrade) must check the access it declares itself, before it serves.
  */
 public interface MountsItsOwnSurface {
     public fun mountedDeclarations(): List<EndpointDeclaration>

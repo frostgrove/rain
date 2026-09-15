@@ -266,7 +266,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `crud/PaginationArithmeticTest.kt` | rain-crud | ported | rewritten as CursorPageAssemblyTest for v1 page shapes |
 | test | `crud/query/ContractQueryFixture.kt` | dropped | dropped | Lease schema; replaced by neutral Books fixture |
 | test | `crud/query/QueryDialectTest.kt` | rain-crud | ported | query/DialectV1Test; heuristic cases rewritten as gap 29 tests |
-| test | `http/CredentialGateOnTomcatTest.kt` | rain-web | pending |  |
+| test | `http/CredentialGateOnTomcatTest.kt` | rain-web | ported | rain-access CredentialGateOnTomcatIT (encoded paths over a real Tomcat socket) |
 | test | `http/CrossOriginFilterTest.kt` | rain-web | dropped | filter dropped; replaced by rain-web CorsTest |
 | test | `http/Refusals.kt` | rain-web | ported | rain-web WebTestSupport problem()/problemCode() |
 | test | `http/RequestLogFilterTest.kt` | rain-web | ported | rain-web RequestLogFilterTest |

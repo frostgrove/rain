@@ -141,6 +141,7 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+import org.springframework.web.servlet.function.support.RouterFunctionMapping
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
 import java.time.Clock
 
@@ -802,7 +803,15 @@ public class RainAccessAutoConfiguration {
             public fun accessEnforcementInterceptor(
                 declarations: AccessDeclarations,
                 grants: GrantsLookup,
-            ): AccessEnforcementInterceptor = AccessEnforcementInterceptor(declarations, grants)
+                selfMounted: ObjectProvider<MountsItsOwnSurface>,
+            ): AccessEnforcementInterceptor =
+                AccessEnforcementInterceptor(declarations, grants) {
+                    selfMounted
+                        .orderedStream()
+                        .toList()
+                        .flatMap(MountsItsOwnSurface::mountedDeclarations)
+                        .associateBy(com.gd.rain.web.route.EndpointDeclaration::key)
+                }
 
             @Bean
             public fun accessWebMvcConfigurer(interceptor: AccessEnforcementInterceptor): WebMvcConfigurer =
@@ -824,6 +833,13 @@ public class RainAccessAutoConfiguration {
                     {
                         if (context.containsBean(MVC_MAPPING)) {
                             context.getBean(MVC_MAPPING, RequestMappingHandlerMapping::class.java)
+                        } else {
+                            null
+                        }
+                    },
+                    {
+                        if (context.containsBean(ROUTER_MAPPING)) {
+                            context.getBean(ROUTER_MAPPING, RouterFunctionMapping::class.java).routerFunction
                         } else {
                             null
                         }
@@ -893,6 +909,10 @@ public class RainAccessAutoConfiguration {
         public const val REDIS_CONNECTION_FACTORY: String = "org.springframework.data.redis.connection.RedisConnectionFactory"
 
         private const val MVC_MAPPING = "requestMappingHandlerMapping"
+
+        /** The bean Spring MVC registers for functional routes. */
+
+        private const val ROUTER_MAPPING: String = "routerFunctionMapping"
 
         private fun <T : Filter> registration(
             name: String,

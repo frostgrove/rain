@@ -25,11 +25,13 @@ import com.gd.rain.web.filter.RequestLogFilter
 import com.gd.rain.web.filter.SecurityHeadersFilter
 import com.gd.rain.web.filter.WebFilterOrder
 import com.gd.rain.web.probe.ProbeController
+import com.gd.rain.web.probe.ProbeSurface
 import com.gd.rain.web.problem.ErrorCodeRegistrar
 import com.gd.rain.web.problem.ProblemRenderer
 import com.gd.rain.web.problem.ProblemWriter
 import com.gd.rain.web.problem.RainWebErrorCodes
 import com.gd.rain.web.problem.StatusTable
+import com.gd.rain.web.route.MountsItsOwnSurface
 import com.gd.rain.web.route.RequestPrincipal
 import jakarta.servlet.Filter
 import org.springframework.beans.factory.ObjectProvider
@@ -198,6 +200,11 @@ public class RainProbeAutoConfiguration {
         controller: ProbeController,
         properties: RainWebProperties,
     ): RouterFunction<ServerResponse> = controller.routes(properties.probes.livePath, properties.probes.readyPath)
+
+    /** The probe routes on the verified surface: they are functional routes, so no annotation declares them. */
+    @Bean
+    public fun probeSurface(properties: RainWebProperties): MountsItsOwnSurface =
+        ProbeSurface(properties.probes.livePath, properties.probes.readyPath)
 
     @Configuration(proxyBeanMethods = false)
     @Conditional(OnApiRoleAbsentCondition::class)
