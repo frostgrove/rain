@@ -89,14 +89,20 @@ internal class JobReaper(
 internal data class RetentionReport(
     val deletedInvocations: Map<String, Long>,
     val deletedIntents: Map<String, Long>,
-    /** False when the run budget ran out with batches still to delete; the next pass continues. */
+    /** Profiles owning retained rows that the catalogue does not declare; no retention is declared for them, so their rows are kept. */
+    val undeclaredProfiles: Set<String>,
+    /** False when the run budget ran out with batches or profiles still to look at; the next pass continues. */
     val finished: Boolean,
 )
 
 /**
  * Deletes each declared profile's terminal invocations and released reservations older than the profile's retention,
  * in single-statement batches over the partial retention indexes. A pass stops starting batches once its run budget
- * is spent and says so. Rows of a profile this application no longer declares have no declared retention and are kept.
+ * is spent and says so.
+ *
+ * Rows of a profile this application no longer declares have no declared retention, so they are kept, and never
+ * silently: every pass walks the profiles that own retained rows, one index seek per distinct profile, and reports
+ * and logs each undeclared one. Declaring a `JobProfile` with that id makes its rows expire again.
  */
 internal class JobRetention(
     private val catalog: JobCatalog,
@@ -109,6 +115,13 @@ internal class JobRetention(
 
     override fun run() {
         val report = sweep()
+        if (report.undeclaredProfiles.isNotEmpty()) {
+            log.warn(
+                "job retention keeps the rows of profiles this application does not declare, which have no retention: {}; " +
+                    "declare a JobProfile with each id to have its rows expire",
+                report.undeclaredProfiles.joinToString(", "),
+            )
+        }
         if (!report.finished) log.warn("job retention ran out of its {} budget; the next pass continues", properties.runBudget)
     }
 
@@ -121,12 +134,23 @@ internal class JobRetention(
             val before = started.minus(profile.retention)
             val invocationsDone = drain(deadline) { ledger.deleteTerminal(profile.id, before, properties.batch) }
             invocations[profile.id] = invocationsDone.deleted
-            if (!invocationsDone.finished) return RetentionReport(invocations, intents, finished = false)
+            if (!invocationsDone.finished) return RetentionReport(invocations, intents, emptySet(), finished = false)
             val intentsDone = drain(deadline) { ledger.deleteReleasedIntents(profile.id, before, properties.batch) }
             intents[profile.id] = intentsDone.deleted
-            if (!intentsDone.finished) return RetentionReport(invocations, intents, finished = false)
+            if (!intentsDone.finished) return RetentionReport(invocations, intents, emptySet(), finished = false)
         }
-        return RetentionReport(invocations, intents, finished = true)
+        val declared = catalog.profiles.map { it.id }.toSet()
+        val undeclared = sortedSetOf<String>()
+        for (next in listOf(ledger::nextTerminalProfile, ledger::nextReleasedIntentProfile)) {
+            var after: String? = null
+            while (true) {
+                if (!clock.instant().isBefore(deadline)) return RetentionReport(invocations, intents, undeclared, finished = false)
+                val profile = next(after) ?: break
+                if (profile !in declared) undeclared += profile
+                after = profile
+            }
+        }
+        return RetentionReport(invocations, intents, undeclared, finished = true)
     }
 
     private data class Drained(

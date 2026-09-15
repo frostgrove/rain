@@ -168,7 +168,7 @@ internal interface RenewalTicker {
     fun running(): Boolean
 }
 
-/** One virtual thread renewing every interval until stopped. */
+/** One virtual thread renewing at start and then every interval until stopped. */
 internal class RenewerLoop(
     private val renewer: LeaseRenewer,
     private val interval: Duration,
@@ -182,13 +182,14 @@ internal class RenewerLoop(
         val signal = CountDownLatch(1)
         stopSignal = signal
         Thread.ofVirtual().name("rain-jobs-lease-renewer").start {
-            while (!signal.await(interval.toNanos(), TimeUnit.NANOSECONDS)) {
+            // A round at start costs nothing while no lease is held, and gives readiness a round to read at once.
+            do {
                 try {
                     renewer.renewOnce()
                 } catch (failure: RuntimeException) {
                     log.error("a lease renewal round failed", failure)
                 }
-            }
+            } while (!signal.await(interval.toNanos(), TimeUnit.NANOSECONDS))
         }
     }
 

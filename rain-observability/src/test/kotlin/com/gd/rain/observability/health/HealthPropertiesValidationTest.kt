@@ -10,6 +10,7 @@ import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
+import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
@@ -17,7 +18,7 @@ import java.time.Clock
 import java.time.Duration
 import javax.sql.DataSource
 
-/** Gap 44: the check timeout and the freshness window are declared, validated settings, and the database's importance is stated. */
+/** Gap 44: the check timeout and the freshness window are declared, validated settings, and every check's importance is stated. */
 class HealthPropertiesValidationTest {
     @Test
     fun `an absent section binds the declared defaults and reports nothing`() {
@@ -27,6 +28,7 @@ class HealthPropertiesValidationTest {
 
             assertThat(properties.checkTimeout).isEqualTo(Duration.ofSeconds(2))
             assertThat(properties.freshness).isEqualTo(Duration.ofSeconds(1))
+            assertThat(properties.checks).isEmpty()
         }
     }
 
@@ -49,20 +51,27 @@ class HealthPropertiesValidationTest {
 
     @Test
     fun `an importance that is not one of the four is refused`() {
-        assertThat(problemsUnderHealth("rain.health.database.importance" to "sometimes").map { it.path to it.code })
-            .containsExactly("rain.health.database.importance" to ProblemCode.INVALID)
+        assertThat(problemsUnderHealth("rain.health.checks.database" to "sometimes").map { it.path to it.code })
+            .containsExactly("rain.health.checks.database" to ProblemCode.INVALID)
     }
 
     @Test
-    fun `a database section without an importance is refused`() {
-        assertThat(HealthProperties(database = DatabaseHealthProperties(importance = null)).problems())
-            .containsExactly(
-                ConfigurationProblem(
-                    "rain.health.database.importance",
-                    ProblemCode.REQUIRED,
-                    "no value is provided; state one of required, degrading, informational, disabled",
-                ),
-            )
+    fun `a check name with dots is one key`() {
+        assertThat(problemsUnderHealth("rain.health.checks.realtime.listener" to "degrading")).isEmpty()
+
+        val bound =
+            Binder
+                .get(
+                    environmentOf("rain.health.checks.realtime.listener" to "degrading"),
+                ).bind(HealthProperties.PREFIX, HealthProperties::class.java)
+                .get()
+        assertThat(bound.checks).containsExactlyEntriesOf(mapOf("realtime.listener" to Importance.DEGRADING))
+    }
+
+    @Test
+    fun `a check name outside the name alphabet is refused`() {
+        assertThat(HealthProperties(checks = mapOf("data base" to Importance.REQUIRED)).problems().map { it.path to it.code })
+            .containsExactly("rain.health.checks.data base" to ProblemCode.INVALID)
     }
 
     @Test
@@ -81,31 +90,75 @@ class HealthPropertiesValidationTest {
                     Throwable::cause,
                 ).filterIsInstance<ConfigurationProblemsException>().first()
             assertThat(refusal.problems.map { it.path to it.code })
-                .containsExactly("rain.health.database.importance" to ProblemCode.REQUIRED)
+                .containsExactly("rain.health.checks.database" to ProblemCode.REQUIRED)
         }
     }
 
     @Test
-    fun `a process with a DataSource contributes the database check at the stated importance`() {
+    fun `a process with a DataSource runs the database check at the stated importance`() {
         runner
             .withBean(DataSource::class.java, { mockk<DataSource>() })
-            .withPropertyValues("rain.health.database.importance=degrading")
+            .withPropertyValues("rain.health.checks.database=degrading")
             .run { context ->
                 assertThat(context).hasNotFailed()
                 val database = context.getBean(HealthRegistry::class.java).contributions().single()
 
-                assertThat(database).isInstanceOf(DatabaseHealthContribution::class.java)
+                assertThat(database.name).isEqualTo(DatabaseHealthCheck.NAME)
                 assertThat(database.importance).isEqualTo(Importance.DEGRADING)
                 assertThat(database.timeout).isEqualTo(Duration.ofSeconds(2))
             }
     }
 
     @Test
-    fun `a process without a DataSource has no database check and no database rule`() {
+    fun `a process without a DataSource has no database check`() {
         runner.run { context ->
-            assertThat(context).hasNotFailed().doesNotHaveBean(DatabaseImportanceCheck::class.java)
+            assertThat(context).hasNotFailed().doesNotHaveBean(DatabaseHealthCheck::class.java)
             assertThat(context.getBean(HealthRegistry::class.java).contributions()).isEmpty()
         }
+    }
+
+    @Test
+    fun `an application's own check joins the registry at its stated importance`() {
+        runner
+            .withBean("searchCheck", HealthCheck::class.java, { OwnCheck("search") })
+            .withPropertyValues("rain.health.checks.search=informational")
+            .run { context ->
+                assertThat(context).hasNotFailed()
+                val search = context.getBean(HealthRegistry::class.java).contributions().single()
+
+                assertThat(search.name).isEqualTo("search")
+                assertThat(search.importance).isEqualTo(Importance.INFORMATIONAL)
+            }
+    }
+
+    @Test
+    fun `an importance for a check this process does not run is not evaluated and does not stop the start`() {
+        assertThat(HealthCheckImportanceCheck(emptyList(), emptyList(), mapOf("jobs" to Importance.REQUIRED)).problems())
+            .containsExactly(
+                ConfigurationProblem("rain.health.checks.jobs", ProblemCode.NOT_EVALUATED, "names no health check this process runs"),
+            )
+        runner.withPropertyValues("rain.health.checks.jobs=required").run { context ->
+            assertThat(context).hasNotFailed()
+        }
+    }
+
+    @Test
+    fun `an importance for a contribution that states its own contradicts it`() {
+        assertThat(
+            HealthCheckImportanceCheck(emptyList(), listOf(passing("jobs")), mapOf("jobs" to Importance.REQUIRED)).problems().map {
+                it.path to
+                    it.code
+            },
+        ).containsExactly("rain.health.checks.jobs" to ProblemCode.CONTRADICTS)
+    }
+
+    private class OwnCheck(
+        override val name: String,
+    ) : HealthCheck {
+        override val code: String = name
+        override val timeout: Duration? = null
+
+        override fun probe() {}
     }
 
     private val runner =
@@ -114,7 +167,7 @@ class HealthPropertiesValidationTest {
             .withBean(Clock::class.java, { MutableClock() })
             .withPropertyValues("rain.runtime.roles=api", "rain.deployment.stage=test")
 
-    private fun problemsUnderHealth(vararg properties: Pair<String, String>): List<ConfigurationProblem> {
+    private fun environmentOf(vararg properties: Pair<String, String>): StandardEnvironment {
         val environment = StandardEnvironment()
         val values =
             mapOf(
@@ -123,9 +176,12 @@ class HealthPropertiesValidationTest {
                 "rain.deployment.stage" to "test",
             ) + properties
         environment.propertySources.addFirst(MapPropertySource("test", values))
-        return RainConfigurationValidator
-            .validate(environment, listOf(RainHealthConfigurationContributor()), emptyList())
+        return environment
+    }
+
+    private fun problemsUnderHealth(vararg properties: Pair<String, String>): List<ConfigurationProblem> =
+        RainConfigurationValidator
+            .validate(environmentOf(*properties), listOf(RainHealthConfigurationContributor()), emptyList())
             .problems
             .filter { it.path.startsWith(HealthProperties.PREFIX) }
-    }
 }

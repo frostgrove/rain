@@ -138,3 +138,24 @@ public interface HealthContribution {
 public fun interface HealthReadings {
     public fun inspect(): HealthDetail
 }
+
+/**
+ * A check a module or an application offers, without deciding how much it matters.
+ *
+ * The importance is the composition root's: the application states it as
+ * `rain.health.checks.<name>`, and a process that runs a check without a stated importance does not
+ * start. [probe] signals a failure by throwing; the message reaches the detail and the log, the
+ * [code] reaches the public report.
+ */
+public interface HealthCheck {
+    /** Unique, matching [HealthRegistry.NAME_PATTERN]; also the key under `rain.health.checks`. */
+    public val name: String
+
+    /** The public code, matching [HealthRegistry.CODE_PATTERN]; null keeps the check out of `failing` while it still moves the status. */
+    public val code: String?
+
+    /** This check's budget; null means the registry's `rain.health.check-timeout`. */
+    public val timeout: Duration?
+
+    public fun probe()
+}

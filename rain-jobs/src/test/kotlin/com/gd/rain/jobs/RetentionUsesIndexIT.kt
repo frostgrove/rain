@@ -41,4 +41,20 @@ class RetentionUsesIndexIT {
         assertThat(plan.hasLimit()).isTrue()
         assertThat(plan.scansSequentially("job_intent")).describedAs(plan.json).isFalse()
     }
+
+    @Test
+    fun `finding the next profile that owns retained rows is one seek on each retention index`() {
+        val fixture = HousekeepingFixture("retention_profile_plan")
+
+        listOf(
+            fixture.jooq.nextTerminalProfileQuery("standard") to ("ix_job_invocation_retention" to "job_invocation"),
+            fixture.jooq.nextReleasedIntentProfileQuery("standard") to ("ix_job_intent_retention" to "job_intent"),
+        ).forEach { (query, expected) ->
+            val plan = QueryPlans.explain(fixture.database.dataSource, fixture.database.dsl.renderInlined(query), generic = false)
+
+            assertThat(plan.usesIndex(expected.first)).describedAs(plan.json).isTrue()
+            assertThat(plan.hasLimit()).isTrue()
+            assertThat(plan.scansSequentially(expected.second)).describedAs(plan.json).isFalse()
+        }
+    }
 }

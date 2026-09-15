@@ -9,6 +9,7 @@ plugins {
 
 dependencies {
     api(project(":rain-persistence"))
+    api(project(":rain-observability"))
     implementation("com.zaxxer:HikariCP")
     implementation("org.postgresql:postgresql")
     implementation("org.slf4j:slf4j-api")

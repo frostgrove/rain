@@ -5,6 +5,7 @@ import com.gd.rain.jobs.JobProfile
 import com.gd.rain.jobs.JobState
 import com.gd.rain.jobs.ReaperProperties
 import com.gd.rain.jobs.RetentionProperties
+import com.gd.rain.jobs.internal.JobCatalog
 import com.gd.rain.jobs.internal.housekeeping.JobReaper
 import com.gd.rain.jobs.internal.housekeeping.JobRetention
 import com.gd.rain.jobs.internal.ledger.HousekeepingLedger
@@ -42,7 +43,8 @@ internal class HousekeepingFixture(
     fun retention(
         batch: Int = 1_000,
         budget: Duration = Duration.ofSeconds(30),
-    ): JobRetention = JobRetention(queue.catalog, ledger, RetentionProperties(Duration.ofHours(1), batch, budget), clock)
+        catalog: JobCatalog = queue.catalog,
+    ): JobRetention = JobRetention(catalog, ledger, RetentionProperties(Duration.ofHours(1), batch, budget), clock)
 
     fun enqueue(
         definition: JobDefinition<Note> = Fixtures.definition(),

@@ -179,7 +179,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `lock/persistence/AdvisoryLockRepository.kt` | rain-persistence | ported | JooqAdvisoryLockStore |
 | main | `observability/LoggingConfiguration.kt` | rain-observability | ported | rain-observability RainOpenTelemetryLoggingAutoConfiguration |
 | main | `observability/health/ActuatorHealthContributors.kt` | rain-observability | ported | rain-observability ActuatorHealthBridge (gap 44) |
-| main | `observability/health/DatabaseHealthIndicator.kt` | rain-persistence | ported | rain-observability DatabaseHealthContribution, importance from rain.health.database.importance |
+| main | `observability/health/DatabaseHealthIndicator.kt` | rain-persistence | ported | rain-observability DatabaseHealthCheck, importance from rain.health.checks.database |
 | main | `observability/health/HealthCache.kt` | rain-observability | ported | rain-observability HealthCache |
 | main | `observability/health/HealthConfiguration.kt` | rain-observability | ported | RainHealthAutoConfiguration + RainActuatorHealthAutoConfiguration |
 | main | `observability/health/HealthModel.kt` | rain-observability | ported | rain-observability HealthModel (readiness contract) |

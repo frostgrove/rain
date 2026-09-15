@@ -17,6 +17,7 @@ import com.gd.rain.jobs.JobProfile
 import com.gd.rain.jobs.JobWorkerCheck
 import com.gd.rain.jobs.JobsErrorCodes
 import com.gd.rain.jobs.JobsFaultTranslator
+import com.gd.rain.jobs.JobsHealthCheck
 import com.gd.rain.jobs.JobsProperties
 import com.gd.rain.jobs.RecurringWork
 import com.gd.rain.jobs.WorkQueue
@@ -39,6 +40,7 @@ import com.gd.rain.jobs.internal.worker.REAL_GRACE_WAIT
 import com.gd.rain.jobs.internal.worker.SchedulerFactory
 import com.gd.rain.jobs.internal.worker.WorkerAssembly
 import com.gd.rain.jobs.internal.worker.WorkerParts
+import com.gd.rain.observability.health.HealthCheck
 import com.gd.rain.persistence.autoconfigure.RainPersistenceAutoConfiguration
 import com.gd.rain.persistence.lock.AdvisoryLockStore
 import com.gd.rain.persistence.lock.AdvisoryLocks
@@ -159,6 +161,14 @@ public class RainJobsAutoConfiguration {
             properties: JobsProperties,
             environment: Environment,
         ): ConfigurationCheck = ConnectionDemandCheck(catalog, recurring.orderedStream().toList(), properties, environment)
+
+        /** Readiness of the worker machinery; its importance is the application's, `rain.health.checks.jobs`. */
+        @Bean
+        public fun jobsHealthCheck(
+            worker: JobsWorker,
+            properties: JobsProperties,
+            clock: Clock,
+        ): HealthCheck = JobsHealthCheck(worker, properties.health.maxPollAge, properties.lease.ttl, clock)
 
         @Bean
         public fun jobsWorker(

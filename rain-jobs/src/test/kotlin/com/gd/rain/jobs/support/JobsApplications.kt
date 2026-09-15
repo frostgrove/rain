@@ -62,6 +62,9 @@ internal object JobsApplications {
                     "rain.jobs.drain-grace=10s",
                     "rain.jobs.reserved-connections=5",
                     "rain.jobs.scheduler.poll-interval=1h",
+                    "rain.jobs.health.max-poll-age=2h",
+                    "rain.health.checks.database=informational",
+                    "rain.health.checks.jobs=informational",
                 )
         return SpringApplicationBuilder(JobsApplication::class.java)
             .web(WebApplicationType.NONE)

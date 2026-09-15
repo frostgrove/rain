@@ -13,13 +13,12 @@ import javax.sql.DataSource
  * given the budget rounded up to the next whole second; the registry still cuts the check at the
  * budget itself.
  *
- * The [importance] is stated by the application (`rain.health.database.importance`).
+ * Its importance is stated by the application as `rain.health.checks.database`.
  */
-public class DatabaseHealthContribution(
+public class DatabaseHealthCheck(
     private val dataSource: DataSource,
-    override val importance: Importance,
     budget: Duration,
-) : HealthContribution {
+) : HealthCheck {
     override val name: String = NAME
     override val code: String = NAME
     override val timeout: Duration = budget

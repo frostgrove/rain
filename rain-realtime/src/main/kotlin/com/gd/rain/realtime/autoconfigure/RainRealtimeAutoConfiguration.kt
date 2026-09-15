@@ -4,9 +4,11 @@ import com.gd.rain.boot.runtime.ConditionalOnRainRole
 import com.gd.rain.boot.runtime.RuntimeRole
 import com.gd.rain.core.config.ConfigurationProblemsException
 import com.gd.rain.core.error.ErrorCodeCatalog
+import com.gd.rain.observability.health.HealthCheck
 import com.gd.rain.realtime.HikariListenerConnections
 import com.gd.rain.realtime.RealtimeErrorCodes
 import com.gd.rain.realtime.RealtimeListener
+import com.gd.rain.realtime.RealtimeListenerHealthCheck
 import com.gd.rain.realtime.RealtimeProperties
 import com.gd.rain.realtime.RealtimePublisher
 import com.gd.rain.realtime.configurationProblems
@@ -59,6 +61,10 @@ public class RainRealtimeAutoConfiguration {
             if (problems.isNotEmpty()) throw ConfigurationProblemsException(problems)
             return RealtimeListener(HikariListenerConnections.of(properties, dataSource), properties)
         }
+
+        /** Readiness of the listener; its importance is the application's, `rain.health.checks.realtime.listener`. */
+        @Bean
+        public fun realtimeListenerHealthCheck(listener: RealtimeListener): HealthCheck = RealtimeListenerHealthCheck(listener)
     }
 }
 

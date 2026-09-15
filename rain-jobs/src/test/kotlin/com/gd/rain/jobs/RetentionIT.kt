@@ -1,5 +1,6 @@
 package com.gd.rain.jobs
 
+import com.gd.rain.jobs.internal.JobCatalog
 import com.gd.rain.jobs.internal.ledger.HousekeepingLedger
 import com.gd.rain.jobs.support.Fixtures
 import com.gd.rain.jobs.support.HousekeepingFixture
@@ -104,5 +105,28 @@ class RetentionIT {
         assertThat(report.finished).isFalse()
         assertThat(report.deletedInvocations).containsEntry("short", 4L)
         assertThat(fixture.database.count("SELECT count(*) FROM rain_jobs.job_invocation")).isEqualTo(1)
+    }
+
+    @Test
+    fun `rows of a profile the application no longer declares are kept and reported, never silently`() {
+        val retired = Fixtures.profile("retired", retention = Duration.ofDays(1))
+        val old = Fixtures.definition("notes.old", "retired")
+        val fixture = HousekeepingFixture("retention_undeclared", listOf(short, retired), listOf(quick, old))
+        val kept = fixture.enqueue(old, Dedupe.Unique("kept"))
+        val gone = fixture.enqueue(quick)
+        fixture.terminal(kept, JobState.SUCCEEDED, Fixtures.START)
+        fixture.terminal(gone, JobState.SUCCEEDED, Fixtures.START)
+
+        fixture.clock.advance(Duration.ofDays(2))
+        val report = fixture.retention(catalog = JobCatalog(listOf(short), listOf(quick))).sweep()
+
+        assertThat(report.finished).isTrue()
+        assertThat(report.undeclaredProfiles).containsExactly("retired")
+        assertThat(report.deletedInvocations).containsExactlyEntriesOf(mapOf("short" to 1L))
+        assertThat(fixture.state(kept)).isEqualTo("succeeded")
+        assertThat(fixture.state(gone)).isNull()
+        assertThat(
+            fixture.database.jdbc.queryForList("SELECT dedupe_key FROM rain_jobs.job_intent", String::class.java),
+        ).containsExactly("kept")
     }
 }

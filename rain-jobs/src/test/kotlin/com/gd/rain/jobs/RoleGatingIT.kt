@@ -8,6 +8,8 @@ import com.gd.rain.jobs.support.Fixtures
 import com.gd.rain.jobs.support.JobsApplication
 import com.gd.rain.jobs.support.JobsApplications
 import com.gd.rain.jobs.support.Note
+import com.gd.rain.observability.health.CheckState
+import com.gd.rain.observability.health.HealthRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -24,6 +26,9 @@ class RoleGatingIT {
             assertThat(context.getBeanNamesForType(JobsWorker::class.java)).isEmpty()
             assertThat(context.getBeanNamesForType(JobsHealth::class.java)).isEmpty()
             assertThat(context.getBeanNamesForType(AttemptStatementTimeout::class.java)).isEmpty()
+            assertThat(context.getBean(HealthRegistry::class.java).contributions().map { it.name })
+                .describedAs("the jobs importance is stated for the worker role and not evaluated here")
+                .containsExactly("database")
             assertThat(context.getBean(JobAdministration::class.java).definitions().map { it.name }).containsExactly("notes.write")
 
             context.getBean(WorkQueue::class.java).enqueue(Fixtures.definition(), Note("from api"), Fixtures.options())
@@ -69,6 +74,10 @@ class RoleGatingIT {
 
             val application = context.getBean(JobsApplication::class.java)
             Awaits.until("the handler to run") { application.handled.contains("from worker") }
+
+            val health = context.getBean(HealthRegistry::class.java)
+            assertThat(health.contributions().map { it.name }).containsExactly("database", "jobs")
+            Awaits.until("the jobs check to pass") { health.inspect().reading("jobs")?.state == CheckState.PASSING }
         } finally {
             context.close()
         }

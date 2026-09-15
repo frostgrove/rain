@@ -7,6 +7,7 @@ import com.gd.rain.realtime.HikariListenerConnections
 import com.gd.rain.realtime.ListenerStartRefused
 import com.gd.rain.realtime.RealtimeErrorCodes
 import com.gd.rain.realtime.RealtimeListener
+import com.gd.rain.realtime.RealtimeListenerHealthCheck
 import com.gd.rain.realtime.RealtimeProperties
 import com.gd.rain.realtime.RealtimePublisher
 import org.assertj.core.api.Assertions.assertThat
@@ -51,6 +52,7 @@ class RealtimeAutoConfigurationTest {
                 .hasNotFailed()
                 .hasSingleBean(RealtimePublisher::class.java)
                 .doesNotHaveBean(RealtimeListener::class.java)
+                .doesNotHaveBean(RealtimeListenerHealthCheck::class.java)
             assertThat(context.getBeansOfType(ErrorCodeCatalog::class.java).values).contains(RealtimeErrorCodes)
         }
     }

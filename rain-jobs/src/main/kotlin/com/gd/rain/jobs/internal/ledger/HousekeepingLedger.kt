@@ -4,6 +4,8 @@ import com.gd.rain.jobs.JobState
 import com.gd.rain.jobs.jooq.Tables.JOB_INTENT
 import org.jooq.DSLContext
 import org.jooq.Delete
+import org.jooq.Record1
+import org.jooq.Select
 import org.jooq.impl.DSL
 import java.time.Instant
 import java.util.UUID
@@ -55,6 +57,12 @@ internal interface HousekeepingLedger {
         before: Instant,
         batch: Int,
     ): Int
+
+    /** The smallest profile after [after] (or the smallest at all) that owns a terminal invocation; one index seek. */
+    fun nextTerminalProfile(after: String?): String?
+
+    /** The smallest profile after [after] (or the smallest at all) that owns a released reservation; one index seek. */
+    fun nextReleasedIntentProfile(after: String?): String?
 }
 
 internal class JooqHousekeepingLedger(
@@ -138,6 +146,30 @@ internal class JooqHousekeepingLedger(
         before: Instant,
         batch: Int,
     ): Int = deleteReleasedIntentsQuery(profile, before, batch).execute()
+
+    override fun nextTerminalProfile(after: String?): String? = nextTerminalProfileQuery(after).fetchOne()?.value1()
+
+    override fun nextReleasedIntentProfile(after: String?): String? = nextReleasedIntentProfileQuery(after).fetchOne()?.value1()
+
+    /** The leading column of `ix_job_invocation_retention`, in order, under its predicate, one row. */
+    fun nextTerminalProfileQuery(after: String?): Select<Record1<String>> =
+        dsl
+            .select(j.PROFILE)
+            .from(j)
+            .where(j.STATE.`in`(TERMINAL))
+            .and(if (after == null) DSL.noCondition() else j.PROFILE.gt(after))
+            .orderBy(j.PROFILE)
+            .limit(1)
+
+    /** The leading column of `ix_job_intent_retention`, in order, under its predicate, one row. */
+    fun nextReleasedIntentProfileQuery(after: String?): Select<Record1<String>> =
+        dsl
+            .select(JOB_INTENT.PROFILE)
+            .from(JOB_INTENT)
+            .where(JOB_INTENT.RELEASED_AT.isNotNull)
+            .and(if (after == null) DSL.noCondition() else JOB_INTENT.PROFILE.gt(after))
+            .orderBy(JOB_INTENT.PROFILE)
+            .limit(1)
 
     /** The partial index `ix_job_invocation_retention` serves the inner seek: its predicate is this state list, verbatim. */
     fun deleteTerminalQuery(

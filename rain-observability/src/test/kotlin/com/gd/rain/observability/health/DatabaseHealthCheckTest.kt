@@ -12,7 +12,7 @@ import java.time.Duration
 import javax.sql.DataSource
 
 /** A ping with this check's budget, and the connection given back either way. */
-class DatabaseHealthContributionTest {
+class DatabaseHealthCheckTest {
     private val connection = mockk<Connection>(relaxed = true)
     private val dataSource = mockk<DataSource>()
 
@@ -42,23 +42,22 @@ class DatabaseHealthContributionTest {
 
     @Test
     fun `the driver timeout is the budget rounded up to whole seconds and never zero`() {
-        assertThat(DatabaseHealthContribution.pingSecondsFor(Duration.ofMillis(400))).isEqualTo(1)
-        assertThat(DatabaseHealthContribution.pingSecondsFor(Duration.ofMillis(2001))).isEqualTo(3)
-        assertThat(DatabaseHealthContribution.pingSecondsFor(Duration.ofSeconds(2))).isEqualTo(2)
-        assertThatThrownBy { DatabaseHealthContribution.pingSecondsFor(Duration.ZERO) }.isInstanceOf(IllegalArgumentException::class.java)
-        assertThatThrownBy { DatabaseHealthContribution.pingSecondsFor(Duration.ofSeconds(Int.MAX_VALUE.toLong() + 1)) }
+        assertThat(DatabaseHealthCheck.pingSecondsFor(Duration.ofMillis(400))).isEqualTo(1)
+        assertThat(DatabaseHealthCheck.pingSecondsFor(Duration.ofMillis(2001))).isEqualTo(3)
+        assertThat(DatabaseHealthCheck.pingSecondsFor(Duration.ofSeconds(2))).isEqualTo(2)
+        assertThatThrownBy { DatabaseHealthCheck.pingSecondsFor(Duration.ZERO) }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { DatabaseHealthCheck.pingSecondsFor(Duration.ofSeconds(Int.MAX_VALUE.toLong() + 1)) }
             .isInstanceOf(ArithmeticException::class.java)
     }
 
     @Test
-    fun `the check publishes its name and code and runs at the stated importance and budget`() {
-        val contribution = DatabaseHealthContribution(dataSource, Importance.DEGRADING, Duration.ofMillis(1500))
+    fun `the check publishes its name and code and runs within its budget`() {
+        val contribution = DatabaseHealthCheck(dataSource, Duration.ofMillis(1500))
 
         assertThat(contribution.name).isEqualTo("database")
         assertThat(contribution.code).isEqualTo("database")
-        assertThat(contribution.importance).isEqualTo(Importance.DEGRADING)
         assertThat(contribution.timeout).isEqualTo(Duration.ofMillis(1500))
     }
 
-    private fun contribution(budget: Duration) = DatabaseHealthContribution(dataSource, Importance.REQUIRED, budget)
+    private fun contribution(budget: Duration) = DatabaseHealthCheck(dataSource, budget)
 }

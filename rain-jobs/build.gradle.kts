@@ -14,6 +14,7 @@ rainSchema {
 
 dependencies {
     api(project(":rain-persistence"))
+    api(project(":rain-observability"))
     implementation(libs.db.scheduler)
     implementation("tools.jackson.core:jackson-databind")
     implementation("tools.jackson.module:jackson-module-kotlin")

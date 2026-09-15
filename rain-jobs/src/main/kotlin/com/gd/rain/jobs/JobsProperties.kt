@@ -31,6 +31,7 @@ public data class JobsProperties(
     public val scheduler: SchedulerProperties = SchedulerProperties(),
     public val reaper: ReaperProperties = ReaperProperties(),
     public val retention: RetentionProperties = RetentionProperties(),
+    public val health: JobsHealthProperties = JobsHealthProperties(),
 ) {
     public companion object {
         public const val PREFIX: String = "rain.jobs"
@@ -62,6 +63,12 @@ public data class RetentionProperties(
     public val batch: Int = 1_000,
     /** A pass stops starting new batches once it has run this long, and reports that it did not finish. */
     public val runBudget: Duration = Duration.ofSeconds(30),
+) : ConfigurationSection
+
+/** What the worker's readiness check (`jobs`) holds a scheduler to. */
+public data class JobsHealthProperties(
+    /** A started scheduler that has not finished a poll for longer than this is failing; more than `scheduler.poll-interval`. */
+    public val maxPollAge: Duration = Duration.ofSeconds(30),
 ) : ConfigurationSection
 
 public class JobsConfigurationContributor : ConfigurationContributor {
@@ -123,6 +130,11 @@ public class JobsConfigurationContributor : ConfigurationContributor {
                     positive(retention.runBudget),
                     "$p.retention.run-budget",
                 ) { "is ${retention.runBudget.written()}; it has to be positive" }
+                val maxPollAge = properties.health.maxPollAge
+                expect(maxPollAge > scheduler.pollInterval, "$p.health.max-poll-age", ProblemCode.CONTRADICTS) {
+                    "is ${maxPollAge.written()}, not more than scheduler.poll-interval ${scheduler.pollInterval.written()}; " +
+                        "a scheduler that polls on time would be failing between two polls"
+                }
             }
 
         private fun positive(duration: Duration): Boolean = duration.isPositive

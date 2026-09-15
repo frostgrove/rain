@@ -70,8 +70,18 @@ Finding room costs one heap look; moving a bucket is O(log n).
 | `rain.web.probes.live-path` (`/live`) | `{"status":"live"}`, always 200, asks no dependency |
 | `rain.web.probes.ready-path` (`/ready`) | `{"status":"ready|degraded|not_ready|draining","failing":[codes]}`; 200 for ready and degraded, 503 otherwise |
 
-Readiness is composed from `HealthContribution`s. The importance of each check is decided by the application, never
-by the checker:
+Readiness is composed from health checks. Modules and applications offer `HealthCheck` beans; how much each one
+matters is decided by the application, never by the checker, under `rain.health.checks`:
+
+```yaml
+rain:
+  health:
+    checks:
+      database: required
+      jobs: degrading
+      realtime.listener: required
+```
+
 
 | Importance | Failing means |
 |---|---|
@@ -80,7 +90,16 @@ by the checker:
 | `informational` | listed in detail, not counted |
 | `disabled` | registered, never probed |
 
-A process with a `DataSource` has to state `rain.health.database.importance`. The checks of one evaluation run
+A process that runs a check without a stated importance does not start. One configuration usually serves every role,
+so an entry for a check this process does not run is reported `not_evaluated` and does not stop the start.
+
+| Check | Offered by | Runs in | Fails when |
+|---|---|---|---|
+| `database` | rain-observability | any process with a `DataSource` | no pooled connection answers `isValid` within the budget |
+| `jobs` | rain-jobs | `worker` | the worker is stopped, a scheduler is not started, is shutting down or has not polled within `rain.jobs.health.max-poll-age`, or the lease renewer has not run within `rain.jobs.lease.ttl` |
+| `realtime.listener` | rain-realtime | `api` | the listener has no live session |
+
+The checks of one evaluation run
 concurrently on virtual threads, each against an absolute budget counted from the start of the evaluation (its own,
 or `rain.health.check-timeout`, 2 s), and one evaluation is shared for `rain.health.freshness` (1 s). A check that
 throws or does not answer in time is failing; a probe never takes the process down.

@@ -2,9 +2,10 @@ package com.gd.rain.observability.autoconfigure
 
 import com.gd.rain.boot.autoconfigure.RainRuntimeAutoConfiguration
 import com.gd.rain.boot.config.ConfigurationCheck
-import com.gd.rain.observability.health.DatabaseHealthContribution
-import com.gd.rain.observability.health.DatabaseHealthProperties
-import com.gd.rain.observability.health.DatabaseImportanceCheck
+import com.gd.rain.observability.health.DatabaseHealthCheck
+import com.gd.rain.observability.health.HealthCheck
+import com.gd.rain.observability.health.HealthCheckImportanceCheck
+import com.gd.rain.observability.health.HealthChecks
 import com.gd.rain.observability.health.HealthContribution
 import com.gd.rain.observability.health.HealthDrainingListener
 import com.gd.rain.observability.health.HealthProperties
@@ -15,7 +16,6 @@ import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.health.autoconfigure.registry.HealthContributorRegistryAutoConfiguration
 import org.springframework.boot.health.registry.HealthContributorRegistry
@@ -25,8 +25,8 @@ import java.time.Clock
 import javax.sql.DataSource
 
 /**
- * The [HealthRegistry] over every [HealthContribution] bean, draining on context close, and the
- * database contribution when the application has a `DataSource`.
+ * The [HealthRegistry] over every [HealthContribution] bean and every [HealthCheck] bean at its stated
+ * importance, draining on context close, and the database check when the application has a `DataSource`.
  */
 @AutoConfiguration(
     after = [RainRuntimeAutoConfiguration::class],
@@ -38,33 +38,37 @@ public class RainHealthAutoConfiguration {
     @ConditionalOnMissingBean
     public fun healthRegistry(
         contributions: ObjectProvider<HealthContribution>,
+        checks: ObjectProvider<HealthCheck>,
         properties: HealthProperties,
         clock: Clock,
-    ): HealthRegistry = HealthRegistry(contributions.orderedStream().toList(), properties.checkTimeout, properties.freshness, clock)
+    ): HealthRegistry =
+        HealthRegistry(
+            contributions.orderedStream().toList() + HealthChecks.contributions(checks.orderedStream().toList(), properties.checks),
+            properties.checkTimeout,
+            properties.freshness,
+            clock,
+        )
 
     @Bean
     public fun healthDrainingListener(registry: HealthRegistry): HealthDrainingListener = HealthDrainingListener(registry)
 
-    /** The database check; its importance is `rain.health.database.importance` and is never inferred. */
+    @Bean
+    public fun healthCheckImportanceCheck(
+        contributions: ObjectProvider<HealthContribution>,
+        checks: ObjectProvider<HealthCheck>,
+        properties: HealthProperties,
+    ): ConfigurationCheck =
+        HealthCheckImportanceCheck(checks.orderedStream().toList(), contributions.orderedStream().toList(), properties.checks)
+
+    /** The database check; its importance is `rain.health.checks.database` and is never inferred. */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnBean(DataSource::class)
     public class DatabaseHealthConfiguration {
         @Bean
-        public fun databaseImportanceCheck(properties: HealthProperties): ConfigurationCheck = DatabaseImportanceCheck(properties)
-
-        @Bean
-        @ConditionalOnProperty(name = [DatabaseHealthProperties.IMPORTANCE])
-        public fun databaseHealthContribution(
+        public fun databaseHealthCheck(
             dataSource: DataSource,
             properties: HealthProperties,
-        ): HealthContribution =
-            DatabaseHealthContribution(
-                dataSource,
-                checkNotNull(
-                    properties.database?.importance,
-                ) { "${DatabaseHealthProperties.IMPORTANCE} is stated but binds to no importance" },
-                properties.checkTimeout,
-            )
+        ): HealthCheck = DatabaseHealthCheck(dataSource, properties.checkTimeout)
     }
 }
 

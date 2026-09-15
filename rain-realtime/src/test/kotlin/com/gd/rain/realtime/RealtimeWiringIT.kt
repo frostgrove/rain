@@ -30,6 +30,8 @@ class RealtimeWiringIT {
                     "rain.deployment.stage=test",
                     "rain.persistence.statement-timeout=5s",
                     "spring.flyway.enabled=false",
+                    "rain.health.checks.database=required",
+                    "rain.health.checks.realtime.listener=required",
                     "rain.realtime.pool-name=sample-realtime",
                     "rain.realtime.subscriber-buffer=8",
                     "rain.realtime.max-subscriptions=16",
