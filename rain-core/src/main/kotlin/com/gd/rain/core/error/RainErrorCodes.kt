@@ -23,6 +23,9 @@ public object RainErrorCodes : ErrorCodeCatalog {
     public val VALIDATION_FAILED: ErrorCode = ErrorCode.of("validation_failed", "the request is not valid")
     public val MALFORMED_BODY: ErrorCode = ErrorCode.of("malformed_body", "the request body could not be read")
     public val INVALID_ID: ErrorCode = ErrorCode.of("invalid_id", "the identifier could not be read")
+
+    /** A page cursor that cannot be read, or one made for another question than the one asked; every paging module uses it. */
+    public val INVALID_CURSOR: ErrorCode = ErrorCode.of("invalid_cursor", "the page cursor could not be read")
     public val UNKNOWN_FIELD: ErrorCode = ErrorCode.of("unknown_field", "the request names a field that does not exist")
     public val UNKNOWN_PARAMETER: ErrorCode = ErrorCode.of("unknown_parameter", "the request names a parameter that does not exist")
     public val BAD_REQUEST: ErrorCode = ErrorCode.of("bad_request", "the request could not be understood")
@@ -66,6 +69,7 @@ public object RainErrorCodes : ErrorCodeCatalog {
             VALIDATION_FAILED,
             MALFORMED_BODY,
             INVALID_ID,
+            INVALID_CURSOR,
             UNKNOWN_FIELD,
             UNKNOWN_PARAMETER,
             BAD_REQUEST,

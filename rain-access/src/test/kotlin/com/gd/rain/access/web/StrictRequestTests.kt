@@ -165,7 +165,7 @@ class PageRequestRefusesWhatItCannotReadTest {
             { pages.after(it, PageRequest::sessionCursor) },
         ).forEach { read ->
             val refusal = refusalOf { read(request("after" to "Not A Cursor")) }
-            assertThat(refusal.kind to refusal.code).isEqualTo(FaultKind.BAD_REQUEST to AccessErrorCodes.INVALID_CURSOR)
+            assertThat(refusal.kind to refusal.code).isEqualTo(FaultKind.BAD_REQUEST to RainErrorCodes.INVALID_CURSOR)
         }
     }
 

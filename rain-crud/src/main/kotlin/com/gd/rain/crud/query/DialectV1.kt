@@ -113,7 +113,7 @@ internal object QueryFaults {
     fun invalidCursor(reason: String): Fault =
         Fault(
             FaultKind.BAD_REQUEST,
-            RainCrudErrorCodes.INVALID_CURSOR,
-            violations = listOf(Violation.at(path(DialectV1.CURSOR), RainCrudErrorCodes.INVALID_CURSOR, "the cursor $reason")),
+            RainErrorCodes.INVALID_CURSOR,
+            violations = listOf(Violation.at(path(DialectV1.CURSOR), RainErrorCodes.INVALID_CURSOR, "the cursor $reason")),
         )
 }

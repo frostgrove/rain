@@ -964,7 +964,7 @@ logged.
 | `already_enrolled` | this subject already signs in with a password | `409` |
 | `identifier_taken` | this identifier already signs in | `409` |
 | `invalid_delivery` | the request does not say how credentials are delivered | `400` |
-| `invalid_cursor` | the page cursor could not be read | `400` |
+| `invalid_cursor` (rain-core) | the page cursor could not be read | `400` |
 | `credential_changed` | the credential changed while the request was being checked; try again | `503` |
 | `audit_unavailable` | the change could not be recorded; nothing was changed | `503` |
 | `revocation_unavailable` | whether this session is still open could not be established; try again | `503` |

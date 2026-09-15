@@ -926,7 +926,7 @@ offset page — whether the table holds ten rows or ten million. Without `books_
 |---|---|---|
 | `field_not_granted` | this field may not be used this way | a violation: `fields`, `include` or a write naming what the resource does not grant |
 | `unknown_operator` | this is not an operator of the query dialect | a violation at `/filter/<field>/<op>` |
-| `invalid_cursor` | the cursor cannot continue this query | `400`, with a violation at `/cursor` |
+| `invalid_cursor` (rain-core) | the page cursor could not be read | `400`, with a violation at `/cursor` naming why |
 | `not_offered` | this resource does not offer that | `400` for a request no declared shape is; a violation at `/count` when no count cap is declared |
 | `outside_scope` | the row would be outside the rows you may reach | `403` for a write whose row, as stored, would be outside the caller's scope |
 

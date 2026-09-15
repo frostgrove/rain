@@ -22,7 +22,6 @@ public object AccessErrorCodes : ErrorCodeCatalog {
     public val ALREADY_ENROLLED: ErrorCode = ErrorCode.of("already_enrolled", "this subject already signs in with a password")
     public val IDENTIFIER_TAKEN: ErrorCode = ErrorCode.of("identifier_taken", "this identifier already signs in")
     public val INVALID_DELIVERY: ErrorCode = ErrorCode.of("invalid_delivery", "the request does not say how credentials are delivered")
-    public val INVALID_CURSOR: ErrorCode = ErrorCode.of("invalid_cursor", "the page cursor could not be read")
     public val CREDENTIAL_CHANGED: ErrorCode =
         ErrorCode.of("credential_changed", "the credential changed while the request was being checked; try again")
     public val AUDIT_UNAVAILABLE: ErrorCode = ErrorCode.of("audit_unavailable", "the change could not be recorded; nothing was changed")
@@ -45,7 +44,6 @@ public object AccessErrorCodes : ErrorCodeCatalog {
             ALREADY_ENROLLED,
             IDENTIFIER_TAKEN,
             INVALID_DELIVERY,
-            INVALID_CURSOR,
             CREDENTIAL_CHANGED,
             AUDIT_UNAVAILABLE,
             REVOCATION_UNAVAILABLE,

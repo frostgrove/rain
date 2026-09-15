@@ -251,7 +251,7 @@ public class PageRequest(
         read: (String) -> C?,
     ): C? {
         val written = single(request, AFTER) ?: return null
-        return read(written) ?: throw Fault(FaultKind.BAD_REQUEST, AccessErrorCodes.INVALID_CURSOR)
+        return read(written) ?: throw Fault(FaultKind.BAD_REQUEST, RainErrorCodes.INVALID_CURSOR)
     }
 
     /** Refuses a parameter the route does not name, so a misspelt or unsupported one is heard rather than ignored. */

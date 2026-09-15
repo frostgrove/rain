@@ -20,14 +20,11 @@ public object RainCrudErrorCodes : ErrorCodeCatalog {
     /** The `<op>` of a `filter[<field>][<op>]` parameter is not one of the dialect's operators. */
     public val UNKNOWN_OPERATOR: ErrorCode = ErrorCode.of("unknown_operator", "this is not an operator of the query dialect")
 
-    /** A cursor that cannot be read, or one minted for a different order than the query asks for. */
-    public val INVALID_CURSOR: ErrorCode = ErrorCode.of("invalid_cursor", "the cursor cannot continue this query")
-
     /** Something the dialect knows that this resource does not declare: a query shape, or counting. */
     public val NOT_OFFERED: ErrorCode = ErrorCode.of("not_offered", "this resource does not offer that")
 
     /** A write whose row, as it would be stored, is outside the rows the caller's scope reaches. */
     public val OUTSIDE_SCOPE: ErrorCode = ErrorCode.of("outside_scope", "the row would be outside the rows you may reach")
 
-    override val codes: List<ErrorCode> = listOf(FIELD_NOT_GRANTED, UNKNOWN_OPERATOR, INVALID_CURSOR, NOT_OFFERED, OUTSIDE_SCOPE)
+    override val codes: List<ErrorCode> = listOf(FIELD_NOT_GRANTED, UNKNOWN_OPERATOR, NOT_OFFERED, OUTSIDE_SCOPE)
 }
