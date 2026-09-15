@@ -15,3 +15,8 @@ plugins {
 extensions.configure<KotlinJvmProjectExtension> {
     explicitApi = ExplicitApiMode.Disabled
 }
+
+// A sample is not published.
+tasks.withType<AbstractPublishToMaven>().configureEach {
+    enabled = false
+}

@@ -6,8 +6,10 @@ import com.gd.rain.boot.runtime.RuntimeRole
 import org.springframework.boot.ApplicationArguments
 
 /**
- * `config-check`: starts the application with no role, which runs every configuration and bean-time
- * check, and exits 0 when none refused. A refusal never reaches this command — it fails the start.
+ * `config-check`: starts the application with no role and no web server, which validates the whole configuration and
+ * runs the bean-time checks of such a process, and exits 0 when none refused. Checks that exist only in a role (the
+ * worker's connection demand) or only in a servlet application (forwarding headers, multipart limits) do not run here;
+ * a start in that role evaluates them. A refusal never reaches this command — it fails the start.
  */
 public class ConfigCheckCommandDeclaration : CommandDeclaration {
     override val name: String = NAME

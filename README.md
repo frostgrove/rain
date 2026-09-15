@@ -53,15 +53,14 @@ rain builds with its Gradle wrapper; the Java 25 toolchain is provisioned by Gra
 
 ```sh
 ./gradlew test
-./gradlew check integrationTest
+./gradlew check
 ```
 
 - `./gradlew test` runs the unit tier. No test in it needs Docker. Compiling rain-audit, rain-jobs and rain-llm generates
   their jOOQ code from their migrations on a throwaway PostgreSQL container, so a clean build needs a Docker daemon — or
   `JOOQ_CODEGEN_SERVER_URL`, `JOOQ_CODEGEN_SERVER_USER` and `JOOQ_CODEGEN_SERVER_PASSWORD` naming a PostgreSQL server.
-- `./gradlew check integrationTest` runs both tiers (the integration tier is `@Tag("integration")`), Kover's verification
-  and the formatting checks, and needs Docker. Kover's verification depends on every test task, so `check` alone runs
-  the integration tier too.
+- `./gradlew check` runs both tiers (the integration tier is `@Tag("integration")`), Kover's verification, the formatting
+  checks, the module graph and the tool-version parity, and needs Docker.
 
 ## Documentation
 

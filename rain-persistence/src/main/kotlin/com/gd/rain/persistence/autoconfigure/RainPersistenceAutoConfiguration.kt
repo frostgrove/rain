@@ -84,7 +84,7 @@ public class RainPersistenceAutoConfiguration {
             TransactionRetry(
                 properties.attempts,
                 persistence.retry.initialDelay,
-                maxOf(properties.timeout, persistence.retry.initialDelay),
+                persistence.retry.maxDelay,
             ),
             properties.timeout,
         )

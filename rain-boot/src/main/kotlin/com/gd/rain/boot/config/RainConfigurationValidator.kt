@@ -152,7 +152,8 @@ public class RainConfigurationValidator :
                     DeploymentStage.PROPERTY to null,
                 )
             specs.forEach { claims[it.prefix] = it.type }
-            found += binder.unknownKeys(claims)
+            // `rain.runtime.roles` is a list: a YAML sequence states it as `roles[0]`, `roles[1]`, …
+            found += binder.unknownKeys(claims, lists = setOf(RuntimeSelection.ROLES))
 
             return ValidationReport(found)
         }

@@ -3,7 +3,7 @@ kotlin = "2.4.20"
 springBoot = "4.1.1"
 springAi = "2.0.1"
 # Pinned rather than Boot-managed because jOOQ codegen and Flyway run on the build-logic classpath,
-# which sees no BOM; `rainToolParity` fails `check` when a pin drifts from what modules resolve.
+# which sees no BOM; `verifyToolParity` fails `check` when a pin drifts from what modules resolve.
 jooq = "3.21.7"
 flyway = "12.4.0"
 postgresqlDriver = "42.7.13"

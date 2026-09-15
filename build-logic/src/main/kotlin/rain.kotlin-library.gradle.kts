@@ -3,15 +3,17 @@ import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 /*
- * Every rain module: Kotlin on the Java 25 toolchain, explicit API, warnings as errors, ktlint,
- * Kover, and two test tiers split by JUnit tag. `test` never needs Docker; `integrationTest` runs
- * exactly the classes tagged `integration`.
+ * Every rain module: Kotlin on the Java 25 toolchain, explicit API, warnings as errors, ktlint, Kover,
+ * publishing, and two test tiers split by JUnit tag. `test` is the unit tier: none of its tests needs Docker
+ * (compiling a module that owns tables does — see `rain.jooq-schema`). `integrationTest` runs exactly the classes
+ * tagged `integration` and needs Docker. `check` runs both.
  */
 plugins {
     id("org.jetbrains.kotlin.jvm")
     `java-library`
     id("com.diffplug.spotless")
     id("org.jetbrains.kotlinx.kover")
+    id("rain.publishing")
 }
 
 val libs = the<VersionCatalogsExtension>().named("libs")
@@ -73,6 +75,10 @@ val integrationTest =
         }
         shouldRunAfter(tasks.named("test"))
     }
+
+tasks.named("check") {
+    dependsOn(integrationTest)
+}
 
 spotless {
     kotlin {

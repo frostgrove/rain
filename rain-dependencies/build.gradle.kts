@@ -4,6 +4,7 @@
  */
 plugins {
     `java-platform`
+    id("rain.publishing")
 }
 
 group = "com.gd.rain"

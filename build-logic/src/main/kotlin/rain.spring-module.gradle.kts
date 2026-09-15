@@ -1,7 +1,8 @@
 /*
  * A rain module that contributes Spring beans: all-open for Spring proxies, and the Boot
- * auto-configuration API on the compile classpath. Configuration metadata processors are wired in
- * P1 once kapt on K2 / Java 25 is proven; until then nothing here claims to generate metadata.
+ * auto-configuration API on the compile classpath. No Spring Boot configuration metadata is generated:
+ * the processors read Java sources only. Every `rain.*` property is validated at start-up by its
+ * `ConfigurationContributor` and documented in `docs/modules`.
  */
 plugins {
     id("rain.kotlin-library")

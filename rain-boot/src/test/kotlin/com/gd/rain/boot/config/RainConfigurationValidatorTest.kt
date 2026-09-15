@@ -185,6 +185,21 @@ class RainConfigurationValidatorTest {
     }
 
     @Test
+    fun `roles stated as a list are claimed element by element, and a scalar setting stated as a list is not`() {
+        val listed =
+            validate(
+                *valid.filterNot { it.first == "rain.runtime.roles" }.toTypedArray(),
+                "rain.runtime.roles[0]" to "api",
+                "rain.runtime.roles[1]" to "worker",
+            )
+
+        assertThat(listed.fatal).isEmpty()
+        assertThat(listed.problems.map { it.code }).doesNotContain(ProblemCode.UNKNOWN_KEY)
+        assertThat(validate(*valid, "rain.deployment.stage[0]" to "test").fatal.map { it.path to it.code })
+            .contains("rain.deployment.stage[0]" to ProblemCode.UNKNOWN_KEY)
+    }
+
+    @Test
     fun `keys from environment variables are not judged as unknown`() {
         val environment = environmentOf(*valid)
         environment.propertySources.addLast(

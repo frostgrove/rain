@@ -70,7 +70,7 @@ A process started as a command has no web server, so none of the servlet contrib
 | `rain.web.body-limit` | required | the largest request body accepted | positive; at most 2147483647 bytes, the largest body a servlet container counts |
 | `rain.web.request-budget` | required | how long a request may be served before it is answered `503 deadline_exceeded` | positive |
 | `rain.web.client-address` | required | `direct`: the connection's peer; `forwarded`: a trusted proxy's forwarding headers, applied by the server | see the bean-time check below |
-| `rain.web.cors.allowed-origins` | empty: no cross-origin caller | origins allowed to call cross-origin; also the origins the cross-site filter admits | each is `*` or `scheme://host[:port]` with no path |
+| `rain.web.cors.allowed-origins` | empty: no cross-origin caller | origins allowed to call cross-origin; also the origins the cross-site filter admits | each is `*` or `scheme://host[:port]` with no path; in `prod`, each is `https`, not `*`, and names no loopback host (`127.0.0.0/8`, `::1`, `localhost`, `*.localhost`) |
 | `rain.web.cors.allowed-methods` | empty | methods an allowed origin may use | required when `allowed-origins` is not empty; each is `*` or an HTTP token |
 | `rain.web.cors.allowed-headers` | empty | request headers an allowed origin may send | each is `*` or an HTTP token |
 | `rain.web.cors.exposed-headers` | empty | response headers a page may read, e.g. `X-Request-ID` | each is `*` or an HTTP token |
@@ -168,8 +168,12 @@ remove it. Safe methods are not checked: a browser does not hand a cross-origin 
 
 A `Content-Length` above the limit is refused before the handler runs. A body without a length is counted while it is
 read, and the read that crosses the limit fails and marks the request, so the exception handler answers `413 too_large`
-whatever the reader wrapped the failure in. Multipart requests are not counted here; the container parses their parts,
-bounded by `spring.servlet.multipart.*`.
+whatever the reader wrapped the failure in.
+
+Multipart bodies are read by the servlet container itself. While Spring Boot's multipart support is enabled they are not
+counted here, and `MultipartLimitsCheck` refuses the start unless `spring.servlet.multipart.max-request-size` is within
+`rain.web.body-limit` and `max-file-size` within the request size (Spring Boot's own 10MB request size counts when it is
+not stated). With `spring.servlet.multipart.enabled=false` multipart bodies are counted like any other.
 
 ## Errors
 
@@ -263,4 +267,4 @@ None of its own. It serves the readiness composed by [rain-observability](observ
 - It does not authenticate or authorise.
 - It does not mount a throttle on any route.
 - It does not believe a forwarding header on its own; the server does, when the deployment says a proxy is trusted.
-- It does not bound multipart bodies or configure the container's connection timeouts.
+- It does not configure the container's connection timeouts.

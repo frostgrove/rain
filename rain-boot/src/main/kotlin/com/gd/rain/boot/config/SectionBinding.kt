@@ -135,15 +135,19 @@ internal class SectionBinder(
      * Keys under `rain.` that no claim accounts for. Only enumerable, non-environment sources are read:
      * environment variable names do not map back to one property path, so they are not judged.
      */
-    fun unknownKeys(claims: Map<String, KClass<*>?>): List<ConfigurationProblem> {
+    fun unknownKeys(
+        claims: Map<String, KClass<*>?>,
+        lists: Set<String> = emptySet(),
+    ): List<ConfigurationProblem> {
         val rain = ConfigurationPropertyName.of("rain")
         val claimed = claims.map { (prefix, type) -> ConfigurationPropertyName.of(prefix) to type }
+        val listed = lists.map(ConfigurationPropertyName::of)
         val found = sortedMapOf<String, String?>()
         ConfigurationPropertySources.get(environment).forEach { source ->
             if (source !is IterableConfigurationPropertySource) return@forEach
             if (source.underlyingSource is SystemEnvironmentPropertySource) return@forEach
             source.stream().filter { rain.isAncestorOf(it) }.forEach { name ->
-                if (claimed.none { (prefix, type) -> claims(prefix, type, name) }) {
+                if (claimed.none { (prefix, type) -> claims(prefix, type, name) } && listed.none { element(it, name) }) {
                     found.putIfAbsent(name.toString(), source.getConfigurationProperty(name)?.origin?.toString())
                 }
             }
@@ -152,6 +156,15 @@ internal class SectionBinder(
             ConfigurationProblem(name, ProblemCode.UNKNOWN_KEY, "no rain section declares this key", origin)
         }
     }
+
+    /** Whether [name] is one element of the list at [prefix], `prefix[<index>]`. */
+    private fun element(
+        prefix: ConfigurationPropertyName,
+        name: ConfigurationPropertyName,
+    ): Boolean =
+        prefix.isAncestorOf(name) &&
+            name.numberOfElements == prefix.numberOfElements + 1 &&
+            name.isNumericIndex(prefix.numberOfElements)
 
     private fun claims(
         prefix: ConfigurationPropertyName,

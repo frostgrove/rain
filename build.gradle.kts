@@ -7,6 +7,8 @@
  */
 plugins {
     base
+    // The JVM resolution rules, so a Maven BOM resolves as a platform in `toolParity`.
+    `jvm-ecosystem`
 }
 
 evaluationDependsOnChildren()
@@ -76,6 +78,60 @@ val verifyModuleGraph =
     }
 }
 
+val toolParity =
+    configurations.create("toolParity") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        attributes { attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.JAVA_RUNTIME)) }
+    }
+
+dependencies {
+    add(toolParity.name, platform(project(":rain-dependencies")))
+    listOf(
+        "org.jooq:jooq",
+        "org.flywaydb:flyway-core",
+        "org.flywaydb:flyway-database-postgresql",
+        "org.postgresql:postgresql",
+        "org.testcontainers:testcontainers-postgresql",
+    ).forEach { add(toolParity.name, it) }
+}
+
+/*
+ * jOOQ codegen, Flyway and the PostgreSQL driver run inside the build (`rain.jooq-schema`) at the catalogue's pinned
+ * versions, because a build script resolves no BOM. The modules resolve the same libraries through `rain-dependencies`.
+ * The two have to be one version, or generated code and migrations are made by a tool the runtime does not use.
+ */
+val verifyToolParity =
+    tasks.register("verifyToolParity") {
+        group = LifecycleBasePlugin.VERIFICATION_GROUP
+        description = "Checks that the build-time tool pins are the versions rain's modules resolve."
+        val pins =
+            mapOf(
+                "org.jooq:jooq" to libs.versions.jooq.get(),
+                "org.flywaydb:flyway-core" to libs.versions.flyway.get(),
+                "org.flywaydb:flyway-database-postgresql" to libs.versions.flyway.get(),
+                "org.postgresql:postgresql" to libs.versions.postgresqlDriver.get(),
+                "org.testcontainers:testcontainers-postgresql" to libs.versions.testcontainers.get(),
+            )
+        val resolved = toolParity.incoming.resolutionResult.rootComponent
+        inputs.property("pins", pins)
+        doLast {
+            val selected =
+                resolved
+                    .get()
+                    .dependencies
+                    .filterIsInstance<ResolvedDependencyResult>()
+                    .mapNotNull { it.selected.moduleVersion }
+                    .associate { "${it.group}:${it.name}" to it.version }
+            val drifted =
+                pins.toSortedMap().mapNotNull { (module, pin) ->
+                    val runtime = selected[module]
+                    if (runtime == pin) null else "$module is pinned to $pin for the build and resolves to ${runtime ?: "nothing"} in the modules"
+                }
+            if (drifted.isNotEmpty()) throw GradleException(drifted.joinToString("\n", "the build tools drifted from the runtime:\n"))
+        }
+    }
+
 tasks.named("check") {
-    dependsOn(verifyModuleGraph)
+    dependsOn(verifyModuleGraph, verifyToolParity)
 }

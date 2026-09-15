@@ -57,8 +57,9 @@ role:
 | `rain.locks.timeout` | `10s` | `lock_timeout` for each advisory lock taken | positive |
 | `rain.locks.attempts` | `3` | how many times `AdvisoryLocks.guarded` runs its transaction | at least 1 |
 
-`guarded` waits between runs from `rain.persistence.retry.initial-delay`, capped at the larger of `rain.locks.timeout`
-and that initial delay.
+`guarded` runs its transaction at most `rain.locks.attempts` times when a lock is not granted in time; between runs
+it waits from `rain.persistence.retry.initial-delay`, doubling, capped at `rain.persistence.retry.max-delay` — the same
+back-off as every retried transaction.
 
 Bean-time problems:
 
