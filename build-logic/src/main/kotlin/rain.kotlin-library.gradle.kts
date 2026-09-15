@@ -1,6 +1,8 @@
+import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 /*
  * Every rain module: Kotlin on the Java 25 toolchain, explicit API, warnings as errors, ktlint, Kover,
@@ -78,6 +80,38 @@ val integrationTest =
 
 tasks.named("check") {
     dependsOn(integrationTest)
+}
+
+/*
+ * Every module declares its coverage bounds in `coverage-bounds.properties`: `line` and `branch`, whole percent of the
+ * module's code (generated jOOQ code excluded), measured over both test tiers. `koverVerify` (part of `check`) refuses a
+ * change that drops below them; a bound is raised when coverage rises.
+ */
+val coverageBoundsFile = layout.projectDirectory.file("coverage-bounds.properties").asFile
+val coverageBounds =
+    Properties().also { bounds ->
+        check(coverageBoundsFile.isFile) { "${project.path} declares no coverage bounds: add ${coverageBoundsFile.name} with line= and branch=" }
+        coverageBoundsFile.inputStream().use(bounds::load)
+    }
+
+fun coverageBound(unit: String): Int =
+    coverageBounds.getProperty(unit)?.trim()?.toIntOrNull()?.takeIf { it in 0..100 }
+        ?: error("${project.path}: ${coverageBoundsFile.name} states no whole percent between 0 and 100 for `$unit`")
+
+kover {
+    reports {
+        filters {
+            excludes {
+                packages("com.gd.rain.*.jooq")
+            }
+        }
+        verify {
+            rule {
+                minBound(coverageBound("line"), CoverageUnit.LINE)
+                minBound(coverageBound("branch"), CoverageUnit.BRANCH)
+            }
+        }
+    }
 }
 
 spotless {
