@@ -8,7 +8,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
-/** Gap 5: a retention batch reaches its rows through the partial retention index under a limit (criterion v2), never by a scan. */
+/** Gap 5: a retention batch reaches its rows through the partial retention index under a limit (criterion v3), never by a scan. */
 @Tag("integration")
 class RetentionUsesIndexIT {
     @Test
@@ -23,7 +23,7 @@ class RetentionUsesIndexIT {
             )
 
         assertThat(plan.usesIndex("ix_job_invocation_retention")).describedAs(plan.json).isTrue()
-        assertThat(plan.boundedScan("job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+        assertThat(plan.boundedScan("rain_jobs", "job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 
     @Test
@@ -38,7 +38,7 @@ class RetentionUsesIndexIT {
             )
 
         assertThat(plan.usesIndex("ix_job_intent_retention")).describedAs(plan.json).isTrue()
-        assertThat(plan.boundedScan("job_intent")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+        assertThat(plan.boundedScan("rain_jobs", "job_intent")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 
     @Test
@@ -52,7 +52,7 @@ class RetentionUsesIndexIT {
             val plan = QueryPlans.explain(fixture.database.dataSource, fixture.database.dsl.renderInlined(query), generic = false)
 
             assertThat(plan.usesIndex(expected.first)).describedAs(plan.json).isTrue()
-            assertThat(plan.boundedScan(expected.second)).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+            assertThat(plan.boundedScan("rain_jobs", expected.second)).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
         }
     }
 }

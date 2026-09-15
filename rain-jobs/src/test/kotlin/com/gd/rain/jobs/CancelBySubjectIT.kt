@@ -98,8 +98,8 @@ class CancelBySubjectIT {
 
         assertThat(plan.usesIndex("ix_job_invocation_subject")).describedAs(plan.json).isTrue()
         assertThat(plan.usesIndex("job_invocation_pkey")).describedAs("the picked ids are updated by key").isTrue()
-        assertThat(plan.boundedScan("job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+        assertThat(plan.boundedScan("rain_jobs", "job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
         assertThat(plan.usesIndex("uq_job_intent_held_invocation")).describedAs("reservations are released by invocation").isTrue()
-        assertThat(plan.boundedScan("job_intent")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+        assertThat(plan.boundedScan("rain_jobs", "job_intent")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 }

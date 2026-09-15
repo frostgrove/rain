@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 
 /** Gap 26: the offset cap could be passed through `page` and overflowed in `Int`; now `offset + limit ≤ maxOffset` in `Long`, and there is no `page`. */
 class OffsetDepthTest {
-    private val compiler = QueryCompiler(Books.SCHEMA, Books.rules(maxOffset = 100), setOf("reviews"))
+    private val compiler = QueryCompiler(Books.SCHEMA, Books.rules(maxOffset = 100), setOf("reviews"), setOf(Books.ID))
 
     private fun list(vararg parameters: Pair<String, String>): ListPlan =
         compiler.list(DialectV1.parse(parameters.associate { (name, value) -> name to listOf(value) }))

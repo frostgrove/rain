@@ -6,6 +6,7 @@ import com.gd.rain.crud.query.Order
 import com.gd.rain.crud.query.Predicate
 import com.gd.rain.crud.query.Projection
 import com.gd.rain.crud.query.ResourceSchema
+import com.gd.rain.crud.query.SchemaField
 import java.math.BigDecimal
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
@@ -16,9 +17,11 @@ import java.util.concurrent.CopyOnWriteArrayList
  * It evaluates the compiled predicates with SQL's semantics — a comparison never matches NULL, NULLs sort
  * last ascending and first descending, UUIDs order by their canonical text as PostgreSQL orders them — and
  * it runs [CrudStoreContract] alongside the jOOQ store. It scans every row: it is a test double, never storage.
+ * A write is applied to a copy of the rows it touches and kept only when every row it leaves is in the scope.
  */
 class MemoryStore(
     override val schema: ResourceSchema,
+    override val itemFields: Set<SchemaField> = setOf(schema.id),
 ) : CrudStore<Map<String, Any?>> {
     private val rows = CopyOnWriteArrayList<MutableMap<String, Any?>>()
 
@@ -31,7 +34,9 @@ class MemoryStore(
     fun add(vararg books: Map<String, Any?>): List<UUID> =
         books.map { book ->
             val id = book["id"] as? UUID ?: UUID.randomUUID()
-            rows += schema.fields.associateTo(LinkedHashMap()) { it.name to book[it.name] }.also { it[schema.id.name] = id }
+            val row = schema.fields.associateTo(LinkedHashMap()) { it.name to book[it.name] }.also { it[schema.id.name] = id }
+            schema.version?.let { row[it.name] = book[it.name] ?: schema.initialVersion }
+            rows += row
             id
         }
 
@@ -69,37 +74,60 @@ class MemoryStore(
         return inScope(id, scope)?.let { project(it, projection) }
     }
 
-    override fun insert(values: Map<String, Any?>): Map<String, Any?> {
+    override fun insert(
+        scope: RowScope,
+        values: Map<String, Any?>,
+    ): InsertOutcome<Map<String, Any?>> {
         operations += "insert"
         WriteValues.check(schema, values)
-        val id = add(values).single()
-        return checkNotNull(stored(id))
+        require(schema.version.let { it == null || it.name !in values }) { "the store writes the version" }
+        val candidate = schema.fields.associateTo(LinkedHashMap()) { it.name to values[it.name] }
+        candidate[schema.id.name] = values[schema.id.name] ?: UUID.randomUUID()
+        schema.version?.let { candidate[it.name] = schema.initialVersion }
+        if (!inside(scope, candidate)) return InsertOutcome.OutsideScope
+        rows += candidate
+        return InsertOutcome.Inserted(candidate.toMap())
     }
 
     override fun update(
         id: UUID,
         scope: RowScope,
         values: Map<String, Any?>,
-    ): Map<String, Any?>? {
+        expectedVersion: Long?,
+    ): UpdateOutcome<Map<String, Any?>> {
         operations += "update"
         require(values.isNotEmpty())
         WriteValues.check(schema, values)
-        val row = inScope(id, scope) ?: return null
-        row.putAll(values)
-        return row.toMap()
+        val version = schema.version
+        require((expectedVersion == null) == (version == null))
+        val row = inScope(id, scope) ?: return UpdateOutcome.NotFound
+        if (version != null && row[version.name] != expectedVersion) return UpdateOutcome.StaleVersion
+        val written = LinkedHashMap(row).also { it.putAll(values) }
+        version?.let { written[it.name] = (row[it.name] as Long) + 1 }
+        if (!inside(scope, written)) return UpdateOutcome.OutsideScope
+        row.putAll(written)
+        return UpdateOutcome.Updated(row.toMap())
     }
 
     override fun updateMany(
         ids: Set<UUID>,
         scope: RowScope,
         values: Map<String, Any?>,
-    ): Long {
+    ): BulkUpdateOutcome {
         operations += "updateMany"
         require(values.isNotEmpty())
         WriteValues.check(schema, values)
         val matched = ids.mapNotNull { inScope(it, scope) }
-        matched.forEach { it.putAll(values) }
-        return matched.size.toLong()
+        val written =
+            matched.map { row ->
+                LinkedHashMap(row).also { copy ->
+                    copy.putAll(values)
+                    schema.version?.let { copy[it.name] = (row[it.name] as Long) + 1 }
+                }
+            }
+        if (!written.all { inside(scope, it) }) return BulkUpdateOutcome.OutsideScope
+        matched.indices.forEach { matched[it].putAll(written[it]) }
+        return BulkUpdateOutcome.Updated(matched.size.toLong())
     }
 
     override fun delete(
@@ -122,10 +150,15 @@ class MemoryStore(
         return matched.size.toLong()
     }
 
+    private fun inside(
+        scope: RowScope,
+        row: Map<String, Any?>,
+    ): Boolean = scope.predicate?.let { matches(it, row) } ?: true
+
     private fun inScope(
         id: UUID,
         scope: RowScope,
-    ): MutableMap<String, Any?>? = rows.firstOrNull { it[schema.id.name] == id && (scope.predicate?.let { p -> matches(p, it) } ?: true) }
+    ): MutableMap<String, Any?>? = rows.firstOrNull { it[schema.id.name] == id && inside(scope, it) }
 
     private fun project(
         row: Map<String, Any?>,

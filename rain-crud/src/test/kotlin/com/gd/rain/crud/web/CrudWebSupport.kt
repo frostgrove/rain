@@ -16,6 +16,7 @@ import com.gd.rain.web.route.DeclaresItsOwnAccess
 import com.gd.rain.web.route.EndpointDeclaration
 import jakarta.servlet.http.HttpServletRequest
 import org.assertj.core.api.Assertions.assertThat
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration
 import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration
@@ -27,6 +28,8 @@ import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration
 import org.springframework.boot.webmvc.autoconfigure.error.ErrorMvcAutoConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
@@ -35,10 +38,13 @@ import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.context.WebApplicationContext
 import tools.jackson.databind.JsonNode
@@ -88,16 +94,35 @@ fun mockMvcOf(context: WebApplicationContext): MockMvc {
     return builder.build()
 }
 
-/** What a web test works with: the requests, the rows behind them and who is calling. */
+/**
+ * What a web test works with: the requests, the rows behind them and who is calling. `/books` is unversioned and
+ * unscoped; `/editions` is the same table versioned, confined to the caller's shelf.
+ */
 class BooksWorld(
     val mvc: MockMvc,
     val store: MemoryStore,
+    val editions: MemoryStore,
     val callers: SwitchableCallers,
 ) {
     fun get(
         path: String,
         vararg parameters: Pair<String, String>,
     ): MockHttpServletResponse = perform(MockMvcRequestBuilders.get(path), *parameters)
+
+    fun post(
+        path: String,
+        body: String,
+    ): MockHttpServletResponse = perform(MockMvcRequestBuilders.post(path).contentType(MediaType.APPLICATION_JSON).content(body))
+
+    fun patch(
+        path: String,
+        body: String,
+    ): MockHttpServletResponse = perform(MockMvcRequestBuilders.patch(path).contentType(MediaType.APPLICATION_JSON).content(body))
+
+    fun put(
+        path: String,
+        body: String,
+    ): MockHttpServletResponse = perform(MockMvcRequestBuilders.put(path).contentType(MediaType.APPLICATION_JSON).content(body))
 
     fun perform(
         request: MockHttpServletRequestBuilder,
@@ -114,7 +139,14 @@ fun withBooks(block: (BooksWorld) -> Unit) {
         assertThat(context).hasNotFailed()
         val callers = context.getBean(SwitchableCallers::class.java)
         callers.caller = TestCaller.of("a", *Books.EVERY_PERMISSION.toTypedArray())
-        block(BooksWorld(mockMvcOf(context), context.getBean(MemoryStore::class.java), callers))
+        block(
+            BooksWorld(
+                mockMvcOf(context),
+                context.getBean("bookStore", MemoryStore::class.java),
+                context.getBean("editionStore", MemoryStore::class.java),
+                callers,
+            ),
+        )
     }
 }
 
@@ -141,47 +173,98 @@ class BookFixture {
     fun bookStore(): MemoryStore = MemoryStore(Books.SCHEMA)
 
     @Bean
+    fun editionStore(): MemoryStore = MemoryStore(Books.VERSIONED)
+
+    @Bean
     fun mountedBooks(
-        store: MemoryStore,
+        @Qualifier("bookStore") store: MemoryStore,
         callers: SwitchableCallers,
     ): MountedResource<Map<String, Any?>> =
         MountedResource(
             "/books",
-            setOf(CrudOperation.LIST, CrudOperation.COUNT, CrudOperation.GET, CrudOperation.DELETE, CrudOperation.BULK_DELETE),
+            CrudOperation.entries.toSet(),
             CrudResource(Books.rules(includable = FieldGrant.only("reviews")), Books.policy(), store, callers, listOf(Books.REVIEWS)),
         )
 
     @Bean
-    fun bookController(books: MountedResource<Map<String, Any?>>): BookController = BookController(books)
+    fun mountedEditions(
+        @Qualifier("editionStore") store: MemoryStore,
+        callers: SwitchableCallers,
+    ): MountedResource<Map<String, Any?>> =
+        MountedResource(
+            "/editions",
+            CrudOperation.entries.toSet(),
+            CrudResource(Books.rules(), Books.policy(Books.SHELF_SCOPE), store, callers, emptyList()),
+        )
+
+    @Bean
+    fun bookController(
+        @Qualifier("mountedBooks") books: MountedResource<Map<String, Any?>>,
+    ): BookController = BookController(books)
+
+    @Bean
+    fun editionController(
+        @Qualifier("mountedEditions") editions: MountedResource<Map<String, Any?>>,
+    ): EditionController = EditionController(editions)
 }
 
 /** An application controller over a mounted resource: every handler is one line. */
-@RestController
-@RequestMapping("/books")
-class BookController(
-    private val books: MountedResource<Map<String, Any?>>,
+abstract class MountedController(
+    private val mounted: MountedResource<Map<String, Any?>>,
 ) : DeclaresItsOwnAccess {
+    private val resource: CrudResource<Map<String, Any?>> get() = mounted.resource
+
     @GetMapping
-    fun list(request: HttpServletRequest): PageBody<Map<String, Any?>> = CrudMvc.list(books.resource, request)
+    fun list(request: HttpServletRequest): PageBody<Map<String, Any?>> = CrudMvc.list(resource, request)
 
     @GetMapping("/count")
-    fun count(request: HttpServletRequest): CountBody = CrudMvc.count(books.resource, request)
+    fun count(request: HttpServletRequest): CountBody = CrudMvc.count(resource, request)
 
     @GetMapping("/{id}")
     fun get(
         @PathVariable("id") id: String,
         request: HttpServletRequest,
-    ): Map<String, Any?> = CrudMvc.get(books.resource, id, request)
+    ): Map<String, Any?> = CrudMvc.get(resource, id, request)
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    fun create(
+        @RequestBody(required = false) body: String?,
+    ): Map<String, Any?> = CrudMvc.create(resource, body)
+
+    @PatchMapping("/{id}")
+    fun update(
+        @PathVariable("id") id: String,
+        @RequestBody(required = false) body: String?,
+    ): Map<String, Any?> = CrudMvc.update(resource, id, body)
+
+    @PutMapping("/{id}")
+    fun replace(
+        @PathVariable("id") id: String,
+        @RequestBody(required = false) body: String?,
+    ): Map<String, Any?> = CrudMvc.replace(resource, id, body)
 
     @DeleteMapping("/{id}")
     fun delete(
         @PathVariable("id") id: String,
-    ): DeletedBody = CrudMvc.delete(books.resource, id)
+    ): DeletedBody = CrudMvc.delete(resource, id)
 
     @PostMapping("/bulk-delete")
     fun bulkDelete(
         @RequestBody(required = false) body: String?,
-    ): DeletedBody = CrudMvc.bulkDelete(books.resource, body)
+    ): DeletedBody = CrudMvc.bulkDelete(resource, body)
 
-    override fun accessDeclarations(): List<EndpointDeclaration> = books.declarations()
+    override fun accessDeclarations(): List<EndpointDeclaration> = mounted.declarations()
 }
+
+@RestController
+@RequestMapping("/books")
+class BookController(
+    books: MountedResource<Map<String, Any?>>,
+) : MountedController(books)
+
+@RestController
+@RequestMapping("/editions")
+class EditionController(
+    editions: MountedResource<Map<String, Any?>>,
+) : MountedController(editions)

@@ -38,7 +38,7 @@ class HeldReservationIsKeyedByInvocationIT {
             )
 
         assertThat(plan.usesIndex("uq_job_intent_held_invocation")).describedAs(plan.json).isTrue()
-        assertThat(plan.boundedScan("job_intent")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+        assertThat(plan.boundedScan("rain_jobs", "job_intent")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 
     @Test

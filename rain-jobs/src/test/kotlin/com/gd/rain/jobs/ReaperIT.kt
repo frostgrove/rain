@@ -119,7 +119,7 @@ class ReaperIT {
             )
 
         assertThat(plan.usesIndex("ix_job_invocation_lease")).describedAs(plan.json).isTrue()
-        assertThat(plan.boundedScan("job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+        assertThat(plan.boundedScan("rain_jobs", "job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 
     private companion object {

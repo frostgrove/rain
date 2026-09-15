@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test
  * Each condition is rendered as rain-crud rendered it before they were dropped, over a table carrying every
  * index that could serve it — b-trees, `text_pattern_ops` b-trees (plain and lower-cased), trigram GIN and
  * GiST indexes (plain and lower-cased), and a btree_gist index — and explained on PostgreSQL 18 for a page
- * in the identifier order, a page in the filtered field's order, and a capped count. Criterion v2 accepts
+ * in the identifier order, a page in the filtered field's order, and a capped count. Criterion v3 accepts
  * none of them: a b-tree keeps a pattern or an inequality as a Filter, a GIN index is read through a bitmap,
  * and a GiST index is not a b-tree and gives no order.
  */
@@ -92,7 +92,7 @@ class DroppedOperatorsNeverBoundedIT {
                 val plan = database.plan(query)
 
                 assertThat(
-                    plan.boundedScan("books"),
+                    plan.boundedScan("public", "books"),
                 ).describedAs("%s, %s: %s", operator, statement, plan).isInstanceOf(PlanVerdict.Unbounded::class.java)
             }
         }
@@ -118,7 +118,7 @@ class DroppedOperatorsNeverBoundedIT {
                         .limit(51),
                 )
 
-            assertThat(plan.boundedScan("books")).describedAs("%s: %s", operator, plan).isEqualTo(PlanVerdict.Bounded)
+            assertThat(plan.boundedScan("public", "books")).describedAs("%s: %s", operator, plan).isEqualTo(PlanVerdict.Bounded)
         }
     }
 }

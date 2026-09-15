@@ -116,7 +116,7 @@ deletes its evidence ([ADR 0001](../adr/0001-schema-per-module.md)).
 | `ofActor` | `ix_audit_log_actor (actor_type, actor_id, occurred_at DESC, id DESC)` | the same |
 
 `limit` is 1 to 500 (`AuditRecorder.MAX_PAGE`). No read counts rows. `AuditIT` asserts that the resource page's
-plan reads `ix_audit_log_resource` and is bounded under plan criterion v2 (`QueryPlan.boundedScan`). An insert is one
+plan reads `ix_audit_log_resource` and is bounded under plan criterion v3 (`QueryPlan.boundedScan`). An insert is one
 statement.
 
 ## Error codes, health checks, commands

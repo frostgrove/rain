@@ -24,7 +24,7 @@ Version `0.1.0-SNAPSHOT`; Kotlin 2.4.20, Spring Boot 4.1.1, Java 25.
 | [rain-realtime](docs/modules/realtime.md) | PostgreSQL `LISTEN`/`NOTIFY` as a bus with transactional publishing and bounded subscriptions |
 | [rain-resilience](docs/modules/resilience.md) | circuit breakers on Resilience4j with atomic admission and one probe per cooldown |
 | [rain-llm](docs/modules/llm.md) | a gateway over a Spring AI `ChatModel` with cluster-wide slots, breaker accounting and token budgets |
-| [rain-test](docs/modules/test.md) | a PostgreSQL per test JVM with a database per test, query plans judged by plan criterion v2, a movable clock |
+| [rain-test](docs/modules/test.md) | a PostgreSQL per test JVM with a database per test, query plans judged by plan criterion v3, a movable clock |
 | `rain-dependencies` | the one platform an application imports |
 
 ## Principles

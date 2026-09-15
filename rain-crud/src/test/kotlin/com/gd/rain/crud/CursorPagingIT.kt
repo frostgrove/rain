@@ -15,7 +15,7 @@ import java.time.Duration
 /**
  * Gap 25: a page before a cursor used to drop the row nearest to it. Walking forward and then back over
  * real rows — with sort values shared by several rows — now reproduces every page exactly, and each page
- * reaches its rows through the order's index under a limit (criterion v2 of `QueryPlan.boundedScan`).
+ * reaches its rows through the order's index under a limit (criterion v3 of `QueryPlan.boundedScan`).
  */
 @Tag("integration")
 class CursorPagingIT {
@@ -98,7 +98,7 @@ class CursorPagingIT {
 
     @Test
     fun `a cursor page reaches its rows through the order's index as its condition, under a limit`() {
-        val order = QueryCompiler(Books.SCHEMA, Books.rules(), emptySet()).effectiveOrder(SortKey.parse("-createdAt"))
+        val order = QueryCompiler(Books.SCHEMA, Books.rules(), emptySet(), setOf(Books.ID)).effectiveOrder(SortKey.parse("-createdAt"))
         val boundary = resource.walk("-createdAt", 5, start = null) { null }.single()
         val keys = listOf(boundary.items.last()["createdAt"] as Any, boundary.items.last()["id"] as Any)
         val seek = Predicate.Keyset(order, keys, Predicate.Side.AFTER)
@@ -108,8 +108,8 @@ class CursorPagingIT {
         val scoped = database.plan(database.store.readQuery(RowRead(shelf, null, seek, order, 6, 0, Projection.Full)))
 
         assertThat(everywhere.usesIndex("books_created_at_id")).describedAs("%s", everywhere).isTrue()
-        assertThat(everywhere.boundedScan("books")).describedAs("%s", everywhere).isEqualTo(PlanVerdict.Bounded)
+        assertThat(everywhere.boundedScan("public", "books")).describedAs("%s", everywhere).isEqualTo(PlanVerdict.Bounded)
         assertThat(scoped.usesIndex("books_shelf_created_at_id")).describedAs("%s", scoped).isTrue()
-        assertThat(scoped.boundedScan("books")).describedAs("%s", scoped).isEqualTo(PlanVerdict.Bounded)
+        assertThat(scoped.boundedScan("public", "books")).describedAs("%s", scoped).isEqualTo(PlanVerdict.Bounded)
     }
 }

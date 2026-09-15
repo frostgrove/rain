@@ -94,14 +94,21 @@ public class ItemPlan(
  *   are exactly the filters of a declared shape ([QueryRules.countsBy]).
  * - The effective order is the shape's sort followed by the identifier in the last term's direction
  *   (ascending when the sort is [SortKey.NONE]), unless the sort already names the identifier.
- * - `fields` always returns the identifier too, and may name it without it being selectable.
+ * - `fields` names only fields `selectable` grants, the identifier included; the projection is the identifier and
+ *   the named fields, and it holds every field of [itemFields] — the fields the store reads to make an item — or the
+ *   query is refused at `/fields` with `required`. One rule decides for every field, so no selection can reach a
+ *   field the grant withholds or leave out a field the item is read from.
  */
 public class QueryCompiler(
     private val schema: ResourceSchema,
     private val rules: QueryRules,
     private val relations: Set<String>,
+    itemFields: Set<SchemaField>,
 ) {
+    private val itemFields: Set<SchemaField> = itemFields.toSet()
+
     init {
+        require(this.itemFields.all(schema::owns)) { "the item fields of ${schema.name} are its own fields" }
         val problems = rules.problems(schema, relations)
         if (problems.isNotEmpty()) throw ConfigurationProblemsException(problems)
     }
@@ -134,7 +141,7 @@ public class QueryCompiler(
         val compilation = Compilation(parameters)
         compilation.meaningless(listOf(LIMIT, OFFSET, CURSOR, SORT, FIELDS, INCLUDE), "has no meaning when counting")
         if (rules.pagination.countCap == null) {
-            compilation.refuse(emptyList(), RainCrudErrorCodes.NOT_OFFERED, "this resource offers no count")
+            compilation.refuse(path(COUNT), RainCrudErrorCodes.NOT_OFFERED, NO_COUNT)
         }
         parameters.scalars[COUNT]?.takeIf { it != COUNT_CAPPED }?.let {
             compilation.refuse(path(COUNT), RainErrorCodes.INVALID_FORMAT, "the only count of query dialect v1 is capped")
@@ -320,7 +327,7 @@ public class QueryCompiler(
                             refused(path(FIELDS), RainErrorCodes.UNKNOWN_FIELD, "names $name, which is not a field of this resource")
                         }
 
-                        field != schema.id && !rules.selectable.grants(name) -> {
+                        !rules.selectable.grants(name) -> {
                             refused(path(FIELDS), RainCrudErrorCodes.FIELD_NOT_GRANTED, "$name is not selectable")
                         }
 
@@ -329,7 +336,13 @@ public class QueryCompiler(
                         }
                     }
                 }
-            return if (fields.size == names.size) Projection.Only(linkedSetOf(schema.id) + fields) else null
+            if (fields.size != names.size) return null
+            val projected = linkedSetOf(schema.id) + fields
+            val missing = itemFields.filterNot(projected::contains)
+            missing.forEach {
+                refuse(path(FIELDS), RainErrorCodes.REQUIRED, "names no ${it.name}, which this resource reads to make an item")
+            }
+            return if (missing.isEmpty()) Projection.Only(projected) else null
         }
 
         fun includes(): List<String>? {
@@ -367,7 +380,7 @@ public class QueryCompiler(
             val text = parameters.scalars[COUNT] ?: return false
             when {
                 text != COUNT_CAPPED -> refuse(path(COUNT), RainErrorCodes.INVALID_FORMAT, "the only count of query dialect v1 is capped")
-                rules.pagination.countCap == null -> refuse(path(COUNT), RainCrudErrorCodes.NOT_OFFERED, "this resource offers no count")
+                rules.pagination.countCap == null -> refuse(path(COUNT), RainCrudErrorCodes.NOT_OFFERED, NO_COUNT)
             }
             return true
         }
@@ -383,7 +396,8 @@ public class QueryCompiler(
         }
     }
 
-    private companion object {
+    internal companion object {
         val NON_NEGATIVE = Regex("^(0|[1-9][0-9]*)$")
+        const val NO_COUNT = "this resource offers no count"
     }
 }

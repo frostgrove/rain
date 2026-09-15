@@ -96,17 +96,40 @@ public class Row internal constructor(
     private fun fieldOf(column: String): Field<*>? = record.fields().firstOrNull { it.name == column }
 }
 
-/** Turns a [Row] into a resource's item. */
-public fun interface RowReader<T> {
+/**
+ * Turns a [Row] into a resource's item, and declares the fields it reads.
+ *
+ * [reads] is every field [read] asks the row for. A store answers a projection only when it holds all of them, so a
+ * query whose `fields` would leave one out is refused as `400 bad_query` when it is compiled, never discovered as a
+ * [RowShapeException] while a row is read.
+ */
+public interface RowReader<T> {
+    /** The fields [read] reads from every row. */
+    public val reads: Set<SchemaField>
+
     public fun read(row: Row): T
 
     public companion object {
+        /** A reader of the stated [reads] fields; [read] asks the row for no other column. */
+        public fun <T> of(
+            reads: Set<SchemaField>,
+            read: (Row) -> T,
+        ): RowReader<T> {
+            val declared = reads.toSet()
+            return object : RowReader<T> {
+                override val reads: Set<SchemaField> = declared
+
+                override fun read(row: Row): T = read(row)
+            }
+        }
+
         /**
          * Items as maps from field name to value, holding exactly the fields the row carries — so a query
-         * that names `fields` answers those fields and the identifier, and nothing else.
+         * that names `fields` answers those fields and the identifier, and nothing else. It reads the identifier,
+         * which every projection holds, and asks for no other field the row does not carry.
          */
         public fun fields(schema: ResourceSchema): RowReader<Map<String, Any?>> =
-            RowReader { row ->
+            of(setOf(schema.id)) { row ->
                 schema.fields.filter { row.has(it.column) }.associateTo(LinkedHashMap()) { it.name to row.valueOf(it) }
             }
     }

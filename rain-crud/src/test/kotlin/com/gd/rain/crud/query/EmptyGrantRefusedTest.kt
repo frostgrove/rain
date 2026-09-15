@@ -49,7 +49,7 @@ class EmptyGrantRefusedTest {
                 includable = FieldGrant.None,
                 pagination = Pagination(10, 50, 100, null),
             )
-        val compiler = QueryCompiler(Books.SCHEMA, rules, setOf("reviews"))
+        val compiler = QueryCompiler(Books.SCHEMA, rules, setOf("reviews"), setOf(Books.ID))
 
         val refused = faultOf { compiler.list(DialectV1.parse(mapOf("fields" to listOf("title"), "include" to listOf("reviews")))) }
 

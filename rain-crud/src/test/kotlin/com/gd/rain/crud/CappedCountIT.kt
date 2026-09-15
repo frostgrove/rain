@@ -50,7 +50,7 @@ class CappedCountIT {
         val plan = database.plan(query)
 
         assertThat(database.dsl.renderInlined(query)).contains("fetch next 11 rows only")
-        assertThat(plan.boundedScan("books")).describedAs("%s", plan).isEqualTo(PlanVerdict.Bounded)
+        assertThat(plan.boundedScan("public", "books")).describedAs("%s", plan).isEqualTo(PlanVerdict.Bounded)
         assertThat(plan.json).describedAs("the limit node reads cap + 1 rows of the 25 that match").contains("\"Plan Rows\": 11")
         assertThat(
             plan.json,

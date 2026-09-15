@@ -28,7 +28,8 @@ class BookDatabase(
         jdbc.execute(Books.DDL)
     }
 
-    fun insert(vararg books: Map<String, Any?>): List<UUID> = books.map { store.insert(it)["id"] as UUID }
+    fun insert(vararg books: Map<String, Any?>): List<UUID> =
+        books.map { (store.insert(RowScope.Everything, it) as InsertOutcome.Inserted).item["id"] as UUID }
 
     fun stored(id: UUID): Map<String, Any?>? = store.find(id, RowScope.Everything, Projection.Full)
 

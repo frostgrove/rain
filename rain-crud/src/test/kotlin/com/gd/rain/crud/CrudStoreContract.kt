@@ -7,6 +7,7 @@ import com.gd.rain.crud.query.Operator
 import com.gd.rain.crud.query.Order
 import com.gd.rain.crud.query.Predicate
 import com.gd.rain.crud.query.Projection
+import com.gd.rain.crud.query.ResourceSchema
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
@@ -19,12 +20,15 @@ import java.util.UUID
  * double the unit tests stand on behaves like the store applications run.
  */
 abstract class CrudStoreContract {
-    /** An empty store for [Books.SCHEMA], of its own for each call. */
-    abstract fun freshStore(): CrudStore<Map<String, Any?>>
+    /** An empty store for [schema], of its own for each call; [Books.SCHEMA] and [Books.VERSIONED] share one table. */
+    abstract fun freshStore(schema: ResourceSchema = Books.SCHEMA): CrudStore<Map<String, Any?>>
 
     private fun at(minutes: Long) = T0.plus(Duration.ofMinutes(minutes))
 
     private fun CrudStore<Map<String, Any?>>.ids(read: RowRead): List<UUID> = read(read).map { it.item["id"] as UUID }
+
+    private fun CrudStore<Map<String, Any?>>.add(values: Map<String, Any?>): Map<String, Any?> =
+        (insert(RowScope.Everything, values) as InsertOutcome.Inserted).item
 
     private fun everything(
         order: List<Order>,
@@ -37,11 +41,13 @@ abstract class CrudStoreContract {
 
     private val byId = listOf(Order(Books.ID, Direction.ASC))
 
+    private val shelfA = RowScope.Matching(Predicate.eq(Books.SHELF, "a"))
+
     @Test
     fun `an insert mints the identifier and every kind reads back as it was written`() {
         val store = freshStore()
         val written =
-            store.insert(
+            store.add(
                 book(
                     "dune",
                     "a",
@@ -69,26 +75,45 @@ abstract class CrudStoreContract {
         val store = freshStore()
         val id = UUID.fromString("0192f1c0-0000-7000-8000-000000000001")
 
-        assertThat(store.insert(book("emma", "a", 1, T0, id = id))["id"]).isEqualTo(id)
+        assertThat(store.add(book("emma", "a", 1, T0, id = id))["id"]).isEqualTo(id)
     }
 
     @Test
     fun `an update writes the named fields, keeps the rest, and answers the whole row`() {
         val store = freshStore()
-        val id = store.insert(book("dune", "a", 412, T0, isbn = "1"))["id"] as UUID
+        val id = store.add(book("dune", "a", 412, T0, isbn = "1"))["id"] as UUID
 
-        val updated = store.update(id, RowScope.Everything, mapOf("pages" to 500, "isbn" to null))
+        val updated = (store.update(id, RowScope.Everything, mapOf("pages" to 500, "isbn" to null), null) as UpdateOutcome.Updated).item
 
         assertThat(
             updated,
         ).containsEntry("pages", 500).containsEntry("isbn", null).containsEntry("title", "dune").containsEntry("shelf", "a")
         assertThat(store.find(id, RowScope.Everything, Projection.Full)).isEqualTo(updated)
+        assertThat(store.update(UUID.randomUUID(), RowScope.Everything, mapOf("pages" to 1), null)).isEqualTo(UpdateOutcome.NotFound)
     }
+
+    @Test
+    fun `a versioned store writes version 1 on insert, one more on every update, and writes nothing at another version`() {
+        val store = freshStore(Books.VERSIONED)
+        val id = store.add(book("dune", "a", 412, T0))["id"] as UUID
+        assertThat(store.find(id, RowScope.Everything, Projection.Full)).containsEntry("version", 1L)
+
+        val updated = store.update(id, RowScope.Everything, mapOf("pages" to 500), 1L) as UpdateOutcome.Updated
+
+        assertThat(updated.item).containsEntry("version", 2L).containsEntry("pages", 500)
+        assertThat(store.update(id, RowScope.Everything, mapOf("pages" to 9), 1L)).isEqualTo(UpdateOutcome.StaleVersion)
+        assertThat(store.update(id, shelfB(), mapOf("pages" to 9), 2L)).isEqualTo(UpdateOutcome.NotFound)
+        assertThat(store.find(id, RowScope.Everything, Projection.Full)).containsEntry("version", 2L).containsEntry("pages", 500)
+        assertThat(store.updateMany(setOf(id), RowScope.Everything, mapOf("pages" to 7))).isEqualTo(BulkUpdateOutcome.Updated(1))
+        assertThat(store.find(id, RowScope.Everything, Projection.Full)).containsEntry("version", 3L)
+    }
+
+    private fun shelfB() = RowScope.Matching(Predicate.eq(Books.SHELF, "b"))
 
     @Test
     fun `a read filters, orders by every term, skips its offset and stops at its limit`() {
         val store = freshStore()
-        listOf(100, 300, 200, 50, 300).forEachIndexed { index, pages -> store.insert(book("t$index", "a", pages, at(index.toLong()))) }
+        listOf(100, 300, 200, 50, 300).forEachIndexed { index, pages -> store.add(book("t$index", "a", pages, at(index.toLong()))) }
         val order = listOf(Order(Books.PAGES, Direction.DESC), Order(Books.TITLE, Direction.ASC), Order(Books.ID, Direction.ASC))
         val big = Predicate.Compare(Books.PAGES, Operator.GTE, listOf(100))
 
@@ -101,7 +126,7 @@ abstract class CrudStoreContract {
     @Test
     fun `a keyset read continues strictly after its key, whichever way the order runs`() {
         val store = freshStore()
-        listOf("c", "a", "b", "b", "d").forEachIndexed { index, title -> store.insert(book(title, "a", 1, at(index.toLong()))) }
+        listOf("c", "a", "b", "b", "d").forEachIndexed { index, title -> store.add(book(title, "a", 1, at(index.toLong()))) }
         val ascending = listOf(Order(Books.TITLE, Direction.ASC), Order(Books.ID, Direction.ASC))
         val all = store.read(everything(ascending))
         val third = all[2]
@@ -119,7 +144,7 @@ abstract class CrudStoreContract {
     fun `a mixed-direction keyset continues the order exactly`() {
         val store = freshStore()
         listOf("a" to 3, "a" to 1, "b" to 2, "a" to 2, "b" to 2, "c" to 9, "b" to 1).forEachIndexed { index, (title, pages) ->
-            store.insert(book(title, "a", pages, at(index.toLong())))
+            store.add(book(title, "a", pages, at(index.toLong())))
         }
         val order = listOf(Order(Books.TITLE, Direction.ASC), Order(Books.PAGES, Direction.DESC), Order(Books.ID, Direction.ASC))
         val all = store.read(everything(order))
@@ -136,9 +161,9 @@ abstract class CrudStoreContract {
     @Test
     fun `a comparison never matches NULL and isnull does`() {
         val store = freshStore()
-        store.insert(book("priced", "a", 1, T0, price = BigDecimal("10")))
-        store.insert(book("other", "a", 1, T0, price = BigDecimal("20.5")))
-        store.insert(book("free", "a", 1, T0, price = null))
+        store.add(book("priced", "a", 1, T0, price = BigDecimal("10")))
+        store.add(book("other", "a", 1, T0, price = BigDecimal("20.5")))
+        store.add(book("free", "a", 1, T0, price = null))
 
         fun titles(predicate: Predicate) = store.read(everything(byId, filter = predicate)).map { it.item["title"] }.toSet()
 
@@ -156,8 +181,8 @@ abstract class CrudStoreContract {
     @Test
     fun `dates, instants, booleans and longs compare by value`() {
         val store = freshStore()
-        store.insert(book("old", "a", 1, T0, publishedOn = LocalDate.of(1965, 8, 1), available = false, copies = 1))
-        store.insert(book("new", "a", 1, at(90), publishedOn = LocalDate.of(2020, 1, 1), available = true, copies = 9_000_000_000))
+        store.add(book("old", "a", 1, T0, publishedOn = LocalDate.of(1965, 8, 1), available = false, copies = 1))
+        store.add(book("new", "a", 1, at(90), publishedOn = LocalDate.of(2020, 1, 1), available = true, copies = 9_000_000_000))
 
         fun titles(predicate: Predicate) = store.read(everything(byId, filter = predicate)).map { it.item["title"] }.toSet()
 
@@ -171,7 +196,7 @@ abstract class CrudStoreContract {
     @Test
     fun `a count reads at most cap plus one rows`() {
         val store = freshStore()
-        repeat(5) { store.insert(book("t$it", if (it < 4) "a" else "b", 1, T0)) }
+        repeat(5) { store.add(book("t$it", if (it < 4) "a" else "b", 1, T0)) }
         val shelfA = Predicate.eq(Books.SHELF, "a")
 
         assertThat(store.countUpTo(RowScope.Everything, null, 2)).isEqualTo(3)
@@ -183,13 +208,12 @@ abstract class CrudStoreContract {
     @Test
     fun `every read and every write stays inside its scope`() {
         val store = freshStore()
-        val inside = store.insert(book("inside", "a", 1, T0))["id"] as UUID
-        val outside = store.insert(book("outside", "b", 1, T0))["id"] as UUID
-        val shelfA = RowScope.Matching(Predicate.eq(Books.SHELF, "a"))
+        val inside = store.add(book("inside", "a", 1, T0))["id"] as UUID
+        val outside = store.add(book("outside", "b", 1, T0))["id"] as UUID
 
         assertThat(store.find(outside, shelfA, Projection.Full)).isNull()
-        assertThat(store.update(outside, shelfA, mapOf("pages" to 9))).isNull()
-        assertThat(store.updateMany(setOf(inside, outside), shelfA, mapOf("pages" to 7))).isEqualTo(1)
+        assertThat(store.update(outside, shelfA, mapOf("pages" to 9), null)).isEqualTo(UpdateOutcome.NotFound)
+        assertThat(store.updateMany(setOf(inside, outside), shelfA, mapOf("pages" to 7))).isEqualTo(BulkUpdateOutcome.Updated(1))
         assertThat(store.delete(outside, shelfA)).isZero()
         assertThat(store.deleteMany(setOf(outside), shelfA)).isZero()
         assertThat(store.ids(everything(byId, scope = shelfA))).containsExactly(inside)
@@ -202,9 +226,35 @@ abstract class CrudStoreContract {
     }
 
     @Test
+    fun `an insert outside its scope is refused and inserts nothing, and one inside it is kept`() {
+        val store = freshStore()
+        val id = UUID.fromString("0192f1c0-0000-7000-8000-0000000000b1")
+
+        assertThat(store.insert(shelfA, book("stray", "b", 1, T0, id = id))).isEqualTo(InsertOutcome.OutsideScope)
+        assertThat(store.find(id, RowScope.Everything, Projection.Full)).isNull()
+
+        val kept = store.insert(shelfA, book("kept", "a", 1, T0)) as InsertOutcome.Inserted
+        assertThat(store.find(kept.item["id"] as UUID, shelfA, Projection.Full)).isEqualTo(kept.item)
+    }
+
+    @Test
+    fun `a write that would move a row out of its scope is refused and leaves every row as it was`() {
+        val store = freshStore(Books.VERSIONED)
+        val first = store.add(book("first", "a", 1, T0))["id"] as UUID
+        val second = store.add(book("second", "a", 2, T0))["id"] as UUID
+
+        assertThat(store.update(first, shelfA, mapOf("shelf" to "b"), 1L)).isEqualTo(UpdateOutcome.OutsideScope)
+        assertThat(store.updateMany(setOf(first, second), shelfA, mapOf("shelf" to "b"))).isEqualTo(BulkUpdateOutcome.OutsideScope)
+
+        assertThat(store.find(first, RowScope.Everything, Projection.Full)).containsEntry("shelf", "a").containsEntry("version", 1L)
+        assertThat(store.find(second, RowScope.Everything, Projection.Full)).containsEntry("shelf", "a").containsEntry("version", 1L)
+        assertThat(store.update(first, shelfA, mapOf("title" to "renamed"), 1L)).isInstanceOf(UpdateOutcome.Updated::class.java)
+    }
+
+    @Test
     fun `a projection answers the identifier and the named fields only`() {
         val store = freshStore()
-        val id = store.insert(book("dune", "a", 412, T0))["id"] as UUID
+        val id = store.add(book("dune", "a", 412, T0))["id"] as UUID
         val projection = Projection.Only(setOf(Books.ID, Books.TITLE))
         val order = listOf(Order(Books.CREATED_AT, Direction.DESC), Order(Books.ID, Direction.DESC))
 

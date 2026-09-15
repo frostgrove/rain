@@ -10,14 +10,19 @@ import com.gd.rain.crud.query.Direction
 import com.gd.rain.crud.query.Order
 import com.gd.rain.crud.query.Predicate
 import com.gd.rain.crud.query.Projection
+import com.gd.rain.crud.query.ResourceSchema
+import com.gd.rain.persistence.id.UuidV7Ids
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
-/** The store contract against PostgreSQL: quoted identifiers, typed binds, `RETURNING`, escaped patterns and `timestamptz` read back. */
+/** The store contract against PostgreSQL: quoted identifiers, typed binds, `RETURNING`, transactional scope checks and `timestamptz` read back. */
 @Tag("integration")
 class JooqResourceStoreIT : CrudStoreContract() {
-    override fun freshStore(): CrudStore<Map<String, Any?>> = BookDatabase("crud_store").store
+    override fun freshStore(schema: ResourceSchema): CrudStore<Map<String, Any?>> {
+        val database = BookDatabase("crud_store")
+        return JooqResourceStore(schema, database.dsl, UuidV7Ids, RowReader.fields(schema))
+    }
 
     @Test
     fun `statements name the application's schema-qualified table and bind every value`() {

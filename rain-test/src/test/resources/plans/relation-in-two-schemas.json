@@ -1,0 +1,53 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Append",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 0.15,
+      "Total Cost": 16.35,
+      "Plan Rows": 2,
+      "Plan Width": 16,
+      "Disabled": false,
+      "Subplans Removed": 0,
+      "Plans": [
+        {
+          "Node Type": "Index Only Scan",
+          "Parent Relationship": "Member",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Scan Direction": "Forward",
+          "Index Name": "books_pkey",
+          "Relation Name": "books",
+          "Schema": "public",
+          "Alias": "books",
+          "Startup Cost": 0.15,
+          "Total Cost": 8.17,
+          "Plan Rows": 1,
+          "Plan Width": 16,
+          "Disabled": false,
+          "Output": ["books.id"],
+          "Index Cond": "(books.id = '00000000-0000-7000-8000-000000000001'::uuid)"
+        },
+        {
+          "Node Type": "Index Only Scan",
+          "Parent Relationship": "Member",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Scan Direction": "Forward",
+          "Index Name": "books_pkey",
+          "Relation Name": "books",
+          "Schema": "archive",
+          "Alias": "books_1",
+          "Startup Cost": 0.15,
+          "Total Cost": 8.17,
+          "Plan Rows": 1,
+          "Plan Width": 16,
+          "Disabled": false,
+          "Output": ["books_1.id"],
+          "Index Cond": "(books_1.id = '00000000-0000-7000-8000-000000000001'::uuid)"
+        }
+      ]
+    }
+  }
+]
