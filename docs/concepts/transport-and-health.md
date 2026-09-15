@@ -98,6 +98,7 @@ so an entry for a check this process does not run is reported `not_evaluated` an
 | `database` | rain-observability | any process with a `DataSource` | no pooled connection answers `isValid` within the budget |
 | `jobs` | rain-jobs | `worker` | the worker is stopped, a scheduler is not started, is shutting down or has not polled within `rain.jobs.health.max-poll-age`, or the lease renewer has not run within `rain.jobs.lease.ttl` |
 | `realtime.listener` | rain-realtime | `api` | the listener has no live session |
+| `breaker.<name>` | rain-resilience | every process declaring the breaker | the breaker withholds calls (open, half-open or forced open) |
 
 The checks of one evaluation run
 concurrently on virtual threads, each against an absolute budget counted from the start of the evaluation (its own,

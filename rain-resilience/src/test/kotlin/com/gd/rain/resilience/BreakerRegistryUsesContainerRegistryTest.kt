@@ -33,13 +33,14 @@ class BreakerRegistryUsesContainerRegistryTest {
             ).withPropertyValues(
                 "rain.runtime.roles=api",
                 "rain.deployment.stage=test",
+                "rain.health.checks.breaker.payments=degrading",
                 "resilience4j.circuitbreaker.instances.payments.sliding-window-size=1",
                 "resilience4j.circuitbreaker.instances.payments.minimum-number-of-calls=1",
                 "resilience4j.circuitbreaker.instances.payments.wait-duration-in-open-state=45s",
             ).withBean(
                 "paymentsBreaker",
                 BreakerDeclaration::class.java,
-                { BreakerDeclaration(payments, "payments", Importance.DEGRADING) },
+                { BreakerDeclaration(payments, "payments") },
             )
 
     @Test
@@ -97,7 +98,7 @@ class BreakerRegistryUsesContainerRegistryTest {
     }
 
     @Test
-    fun `every declaration is published to readiness under its own name and importance`() {
+    fun `every declaration is published to readiness under its own name, at the importance the application states`() {
         runner.run { context ->
             val registry = context.getBean(com.gd.rain.observability.health.HealthRegistry::class.java)
             val contribution = registry.contributions().single()

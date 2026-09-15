@@ -38,6 +38,7 @@ class LlmAutoConfigurationTest {
                 "spring.application.name=sample",
                 "rain.runtime.roles=api",
                 "rain.deployment.stage=test",
+                "rain.health.checks.breaker.model=degrading",
                 "resilience4j.circuitbreaker.instances.model.wait-duration-in-open-state=30s",
             ).withBean(IdGenerator::class.java, { IdGenerator { UUID.randomUUID() } })
             .withBean(LlmSlotStore::class.java, { store })
@@ -51,7 +52,7 @@ class LlmAutoConfigurationTest {
             .withBean(
                 "modelBreaker",
                 BreakerDeclaration::class.java,
-                { BreakerDeclaration(MODEL_BREAKER, "model_unavailable", Importance.DEGRADING) },
+                { BreakerDeclaration(MODEL_BREAKER, "model_unavailable") },
             )
 
     @Test
@@ -89,7 +90,7 @@ class LlmAutoConfigurationTest {
     fun `an enabled section without a ChatModel refuses start-up`() {
         runner
             .withPropertyValues(*enabled)
-            .withBean("modelBreaker", BreakerDeclaration::class.java, { BreakerDeclaration(MODEL_BREAKER, null, Importance.DEGRADING) })
+            .withBean("modelBreaker", BreakerDeclaration::class.java, { BreakerDeclaration(MODEL_BREAKER, null) })
             .run { context -> assertThat(problems(context)).containsExactly("rain.llm.enabled" to ProblemCode.REQUIRED) }
     }
 

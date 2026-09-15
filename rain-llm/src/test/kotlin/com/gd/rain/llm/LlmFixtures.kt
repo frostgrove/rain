@@ -160,7 +160,7 @@ class GatewayFixture(
                     .clock(clock)
                     .build(),
             ).also { it.circuitBreaker(MODEL_BREAKER.value) }
-    val breakers = BreakerRegistry(container, listOf(BreakerDeclaration(MODEL_BREAKER, "model_unavailable", Importance.DEGRADING)))
+    val breakers = BreakerRegistry(container, listOf(BreakerDeclaration(MODEL_BREAKER, "model_unavailable")))
     val slots = LlmSlots(store, settings.timeout, settings.slotPollInterval, clock, { UUID.randomUUID() }, "test/1", pause)
     val gateway =
         LlmGateway(settings, slots, AdmissionGate(breakers), breakers, { model }, customizers, TokenCounters.of(settings, counters), clock)

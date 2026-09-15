@@ -31,7 +31,7 @@ fun breakerConfig(
         .clock(clock)
         .build()
 
-fun declaration(name: String): BreakerDeclaration = BreakerDeclaration(BreakerName(name), name, Importance.DEGRADING)
+fun declaration(name: String): BreakerDeclaration = BreakerDeclaration(BreakerName(name), name)
 
 fun containerWith(
     config: CircuitBreakerConfig,

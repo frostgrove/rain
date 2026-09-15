@@ -36,8 +36,8 @@ class UndeclaredBreakerConfigRefusedTest {
                     RainHealthAutoConfiguration::class.java,
                     RainResilienceAutoConfiguration::class.java,
                 ),
-            ).withPropertyValues("rain.runtime.roles=api", "rain.deployment.stage=test")
-            .withBean("paymentsBreaker", BreakerDeclaration::class.java, { BreakerDeclaration(payments, "payments", Importance.DEGRADING) })
+            ).withPropertyValues("rain.runtime.roles=api", "rain.deployment.stage=test", "rain.health.checks.breaker.payments=degrading")
+            .withBean("paymentsBreaker", BreakerDeclaration::class.java, { BreakerDeclaration(payments, "payments") })
 
     @Test
     fun `a declared breaker with no instance configuration refuses start-up`() {

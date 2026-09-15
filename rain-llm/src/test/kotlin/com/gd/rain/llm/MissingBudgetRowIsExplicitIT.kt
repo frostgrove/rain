@@ -40,7 +40,7 @@ class MissingBudgetRowIsExplicitIT {
             CircuitBreakerRegistry
                 .of(CircuitBreakerConfig.custom().slidingWindow(1, 1, CircuitBreakerConfig.SlidingWindowType.COUNT_BASED).build())
                 .also { it.circuitBreaker(MODEL_BREAKER.value) }
-        val breakers = BreakerRegistry(container, listOf(BreakerDeclaration(MODEL_BREAKER, null, Importance.DEGRADING)))
+        val breakers = BreakerRegistry(container, listOf(BreakerDeclaration(MODEL_BREAKER, null)))
         val model = ScriptedChatModel().answers("Four.")
         val gateway =
             LlmGateway(

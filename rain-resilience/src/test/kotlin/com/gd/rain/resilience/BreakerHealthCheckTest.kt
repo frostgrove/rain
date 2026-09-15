@@ -7,12 +7,12 @@ import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
-/** An open breaker shows in readiness at the importance its declaration states, with when and why. */
-class BreakerHealthContributionTest {
+/** An open breaker fails its readiness check, saying since when and why. */
+class BreakerHealthCheckTest {
     private val clock = MutableClock(START)
-    private val declaration = BreakerDeclaration(BreakerName("converter"), "converter_unavailable", Importance.DEGRADING)
+    private val declaration = BreakerDeclaration(BreakerName("converter"), "converter_unavailable")
     private val breakers = BreakerRegistry(containerWith(breakerConfig(clock, failures = 2), "converter"), listOf(declaration))
-    private val check = BreakerHealthContribution(declaration, breakers)
+    private val check = BreakerHealthCheck(declaration, breakers)
 
     @Test
     fun `a closed breaker passes`() {
@@ -30,10 +30,9 @@ class BreakerHealthContributionTest {
     }
 
     @Test
-    fun `name, code and importance come from the declaration`() {
+    fun `name and code come from the declaration`() {
         assertThat(check.name).isEqualTo("breaker.converter")
         assertThat(check.code).isEqualTo("converter_unavailable")
-        assertThat(check.importance).isEqualTo(Importance.DEGRADING)
         assertThat(check.timeout).isNull()
     }
 

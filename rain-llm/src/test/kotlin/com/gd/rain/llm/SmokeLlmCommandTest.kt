@@ -40,7 +40,7 @@ class SmokeLlmCommandTest {
         fun ids(): IdGenerator = IdGenerator { UUID.randomUUID() }
 
         @Bean
-        fun modelBreaker(): BreakerDeclaration = BreakerDeclaration(MODEL_BREAKER, "model_unavailable", Importance.DEGRADING)
+        fun modelBreaker(): BreakerDeclaration = BreakerDeclaration(MODEL_BREAKER, "model_unavailable")
     }
 
     private val out = ByteArrayOutputStream()
@@ -99,6 +99,8 @@ class SmokeLlmCommandTest {
             ).properties(
                 "spring.application.name=sample",
                 "rain.deployment.stage=test",
+                "rain.health.checks.breaker.model=degrading",
+                "rain.health.checks.database=informational",
                 "rain.runtime.command=smoke-llm",
                 "rain.persistence.statement-timeout=5s",
                 "resilience4j.circuitbreaker.instances.model.wait-duration-in-open-state=30s",

@@ -1,6 +1,5 @@
 package com.gd.rain.resilience
 
-import com.gd.rain.observability.health.Importance
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import java.time.Duration
 import java.time.Instant
@@ -34,8 +33,8 @@ public value class BreakerName(
 /**
  * A breaker this application uses, declared as a bean.
  *
- * The declaration is the composition root's statement of how much the dependency matters: [importance]
- * and [healthCode] decide what readiness reports while the breaker withholds calls. How the breaker
+ * [healthCode] is what readiness names while the breaker withholds calls; how much that matters is the
+ * application's, stated as `rain.health.checks.breaker.<name>` like every other health check. How the breaker
  * trips is stated in `resilience4j.circuitbreaker.instances.<name>`, and a declaration without that
  * entry refuses start-up.
  */
@@ -43,7 +42,6 @@ public data class BreakerDeclaration(
     public val name: BreakerName,
     /** The public readiness code while the breaker withholds calls; null keeps it out of `failing`. */
     public val healthCode: String?,
-    public val importance: Importance,
 )
 
 /**

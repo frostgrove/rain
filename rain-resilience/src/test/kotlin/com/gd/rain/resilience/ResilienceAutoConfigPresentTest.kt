@@ -25,8 +25,7 @@ class ResilienceAutoConfigPresentTest {
     @EnableAutoConfiguration
     class Application {
         @Bean
-        fun paymentsBreaker(): BreakerDeclaration =
-            BreakerDeclaration(BreakerName("payments"), "payments_unavailable", Importance.DEGRADING)
+        fun paymentsBreaker(): BreakerDeclaration = BreakerDeclaration(BreakerName("payments"), "payments_unavailable")
     }
 
     @Test
@@ -45,6 +44,7 @@ class ResilienceAutoConfigPresentTest {
                 "spring.application.name=sample",
                 "rain.runtime.roles=api",
                 "rain.deployment.stage=test",
+                "rain.health.checks.breaker.payments=degrading",
                 "resilience4j.circuitbreaker.instances.payments.wait-duration-in-open-state=30s",
             ).run()
             .use { context ->
