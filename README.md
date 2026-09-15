@@ -18,13 +18,13 @@ Version `0.1.0-SNAPSHOT`; Kotlin 2.4.20, Spring Boot 4.1.1, Java 25.
 | [rain-web](docs/modules/web.md) | problem+json for every refusal, transport filters, probes, role gating of the web surface, a bounded throttle |
 | [rain-persistence](docs/modules/persistence.md) | UUIDv7 ids, one statement timeout, SQLSTATE classification, transaction retry, advisory locks, schema-per-module migrations, `migrate` |
 | [rain-data-jdbc](docs/modules/data-jdbc.md) | id assignment and column conversions for an application's own Spring Data JDBC repositories |
-| rain-crud | declarative resources over PostgreSQL: a strict query dialect, row-level policy, keyset-first pagination with bounded counting |
+| [rain-crud](docs/modules/crud.md) | declarative resources over PostgreSQL: query dialect v1 over declared query shapes, row-level policy, keyset-first pagination, capped counts, a plan proof for every shape |
 | [rain-audit](docs/modules/audit.md) | the append-only audit trail, written in the transaction that made the change |
 | [rain-jobs](docs/modules/jobs.md) | the durable job queue: leases, fenced effects, deduplication, retries into dead letters, redrive, retention |
 | [rain-realtime](docs/modules/realtime.md) | PostgreSQL `LISTEN`/`NOTIFY` as a bus with transactional publishing and bounded subscriptions |
 | [rain-resilience](docs/modules/resilience.md) | circuit breakers on Resilience4j with atomic admission and one probe per cooldown |
 | [rain-llm](docs/modules/llm.md) | a gateway over a Spring AI `ChatModel` with cluster-wide slots, breaker accounting and token budgets |
-| [rain-test](docs/modules/test.md) | a PostgreSQL per test JVM with a database per test, query-plan assertions, a movable clock |
+| [rain-test](docs/modules/test.md) | a PostgreSQL per test JVM with a database per test, query plans judged by plan criterion v2, a movable clock |
 | `rain-dependencies` | the one platform an application imports |
 
 ## Principles

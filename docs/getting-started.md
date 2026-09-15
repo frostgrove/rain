@@ -505,5 +505,5 @@ process in rotation; a failing `required` check makes it `not_ready` (503).
   [transport and health](concepts/transport-and-health.md).
 - Module pages: [core](modules/core.md), [boot](modules/boot.md), [web](modules/web.md),
   [observability](modules/observability.md), [persistence](modules/persistence.md), [data-jdbc](modules/data-jdbc.md),
-  [audit](modules/audit.md), [jobs](modules/jobs.md), [realtime](modules/realtime.md),
+  [crud](modules/crud.md), [audit](modules/audit.md), [jobs](modules/jobs.md), [realtime](modules/realtime.md),
   [resilience](modules/resilience.md), [llm](modules/llm.md), [test](modules/test.md).

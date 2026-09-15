@@ -115,8 +115,9 @@ deletes its evidence ([ADR 0001](../adr/0001-schema-per-module.md)).
 | `ofResource` | `ix_audit_log_resource (resource_kind, resource_id, occurred_at DESC, id DESC)` | keyset seek past the cursor on `(occurred_at, id)`, `LIMIT limit + 1` |
 | `ofActor` | `ix_audit_log_actor (actor_type, actor_id, occurred_at DESC, id DESC)` | the same |
 
-`limit` is 1 to 500 (`AuditRecorder.MAX_PAGE`). No read counts rows. `AuditIT` asserts the resource page's plan
-reads `ix_audit_log_resource` under a `Limit`. An insert is one statement.
+`limit` is 1 to 500 (`AuditRecorder.MAX_PAGE`). No read counts rows. `AuditIT` asserts that the resource page's
+plan reads `ix_audit_log_resource` and is bounded under plan criterion v2 (`QueryPlan.boundedScan`). An insert is one
+statement.
 
 ## Error codes, health checks, commands
 

@@ -375,9 +375,10 @@ finish instant exactly in a terminal state.
 | db-scheduler due poll | `priority_execution_time_idx` | db-scheduler's own batch |
 
 `RetentionUsesIndexIT`, `DeadLetterKeysetIT`, `ReaperIT`, `CancelBySubjectIT` and `HeldReservationIsKeyedByInvocationIT`
-prove these plans bounded under rain-test's plan criterion v2 (`QueryPlan.boundedScan`): the named index under a `Limit`,
-every condition an index condition, keyed lookups for the reservations. No statement counts invocations. A definition at its worker ceiling is rescheduled after one poll
-interval instead of parking a pooled thread.
+prove these plans bounded under rain-test's plan criterion v2 (`QueryPlan.boundedScan`): the named index under a `Limit`
+with every condition an index condition, and the reservations released through lookups of the unique
+`uq_job_intent_held_invocation`. No statement counts invocations. A definition at its worker ceiling is rescheduled after
+one poll interval instead of parking a pooled thread.
 
 ## What it does not do
 
