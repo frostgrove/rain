@@ -1,0 +1,5 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Index Only Scan", "Parent Relationship": "Outer", "Index Name": "books_shelf_created_at_id",
+   "Relation Name": "books", "Schema": "public", "Alias": "books",
+   "Index Cond": "((books.shelf = 'a'::text) AND (ROW(books.created_at, books.id) > ROW('2000-01-01 00:00:00+00'::timestamp with time zone, '00000000-0000-7000-8000-000000000001'::uuid)))"}
+]}}]

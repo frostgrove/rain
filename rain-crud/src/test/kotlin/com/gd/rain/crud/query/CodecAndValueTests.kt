@@ -167,57 +167,64 @@ class WireValuesTest {
 /** Declarations are checked where they are written. */
 class DeclarationProblemsTest {
     private fun rules(
-        sortable: FieldGrant,
-        cursorSorts: Set<SortKey>,
+        shapes: List<QueryShape>,
         includable: FieldGrant = FieldGrant.None,
-    ) = QueryRules(FieldGrant.None, sortable, FieldGrant.None, includable, emptyList(), Pagination(10, 50, 100, cursorSorts, null))
+    ) = QueryRules(shapes, FieldGrant.None, includable, Pagination(10, 50, 100, null))
 
     @Test
-    fun `a cursor sort on a nullable column is refused at declaration`() {
-        val problems = rules(FieldGrant.All, setOf(SortKey.parse("-price"))).problems(Books.SCHEMA, emptySet())
+    fun `a shape sorted by a nullable column is refused at declaration`() {
+        val problems = rules(listOf(QueryShape.of(SortKey.parse("-price")))).problems(Books.SCHEMA, emptySet())
 
         assertThat(problems.map { it.path to it.message })
-            .containsExactly("crud:books.cursorSorts" to "sort -price names price, which is nullable; a cursor cannot page by it")
+            .containsExactly(
+                "crud:books.shapes" to "shape filters [], sort -price sorts by price, which is nullable; a cursor cannot page by it",
+            )
     }
 
     @Test
-    fun `a cursor sort over an unsortable or undeclared field, or too many terms, is refused`() {
+    fun `a shape over undeclared fields, with inapplicable operators or too many terms, is refused`() {
         val problems =
             rules(
-                FieldGrant.only("title"),
-                setOf(SortKey.parse("shelf"), SortKey.parse("nope"), SortKey.parse("title,-id,pages,shelf,copies")),
+                listOf(
+                    QueryShape.of(SortKey.parse("nope")),
+                    QueryShape.of(SortKey.parse("title,-id,pages,shelf,copies")),
+                    QueryShape.of(SortKey.NONE, "colour" to Operator.EQ, "available" to Operator.GT, "title" to Operator.IS_NULL),
+                ),
                 FieldGrant.only("x"),
             ).problems(Books.SCHEMA, emptySet())
 
         assertThat(problems.map { it.message }).containsExactlyInAnyOrder(
             "grants x, which is not a relation",
-            "sort nope names nope, which is not a field",
-            "sort shelf names shelf, which sortable does not grant",
-            "sort title,-id,pages,shelf,copies has more than maxSortTerms (4) terms",
-            "sort title,-id,pages,shelf,copies names id, which sortable does not grant",
-            "sort title,-id,pages,shelf,copies names pages, which sortable does not grant",
-            "sort title,-id,pages,shelf,copies names shelf, which sortable does not grant",
-            "sort title,-id,pages,shelf,copies names copies, which sortable does not grant",
+            "shape filters [], sort nope sorts by nope, which is not a field",
+            "shape filters [], sort title,-id,pages,shelf,copies sorts by more than maxSortTerms (4) terms",
+            "shape filters [filter[available][gt], filter[colour][eq], filter[title][isnull]], sort (none) cannot filter: " +
+                "gt applies to ordered fields; available is BOOLEAN",
+            "shape filters [filter[available][gt], filter[colour][eq], filter[title][isnull]], sort (none) filters by colour, " +
+                "which is not a field",
+            "shape filters [filter[available][gt], filter[colour][eq], filter[title][isnull]], sort (none) cannot filter: " +
+                "isnull applies to nullable fields; title is not nullable",
         )
     }
 
     @Test
     fun `the compiler refuses rules with problems`() {
-        assertThatThrownBy { QueryCompiler(Books.SCHEMA, rules(FieldGrant.None, setOf(SortKey.parse("title"))), emptySet()) }
+        assertThatThrownBy { QueryCompiler(Books.SCHEMA, rules(listOf(QueryShape.of(SortKey.parse("nope")))), emptySet()) }
             .isInstanceOf(com.gd.rain.core.config.ConfigurationProblemsException::class.java)
     }
 
     @Test
-    fun `pagination numbers, limits and sort keys are checked where they are written`() {
+    fun `pagination numbers, limits, sort keys and shapes are checked where they are written`() {
         listOf<() -> Any>(
-            { Pagination(0, 50, 100, emptySet(), null) },
-            { Pagination(51, 50, 100, emptySet(), null) },
-            { Pagination(1, Int.MAX_VALUE, 100, emptySet(), null) },
-            { Pagination(1, 50, -1, emptySet(), null) },
-            { Pagination(1, 50, 100, emptySet(), 0) },
+            { Pagination(0, 50, 100, null) },
+            { Pagination(51, 50, 100, null) },
+            { Pagination(1, Int.MAX_VALUE, 100, null) },
+            { Pagination(1, 50, -1, null) },
+            { Pagination(1, 50, 100, 0) },
             { QueryLimits(maxInValues = 0) },
             { SortKey.parse("") },
             { SortKey.parse("title,-title") },
+            { QueryShape.of(SortKey.NONE, "title" to Operator.EQ, "title" to Operator.EQ) },
+            { ShapeFilter("a[b]", Operator.EQ) },
         ).forEachIndexed { index, declaration ->
             assertThatThrownBy { declaration() }.describedAs("declaration $index").isInstanceOf(IllegalArgumentException::class.java)
         }

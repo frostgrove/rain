@@ -34,10 +34,10 @@ class RainCrudAutoConfigurationTest {
     @Test
     fun `every registered auto-configuration is one`() {
         val imports =
-            checkNotNull(
-                javaClass.classLoader.getResource("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"),
-            ).readText()
-                .lines()
+            javaClass.classLoader
+                .getResources("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+                .toList()
+                .flatMap { it.readText().lines() }
                 .filter(String::isNotBlank)
 
         assertThat(imports).contains(RainCrudAutoConfiguration::class.java.name)

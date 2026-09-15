@@ -12,7 +12,26 @@ import java.time.LocalDate
 
 /** Query dialect v1 against the books fixture: what compiles to what, and what is refused where. */
 class DialectV1Test {
-    private val compiler = QueryCompiler(Books.SCHEMA, Books.rules(includable = FieldGrant.only("reviews")), setOf("reviews"))
+    /** One shape per operator the tests compile, on top of the fixture's shapes. */
+    private val operatorShapes: List<QueryShape> =
+        listOf(
+            QueryShape.of(SortKey.NONE, "pages" to Operator.GT),
+            QueryShape.of(SortKey.NONE, "pages" to Operator.GTE),
+            QueryShape.of(SortKey.NONE, "createdAt" to Operator.LT),
+            QueryShape.of(SortKey.NONE, "publishedOn" to Operator.LTE),
+            QueryShape.of(SortKey.NONE, "available" to Operator.EQ),
+            QueryShape.of(SortKey.NONE, "copies" to Operator.GT),
+            QueryShape.of(SortKey.NONE, "price" to Operator.GTE),
+            QueryShape.of(SortKey.NONE, "title" to Operator.IN),
+            QueryShape.of(SortKey.NONE, "price" to Operator.GTE, "publishedOn" to Operator.EQ, "copies" to Operator.LT),
+        )
+
+    private val compiler =
+        QueryCompiler(
+            Books.SCHEMA,
+            Books.rules(includable = FieldGrant.only("reviews"), shapes = Books.SHAPES + operatorShapes),
+            setOf("reviews"),
+        )
 
     private fun parameters(vararg parameters: Pair<String, String>): Map<String, List<String>> =
         parameters.groupBy({ it.first }, { it.second })
@@ -24,21 +43,15 @@ class DialectV1Test {
     @ParameterizedTest(name = "{0} {1} {2}")
     @CsvSource(
         "title, eq, dune",
-        "title, ne, dune",
         "pages, gt, 10",
         "pages, gte, 10",
         "createdAt, lt, 2026-09-15T10:00:00Z",
         "publishedOn, lte, 1965-08-01",
-        "title, contains, un",
-        "title, icontains, UN",
-        "title, startswith, du",
-        "title, istartswith, DU",
-        "title, endswith, ne",
-        "title, iendswith, NE",
         "price, isnull, true",
         "available, eq, false",
         "copies, gt, 5000000000",
         "price, gte, 12.50",
+        "title, in, dune",
     )
     fun `every operator compiles on a field it applies to`(
         field: String,
@@ -52,11 +65,30 @@ class DialectV1Test {
     }
 
     @Test
-    fun `values are carried as their field's kind`() {
+    fun `the dialect has exactly the operators an index can bound`() {
+        assertThat(Operator.entries.map(Operator::wire)).containsExactly("eq", "gt", "gte", "lt", "lte", "in", "isnull")
+        listOf("ne", "nin", "contains", "icontains", "startswith", "istartswith", "endswith", "iendswith").forEach { wire ->
+            assertThat(
+                refusal("filter[title][$wire]" to "dune").pointedCodes(),
+            ).describedAs(wire).containsExactly("/filter/title/$wire unknown_operator")
+        }
+    }
+
+    @Test
+    fun `search is not a parameter of the dialect`() {
+        val refused = refusal("search" to "dune")
+
+        assertThat(refused.code.value).isEqualTo("unknown_parameter")
+        assertThat(refused.pointedCodes()).containsExactly("/search unknown_parameter")
+    }
+
+    @Test
+    fun `values are carried as their field's kind, conjoined in filter order`() {
         val plan = list("filter[price][gte]" to "12.50", "filter[publishedOn][eq]" to "1965-08-01", "filter[copies][lt]" to "5000000000")
 
-        val values = (plan.filter as Predicate.AllOf).of.map { (it as Predicate.Compare).values.single() }
-        assertThat(values).containsExactlyInAnyOrder(BigDecimal("12.50"), LocalDate.of(1965, 8, 1), 5_000_000_000L)
+        val compared = (plan.filter as Predicate.AllOf).of.map { it as Predicate.Compare }
+        assertThat(compared.map { it.field.name }).containsExactly("copies", "price", "publishedOn")
+        assertThat(compared.map { it.values.single() }).containsExactly(5_000_000_000L, BigDecimal("12.50"), LocalDate.of(1965, 8, 1))
     }
 
     @Test
@@ -85,22 +117,12 @@ class DialectV1Test {
     @Test
     fun `an operator that does not apply to the field is refused`() {
         assertThat(
-            refusal("filter[pages][contains]" to "1").violations.single().message,
-        ).isEqualTo("contains applies to text fields; pages is INT")
-        assertThat(
             refusal("filter[available][gt]" to "true").violations.single().message,
         ).isEqualTo("gt applies to ordered fields; available is BOOLEAN")
         assertThat(
             refusal("filter[title][isnull]" to "true").violations.single().message,
         ).isEqualTo("isnull applies to nullable fields; title is not nullable")
         assertThat(refusal("filter[price][isnull]" to "yes").pointedCodes()).containsExactly("/filter/price/isnull invalid_format")
-    }
-
-    @Test
-    fun `a declared field that is not filterable is not granted`() {
-        assertThat(
-            refusal("filter[id][eq]" to "0192f1c0-0000-7000-8000-000000000001").pointedCodes(),
-        ).containsExactly("/filter/id/eq field_not_granted")
     }
 
     @Test
@@ -117,14 +139,13 @@ class DialectV1Test {
     }
 
     @Test
-    fun `a sort is name or -name terms, each once, each sortable`() {
+    fun `a sort is name or -name terms, each once, each a field`() {
         assertThat(
             list("sort" to "-createdAt").order.map { "${it.field.name} ${it.direction}" },
         ).containsExactly("createdAt DESC", "id DESC")
         assertThat(refusal("sort" to "+title").pointedCodes()).containsExactly("/sort bad_query")
         assertThat(refusal("sort" to "title,,pages").pointedCodes()).containsExactly("/sort bad_query")
         assertThat(refusal("sort" to "title,-title").pointedCodes()).containsExactly("/sort bad_query")
-        assertThat(refusal("sort" to "shelf").pointedCodes()).containsExactly("/sort field_not_granted")
         assertThat(refusal("sort" to "nope").pointedCodes()).containsExactly("/sort unknown_field")
         assertThat(refusal("sort" to "title,pages,price,createdAt,-title2").pointedCodes()).containsExactly("/sort out_of_range")
     }
@@ -146,6 +167,7 @@ class DialectV1Test {
     fun `no sort pages by cursor over the identifier, with the default limit`() {
         val plan = list()
 
+        assertThat(plan.shape).isEqualTo(QueryShape.of(SortKey.NONE))
         assertThat(plan.window).isInstanceOf(Window.Cursor::class.java)
         assertThat((plan.window as Window.Cursor).position).isNull()
         assertThat(plan.window.limit).isEqualTo(10)
@@ -171,23 +193,6 @@ class DialectV1Test {
                 uncapped.list(DialectV1.parse(mapOf("count" to listOf("capped"))))
             }.pointedCodes(),
         ).containsExactly("/count not_offered")
-    }
-
-    @Test
-    fun `search matches the declared search fields and is refused where there are none, or when empty or too long`() {
-        val searched = list("search" to "Dune").filter as Predicate.Compare
-        assertThat(searched.field).isEqualTo(Books.TITLE)
-        assertThat(searched.operator).isEqualTo(Operator.ICONTAINS)
-        assertThat(refusal("search" to "").pointedCodes()).containsExactly("/search bad_query")
-        assertThat(refusal("search" to "x".repeat(201)).pointedCodes()).containsExactly("/search out_of_range")
-
-        val rules = Books.rules()
-        val unsearchable = QueryRules(rules.filterable, rules.sortable, rules.selectable, rules.includable, emptyList(), rules.pagination)
-        assertThat(
-            faultOf {
-                QueryCompiler(Books.SCHEMA, unsearchable, emptySet()).list(DialectV1.parse(mapOf("search" to listOf("x"))))
-            }.pointedCodes(),
-        ).containsExactly("/search not_offered")
     }
 
     @Test

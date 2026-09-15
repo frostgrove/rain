@@ -156,9 +156,14 @@ class ZonelessTimestampIs400Test {
         withBooks { world ->
             world.store.add(book("dune", "a", 412, T0))
 
-            assertThat(world.get("/books", "filter[createdAt][gte]" to "2026-09-15T10:00:00Z").json()["items"].size()).isEqualTo(1)
-            assertThat(world.get("/books", "filter[createdAt][gte]" to "2026-09-15T12:00:00+02:00").json()["items"].size()).isEqualTo(1)
-            assertThat(world.get("/books", "filter[createdAt][gt]" to "2026-09-15T12:00:00+02:00").json()["items"].size()).isZero()
+            fun served(
+                operator: String,
+                value: String,
+            ) = world.get("/books", "filter[createdAt][$operator]" to value, "sort" to "-createdAt").json()["items"].size()
+
+            assertThat(served("gte", "2026-09-15T10:00:00Z")).isEqualTo(1)
+            assertThat(served("gte", "2026-09-15T12:00:00+02:00")).isEqualTo(1)
+            assertThat(served("gt", "2026-09-15T12:00:00+02:00")).isZero()
         }
 }
 
@@ -180,7 +185,7 @@ class DateOnlyOnTimestampIs400Test {
         withBooks { world ->
             world.store.add(book("dune", "a", 412, T0, publishedOn = LocalDate.of(1965, 8, 1)))
 
-            assertThat(world.get("/books", "filter[publishedOn][gte]" to "1965-08-01").json()["items"].size()).isEqualTo(1)
+            assertThat(world.get("/books", "filter[publishedOn][eq]" to "1965-08-01").json()["items"].size()).isEqualTo(1)
         }
 
     @Test

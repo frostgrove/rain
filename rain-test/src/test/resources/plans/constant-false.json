@@ -1,0 +1,5 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Sort", "Parent Relationship": "Outer", "Sort Key": ["books.id"], "Plans": [
+    {"Node Type": "Result", "Parent Relationship": "Outer", "One-Time Filter": "false"}
+  ]}
+]}}]

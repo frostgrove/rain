@@ -6,6 +6,7 @@ import com.gd.rain.jobs.admin.JobAdministration
 import com.gd.rain.jobs.support.AdminFixture
 import com.gd.rain.jobs.support.Fixtures
 import com.gd.rain.jobs.support.Note
+import com.gd.rain.test.PlanVerdict
 import com.gd.rain.test.QueryPlans
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -110,8 +111,7 @@ class DeadLetterKeysetIT {
         assertThat(all.usesIndex("ix_job_invocation_dead_letters")).describedAs(all.json).isTrue()
         assertThat(one.usesIndex("ix_job_invocation_dead_letters_definition")).describedAs(one.json).isTrue()
         listOf(all, one).forEach { plan ->
-            assertThat(plan.hasLimit()).isTrue()
-            assertThat(plan.scansSequentially("job_invocation")).isFalse()
+            assertThat(plan.boundedScan("job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
         }
     }
 }

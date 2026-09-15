@@ -1,0 +1,8 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Append", "Parent Relationship": "Outer", "Plans": [
+    {"Node Type": "Index Scan", "Parent Relationship": "Member", "Index Name": "books_shelf_created_at_id",
+     "Relation Name": "books", "Schema": "public", "Alias": "books", "Index Cond": "(books.shelf = 'a'::text)"},
+    {"Node Type": "Index Scan", "Parent Relationship": "Member", "Index Name": "books_shelf_created_at_id",
+     "Relation Name": "books", "Schema": "public", "Alias": "books_1", "Index Cond": "(books_1.shelf = 'b'::text)"}
+  ]}
+]}}]

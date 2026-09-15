@@ -41,7 +41,8 @@ import java.util.UUID
  *
  * A keyset seek is a row-value comparison when every term shares a direction, which an index on the order's
  * columns serves as its index condition. With mixed directions it is the expanded comparison, led by a
- * non-strict bound on the first column so an index on that column still starts at the cursor.
+ * non-strict bound on the first column; PostgreSQL bounds the scan by that first column only and filters
+ * the rest, so the plan proof refuses a mixed-direction shape's cursor pages (`PlanProofMixedDirectionIT`).
  */
 public class JooqResourceStore<T>(
     override val schema: ResourceSchema,
@@ -226,19 +227,11 @@ public class JooqResourceStore<T>(
         val values = predicate.values
         return when (predicate.operator) {
             Operator.EQ -> column.eq(bind(values.single(), kind))
-            Operator.NE -> column.ne(bind(values.single(), kind))
             Operator.GT -> column.gt(bind(values.single(), kind))
             Operator.GTE -> column.ge(bind(values.single(), kind))
             Operator.LT -> column.lt(bind(values.single(), kind))
             Operator.LTE -> column.le(bind(values.single(), kind))
             Operator.IN -> column.`in`(values.map { bind(it, kind) })
-            Operator.NIN -> column.notIn(values.map { bind(it, kind) })
-            Operator.CONTAINS -> text(predicate.field).contains(values.single() as String)
-            Operator.ICONTAINS -> text(predicate.field).containsIgnoreCase(values.single() as String)
-            Operator.STARTS_WITH -> text(predicate.field).startsWith(values.single() as String)
-            Operator.ISTARTS_WITH -> text(predicate.field).startsWithIgnoreCase(values.single() as String)
-            Operator.ENDS_WITH -> text(predicate.field).endsWith(values.single() as String)
-            Operator.IENDS_WITH -> text(predicate.field).endsWithIgnoreCase(values.single() as String)
             Operator.IS_NULL -> if (values.single() == true) column.isNull else column.isNotNull
         }
     }
@@ -273,8 +266,6 @@ public class JooqResourceStore<T>(
     private companion object {
         @Suppress("UNCHECKED_CAST")
         fun column(field: SchemaField): Field<Any> = DSL.field(DSL.name(field.column), dataType(field.kind)) as Field<Any>
-
-        fun text(field: SchemaField): Field<String> = DSL.field(DSL.name(field.column), SQLDataType.VARCHAR)
 
         fun bind(
             value: Any,

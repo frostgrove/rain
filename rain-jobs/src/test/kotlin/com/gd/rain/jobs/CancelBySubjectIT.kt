@@ -8,6 +8,7 @@ import com.gd.rain.jobs.support.AttemptFixture
 import com.gd.rain.jobs.support.Awaits
 import com.gd.rain.jobs.support.Fixtures
 import com.gd.rain.jobs.support.Note
+import com.gd.rain.test.PlanVerdict
 import com.gd.rain.test.QueryPlans
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
@@ -96,7 +97,7 @@ class CancelBySubjectIT {
             )
 
         assertThat(plan.usesIndex("ix_job_invocation_subject")).describedAs(plan.json).isTrue()
-        assertThat(plan.hasLimit()).isTrue()
-        assertThat(plan.scansSequentially("job_invocation")).isFalse()
+        assertThat(plan.usesIndex("job_invocation_pkey")).describedAs("the picked ids are updated by key").isTrue()
+        assertThat(plan.boundedScan("job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 }

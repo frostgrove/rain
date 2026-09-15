@@ -3,6 +3,7 @@ package com.gd.rain.crud
 import com.gd.rain.crud.Books.T0
 import com.gd.rain.crud.Books.book
 import com.gd.rain.crud.query.Predicate
+import com.gd.rain.test.PlanVerdict
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -41,7 +42,7 @@ class CappedCountIT {
     }
 
     @Test
-    fun `the count statement reads through a limit of cap plus one over an index`() {
+    fun `the count statement reads through a limit of cap plus one over a shelf index`() {
         repeat(25) { database.insert(book("a$it", "a", 1, T0)) }
         database.jdbc.execute("ANALYZE public.books")
         val query = database.store.countQuery(RowScope.Everything, Predicate.eq(Books.SHELF, "a"), 10)
@@ -49,9 +50,10 @@ class CappedCountIT {
         val plan = database.plan(query)
 
         assertThat(database.dsl.renderInlined(query)).contains("fetch next 11 rows only")
-        assertThat(plan.hasLimit()).describedAs("%s", plan).isTrue()
+        assertThat(plan.boundedScan("books")).describedAs("%s", plan).isEqualTo(PlanVerdict.Bounded)
         assertThat(plan.json).describedAs("the limit node reads cap + 1 rows of the 25 that match").contains("\"Plan Rows\": 11")
-        assertThat(plan.usesIndex("books_shelf_created_at_id")).describedAs("%s", plan).isTrue()
-        assertThat(plan.scansSequentially("books")).isFalse()
+        assertThat(
+            plan.json,
+        ).describedAs("a shelf index bounds the read by its shelf").contains("\"Index Cond\": \"(books.shelf = 'a'::text)\"")
     }
 }

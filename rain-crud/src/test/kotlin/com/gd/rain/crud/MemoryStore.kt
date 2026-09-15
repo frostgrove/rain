@@ -176,19 +176,11 @@ class MemoryStore(
         val first = predicate.values.first()
         return when (predicate.operator) {
             Operator.EQ -> valueOrder(value, first) == 0
-            Operator.NE -> valueOrder(value, first) != 0
             Operator.GT -> valueOrder(value, first) > 0
             Operator.GTE -> valueOrder(value, first) >= 0
             Operator.LT -> valueOrder(value, first) < 0
             Operator.LTE -> valueOrder(value, first) <= 0
             Operator.IN -> predicate.values.any { valueOrder(value, it) == 0 }
-            Operator.NIN -> predicate.values.none { valueOrder(value, it) == 0 }
-            Operator.CONTAINS -> (value as String).contains(first as String)
-            Operator.ICONTAINS -> (value as String).lowercase().contains((first as String).lowercase())
-            Operator.STARTS_WITH -> (value as String).startsWith(first as String)
-            Operator.ISTARTS_WITH -> (value as String).lowercase().startsWith((first as String).lowercase())
-            Operator.ENDS_WITH -> (value as String).endsWith(first as String)
-            Operator.IENDS_WITH -> (value as String).lowercase().endsWith((first as String).lowercase())
             Operator.IS_NULL -> error("handled above")
         }
     }

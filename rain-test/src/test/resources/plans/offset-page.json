@@ -1,0 +1,4 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Index Scan", "Parent Relationship": "Outer", "Scan Direction": "Backward", "Index Name": "books_shelf_created_at_id",
+   "Relation Name": "books", "Schema": "public", "Alias": "books", "Index Cond": "(books.shelf = 'a'::text)"}
+]}}]

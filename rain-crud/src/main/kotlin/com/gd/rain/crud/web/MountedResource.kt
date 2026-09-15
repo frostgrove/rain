@@ -38,8 +38,9 @@ public data class CrudRoute(
  * and their access declarations come from.
  *
  * The declaration of each route is derived from the policy the resource enforces, so the permission is
- * written once. Mounting an operation whose action the policy declares no access for, or `/count` on a
- * resource that declares no count cap, is refused when this is constructed.
+ * written once. Mounting an operation whose action the policy declares no access for, the list or `/count`
+ * on a resource that declares no query shape, or `/count` on a resource that declares no count cap, is
+ * refused when this is constructed.
  */
 public class MountedResource<T>(
     public val prefix: String,
@@ -59,6 +60,11 @@ public class MountedResource<T>(
         this.operations.filter { resource.policy.access[it.action] == null }.forEach {
             problems +=
                 ConfigurationProblem(where, ProblemCode.CONTRADICTS, "mounts $it, but the policy declares no access for ${it.action.wire}")
+        }
+        if (resource.rules.shapes.isEmpty()) {
+            this.operations.filter { it == CrudOperation.LIST || it == CrudOperation.COUNT }.forEach {
+                problems += ConfigurationProblem(where, ProblemCode.CONTRADICTS, "mounts $it, but the resource declares no query shape")
+            }
         }
         if (CrudOperation.COUNT in this.operations && resource.rules.pagination.countCap == null) {
             problems += ConfigurationProblem(where, ProblemCode.CONTRADICTS, "mounts COUNT, but the resource declares no count cap")

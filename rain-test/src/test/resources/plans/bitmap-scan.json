@@ -1,0 +1,6 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Bitmap Heap Scan", "Parent Relationship": "Outer", "Relation Name": "books", "Schema": "public", "Alias": "books",
+   "Recheck Cond": "(books.shelf = 'a'::text)", "Plans": [
+    {"Node Type": "Bitmap Index Scan", "Parent Relationship": "Outer", "Index Name": "books_shelf_created_at_id", "Index Cond": "(books.shelf = 'a'::text)"}
+  ]}
+]}}]

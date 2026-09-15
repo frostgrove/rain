@@ -1,0 +1,21 @@
+[{"Plan": {"Node Type": "Aggregate", "Strategy": "Plain", "Plans": [
+  {"Node Type": "Limit", "Parent Relationship": "InitPlan", "Subplan Name": "CTE picked", "Plans": [
+    {"Node Type": "LockRows", "Parent Relationship": "Outer", "Plans": [
+      {"Node Type": "Index Scan", "Parent Relationship": "Outer", "Index Name": "ix_job_invocation_subject",
+       "Relation Name": "job_invocation", "Schema": "rain_jobs", "Alias": "job_invocation",
+       "Index Cond": "((job_invocation.subject_key = 't'::text) AND (job_invocation.state = ANY ('{queued,running}'::text[])))"}
+    ]}
+  ]},
+  {"Node Type": "ModifyTable", "Operation": "Update", "Parent Relationship": "InitPlan", "Subplan Name": "CTE cancelled",
+   "Relation Name": "job_invocation", "Schema": "rain_jobs", "Alias": "job_invocation_1", "Plans": [
+    {"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Join Type": "Inner", "Inner Unique": true, "Plans": [
+      {"Node Type": "Aggregate", "Strategy": "Hashed", "Parent Relationship": "Outer", "Plans": [
+        {"Node Type": "CTE Scan", "Parent Relationship": "Outer", "CTE Name": "picked", "Alias": "picked"}
+      ]},
+      {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Index Name": "job_invocation_pkey",
+       "Relation Name": "job_invocation", "Schema": "rain_jobs", "Alias": "job_invocation_1",
+       "Index Cond": "(job_invocation_1.id = picked.id)"}
+    ]}
+  ]},
+  {"Node Type": "CTE Scan", "Parent Relationship": "Outer", "CTE Name": "cancelled", "Alias": "cancelled"}
+]}}]

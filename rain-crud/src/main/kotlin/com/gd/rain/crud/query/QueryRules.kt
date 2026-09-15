@@ -51,19 +51,15 @@ public class SortKey private constructor(
  *
  * - [defaultLimit] serves a request without `limit`; a `limit` above [maxLimit] is refused, never clamped.
  * - Offset pages are served while `offset + limit ≤ maxOffset`.
- * - Cursor pages are served for exactly the sorts in [cursorSorts] (declare the ones an index backs);
- *   none of their fields may be nullable.
+ * - Cursor and offset pages follow the order of the query shape a request matches ([QueryShape]).
  * - [countCap], when declared, lets a query ask for a count bounded by it; without it nothing is counted.
  */
 public class Pagination(
     public val defaultLimit: Int,
     public val maxLimit: Int,
     public val maxOffset: Long,
-    cursorSorts: Set<SortKey>,
     public val countCap: Long?,
 ) {
-    public val cursorSorts: Set<SortKey> = cursorSorts.toSet()
-
     init {
         require(maxLimit in 1 until Int.MAX_VALUE) { "maxLimit is within 1..${Int.MAX_VALUE - 1}, got $maxLimit" }
         require(defaultLimit in 1..maxLimit) { "defaultLimit is within 1..maxLimit ($maxLimit), got $defaultLimit" }
@@ -87,8 +83,6 @@ public data class QueryLimits(
     public val maxSortTerms: Int = 4,
     public val maxFields: Int = 64,
     public val maxIncludes: Int = 8,
-    public val maxSearchFields: Int = 8,
-    public val maxSearchLength: Int = 200,
     public val maxBulkIds: Int = 500,
 ) {
     init {
@@ -98,37 +92,47 @@ public data class QueryLimits(
             "maxSortTerms" to maxSortTerms,
             "maxFields" to maxFields,
             "maxIncludes" to maxIncludes,
-            "maxSearchFields" to maxSearchFields,
-            "maxSearchLength" to maxSearchLength,
             "maxBulkIds" to maxBulkIds,
         ).forEach { (name, value) -> require(value >= 1) { "$name is at least 1, got $value" } }
     }
 }
 
 /**
- * What queries a resource answers: the four allow-lists, the text fields `search` looks in (empty: the
- * resource offers no search), how it pages and the bounds of a query.
+ * What queries a resource answers: the [shapes] of its lists and counts, the fields `fields` may select, the
+ * relations `include` may name, how it pages and the bounds of one query.
  *
- * rain-crud bounds the rows a query returns and counts; what a statement examines to find them is decided
- * by the application's indexes. Grant a field for filtering, sorting or search only where an index serves
- * it — a b-tree for comparisons and orders, a trigram index for the substring operators and `search` —
- * and declare cursor sorts in the column order of an index, identifier last.
+ * The pagination bounds the rows a statement returns and counts. The rows it examines are bounded by the
+ * shapes: a resource answers exactly the declared shapes, each of which the application backs with an
+ * index, and `CrudPlanProof` (rain-crud's test fixtures) proves every declared shape bounded under the
+ * scopes the application states. Looking a request's shape up costs the same however many shapes a resource
+ * declares.
  */
 public class QueryRules(
-    public val filterable: FieldGrant,
-    public val sortable: FieldGrant,
+    shapes: List<QueryShape>,
     public val selectable: FieldGrant,
     public val includable: FieldGrant,
-    searchFields: List<String>,
     public val pagination: Pagination,
     public val limits: QueryLimits = QueryLimits(),
 ) {
-    public val searchFields: List<String> = searchFields.toList()
+    public val shapes: List<QueryShape> = shapes.toList()
+
+    private val byRequest: Map<QueryShape, QueryShape> = this.shapes.associateBy { it }
+    private val countable: Set<Set<ShapeFilter>> = this.shapes.mapTo(HashSet()) { it.filters }
+
+    /** The declared shape that is exactly [filters] sorted by [sort], or `null`. */
+    public fun shapeOf(
+        filters: Set<ShapeFilter>,
+        sort: SortKey,
+    ): QueryShape? = byRequest[QueryShape(filters, sort)]
+
+    /** Whether a declared shape has exactly [filters], which is what a count needs. */
+    public fun countsBy(filters: Set<ShapeFilter>): Boolean = filters in countable
 
     /**
      * Every way these rules disagree with [schema] and the resource's [relations], all at once: a grant
-     * naming a field the schema does not declare, search fields that are not declared text fields or are
-     * more than `maxSearchFields`, and cursor sorts over undeclared, nullable or unsortable fields.
+     * naming a field or relation that is not declared, a shape declared twice, and a shape that filters by an
+     * undeclared field, applies an operator its field's kind does not take, has more filters or sort terms
+     * than the limits allow, or sorts by an undeclared or nullable field.
      */
     public fun problems(
         schema: ResourceSchema,
@@ -143,49 +147,55 @@ public class QueryRules(
             problems += ConfigurationProblem("crud:${schema.name}.$member", ProblemCode.INVALID, message)
         }
 
-        mapOf("filterable" to filterable, "sortable" to sortable, "selectable" to selectable).forEach { (member, grant) ->
-            if (grant is FieldGrant.Only) {
-                grant.names
-                    .filter { schema.field(it) == null }
-                    .sorted()
-                    .forEach { problem(member, "grants $it, which is not a field") }
-            }
+        if (selectable is FieldGrant.Only) {
+            selectable.names
+                .filter { schema.field(it) == null }
+                .sorted()
+                .forEach { problem("selectable", "grants $it, which is not a field") }
         }
         if (includable is FieldGrant.Only) {
             includable.names
-                .filterNot(
-                    relations::contains,
-                ).sorted()
+                .filterNot(relations::contains)
+                .sorted()
                 .forEach { problem("includable", "grants $it, which is not a relation") }
         }
 
-        if (searchFields.size > limits.maxSearchFields) {
-            problem("searchFields", "declares ${searchFields.size} fields, more than maxSearchFields (${limits.maxSearchFields})")
+        shapes.groupBy { it }.filterValues { it.size > 1 }.forEach { (shape, declared) ->
+            problems +=
+                ConfigurationProblem(
+                    "crud:${schema.name}.shapes",
+                    ProblemCode.CONTRADICTS,
+                    "declares the shape $shape ${declared.size} times",
+                )
         }
-        searchFields.groupBy { it }.filterValues { it.size > 1 }.keys.sorted().forEach {
-            problem(
-                "searchFields",
-                "names $it more than once",
-            )
-        }
-        searchFields.distinct().forEach { name ->
-            val field = schema.field(name)
-            when {
-                field == null -> problem("searchFields", "names $name, which is not a field")
-                field.kind != FieldKind.TEXT -> problem("searchFields", "names $name, which is a ${field.kind} field, not TEXT")
+        shapes.distinct().forEach { shape ->
+            if (shape.filters.size > limits.maxFilterTerms) {
+                problem("shapes", "shape $shape has ${shape.filters.size} filters, more than maxFilterTerms (${limits.maxFilterTerms})")
             }
-        }
-
-        pagination.cursorSorts.sortedBy(SortKey::toString).forEach { key ->
-            if (key.terms.size > limits.maxSortTerms) {
-                problem("cursorSorts", "sort $key has more than maxSortTerms (${limits.maxSortTerms}) terms")
+            shape.filters.forEach { filter ->
+                val field = schema.field(filter.field)
+                val refusal = field?.let(filter.operator::refusalFor)
+                when {
+                    field == null -> problem("shapes", "shape $shape filters by ${filter.field}, which is not a field")
+                    refusal != null -> problem("shapes", "shape $shape cannot filter: $refusal")
+                }
             }
-            key.terms.forEach { term ->
+            if (shape.sort.terms.size > limits.maxSortTerms) {
+                problem("shapes", "shape $shape sorts by more than maxSortTerms (${limits.maxSortTerms}) terms")
+            }
+            shape.sort.terms.forEach { term ->
                 val field = schema.field(term.field)
                 when {
-                    field == null -> problem("cursorSorts", "sort $key names ${term.field}, which is not a field")
-                    field.nullable -> problem("cursorSorts", "sort $key names ${term.field}, which is nullable; a cursor cannot page by it")
-                    !sortable.grants(term.field) -> problem("cursorSorts", "sort $key names ${term.field}, which sortable does not grant")
+                    field == null -> {
+                        problem("shapes", "shape $shape sorts by ${term.field}, which is not a field")
+                    }
+
+                    field.nullable -> {
+                        problem(
+                            "shapes",
+                            "shape $shape sorts by ${term.field}, which is nullable; a cursor cannot page by it",
+                        )
+                    }
                 }
             }
         }

@@ -66,9 +66,10 @@ class OffsetDepthTest {
     }
 
     @Test
-    fun `an offset page may use any sortable order and a cursor page only a declared cursor sort`() {
+    fun `offset and cursor pages follow the same declared shapes`() {
         assertThat(list("sort" to "pages", "offset" to "0").window).isInstanceOf(Window.Offset::class.java)
-        assertThat(faultOf { list("sort" to "pages") }.violations.single().message)
-            .isEqualTo("sort pages does not page by cursor on this resource; page with offset")
+        assertThat(list("sort" to "pages").window).isInstanceOf(Window.Cursor::class.java)
+        assertThat(faultOf { list("sort" to "shelf", "offset" to "0") }.code.value).isEqualTo("not_offered")
+        assertThat(faultOf { list("sort" to "shelf") }.code.value).isEqualTo("not_offered")
     }
 }

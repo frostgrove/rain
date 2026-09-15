@@ -1,0 +1,4 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Index Scan", "Parent Relationship": "Outer", "Index Name": "books_created_at_id",
+   "Relation Name": "books", "Schema": "public", "Alias": "books", "Filter": "(books.pages >= 5)"}
+]}}]

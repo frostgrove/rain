@@ -1,0 +1,6 @@
+[{"Plan": {"Node Type": "Limit", "Plans": [
+  {"Node Type": "Materialize", "Parent Relationship": "Outer", "Plans": [
+    {"Node Type": "Index Scan", "Parent Relationship": "Outer", "Index Name": "books_shelf_created_at_id",
+     "Relation Name": "books", "Schema": "public", "Alias": "books", "Index Cond": "(books.shelf = 'a'::text)"}
+  ]}
+]}}]

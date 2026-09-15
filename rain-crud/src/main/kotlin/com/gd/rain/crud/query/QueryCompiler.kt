@@ -15,7 +15,6 @@ import com.gd.rain.crud.query.DialectV1.FILTER
 import com.gd.rain.crud.query.DialectV1.INCLUDE
 import com.gd.rain.crud.query.DialectV1.LIMIT
 import com.gd.rain.crud.query.DialectV1.OFFSET
-import com.gd.rain.crud.query.DialectV1.SEARCH
 import com.gd.rain.crud.query.DialectV1.SORT
 
 /** Which columns a read returns: every field, or the identifier plus the named ones. */
@@ -49,8 +48,12 @@ public sealed interface Window {
     ) : Window
 }
 
-/** A compiled list query. [order] is the effective order: the requested sort with the identifier as tie-break. */
+/**
+ * A compiled list query: the declared [shape] it matched, its [filter], and [order] — the effective order,
+ * the shape's sort with the identifier as tie-break.
+ */
 public class ListPlan(
+    public val shape: QueryShape,
     public val filter: Predicate?,
     order: List<Order>,
     public val projection: Projection,
@@ -77,17 +80,20 @@ public class ItemPlan(
  * Compiles dialect v1 parameters against one resource's schema and [QueryRules].
  *
  * Every problem of a query is collected and refused together as `400 bad_query`, each violation pointing
- * at the parameter it is about (`/limit`, `/filter/<field>/<op>`, `/filter/<field>/in/2`). A cursor is
- * decoded only once the rest of the query is sound, and refused on its own as `400 invalid_cursor`.
+ * at the parameter it is about (`/limit`, `/filter/<field>/<op>`, `/filter/<field>/in/2`). Once the query
+ * is sound, its shape is looked up and a query no declared shape is refused on its own as `400 not_offered`;
+ * only then is a cursor decoded, refused on its own as `400 invalid_cursor`.
  *
  * Rules, all deterministic:
  * - `limit` absent serves `defaultLimit`; a limit outside `1..maxLimit` is refused.
  * - `offset` selects offset mode and cannot be combined with `cursor`; `offset + limit` above `maxOffset`
- *   (computed in `Long`) is refused. Without `offset` the page is a cursor page, and the requested sort
- *   has to be one of the declared cursor sorts.
- * - The effective order is the requested sort followed by the identifier in the last term's direction
- *   (ascending when no sort is requested), unless the sort already names the identifier.
- * - `search` matches the declared search fields case-insensitively (any of them).
+ *   (computed in `Long`) is refused. Without `offset` the page is a cursor page.
+ * - A filter names a declared field and an operator of the dialect that applies to the field's kind; its
+ *   values are read by [WireValues].
+ * - The filters and the sort are exactly a declared [QueryShape] ([QueryRules.shapeOf]); a count's filters
+ *   are exactly the filters of a declared shape ([QueryRules.countsBy]).
+ * - The effective order is the shape's sort followed by the identifier in the last term's direction
+ *   (ascending when the sort is [SortKey.NONE]), unless the sort already names the identifier.
  * - `fields` always returns the identifier too, and may name it without it being selectable.
  */
 public class QueryCompiler(
@@ -103,31 +109,25 @@ public class QueryCompiler(
     public fun list(parameters: QueryParameters): ListPlan {
         val compilation = Compilation(parameters)
         val limit = compilation.limit()
-        val filter = compilation.filter()
+        val values = compilation.filters()
         val sort = compilation.sort()
         val projection = compilation.projection()
         val includes = compilation.includes()
         val counted = compilation.counted()
         val cursor = parameters.scalars[CURSOR]
-        val offsetText = parameters.scalars[OFFSET]
-        val offset = offsetText?.let { compilation.offset(it, limit, cursorGiven = cursor != null) }
-        if (offsetText == null && sort != null && sort !in rules.pagination.cursorSorts) {
-            compilation.refuse(
-                path(SORT),
-                RainErrorCodes.BAD_QUERY,
-                "sort $sort does not page by cursor on this resource; page with offset",
-            )
-        }
+        val offset = parameters.scalars[OFFSET]?.let { compilation.offset(it, limit, cursorGiven = cursor != null) }
         compilation.finish()
 
-        val order = effectiveOrder(checkNotNull(sort))
+        val asked = QueryShape(values.keys, checkNotNull(sort))
+        val shape = rules.shapeOf(asked.filters, asked.sort) ?: throw QueryFaults.notOffered("no query shape of this resource is $asked")
+        val order = effectiveOrder(shape.sort)
         val window =
             if (offset != null) {
                 Window.Offset(checkNotNull(limit), offset)
             } else {
                 Window.Cursor(checkNotNull(limit), cursor?.let { position(it, order) })
             }
-        return ListPlan(filter, order, checkNotNull(projection), checkNotNull(includes), window, counted)
+        return ListPlan(shape, shape.filter(schema, values), order, checkNotNull(projection), checkNotNull(includes), window, counted)
     }
 
     public fun count(parameters: QueryParameters): CountPlan {
@@ -139,14 +139,18 @@ public class QueryCompiler(
         parameters.scalars[COUNT]?.takeIf { it != COUNT_CAPPED }?.let {
             compilation.refuse(path(COUNT), RainErrorCodes.INVALID_FORMAT, "the only count of query dialect v1 is capped")
         }
-        val filter = compilation.filter()
+        val values = compilation.filters()
         compilation.finish()
-        return CountPlan(filter)
+        val asked = QueryShape(values.keys, SortKey.NONE)
+        if (!rules.countsBy(asked.filters)) {
+            throw QueryFaults.notOffered("no query shape of this resource has the filters ${asked.filters.joinToString(", ", "[", "]")}")
+        }
+        return CountPlan(asked.filter(schema, values))
     }
 
     public fun item(parameters: QueryParameters): ItemPlan {
         val compilation = Compilation(parameters)
-        compilation.meaningless(listOf(LIMIT, OFFSET, CURSOR, SORT, SEARCH, COUNT), "has no meaning for one item")
+        compilation.meaningless(listOf(LIMIT, OFFSET, CURSOR, SORT, COUNT), "has no meaning for one item")
         parameters.filters.forEach {
             compilation.refuse(path(FILTER, it.field, it.operator), RainErrorCodes.BAD_QUERY, "has no meaning for one item")
         }
@@ -156,7 +160,7 @@ public class QueryCompiler(
         return ItemPlan(checkNotNull(projection), checkNotNull(includes))
     }
 
-    /** The requested [sort], then the identifier in the last term's direction — ascending when nothing is requested. */
+    /** The [sort], then the identifier in the last term's direction — ascending when the sort names nothing. */
     public fun effectiveOrder(sort: SortKey): List<Order> {
         val terms =
             sort.terms.map {
@@ -240,30 +244,24 @@ public class QueryCompiler(
             return value
         }
 
-        fun filter(): Predicate? {
-            val terms = mutableListOf<Predicate>()
+        /** Each well-formed filter and the values it was given, read as its field's kind. */
+        fun filters(): Map<ShapeFilter, List<Any>> {
             if (parameters.filters.size > limits.maxFilterTerms) {
                 refuse(path(FILTER), RainErrorCodes.OUT_OF_RANGE, "at most ${limits.maxFilterTerms} filter parameters are allowed")
-            } else {
-                parameters.filters.forEach { parameter -> term(parameter)?.let(terms::add) }
+                return emptyMap()
             }
-            search()?.let(terms::add)
-            return Predicate.allOf(terms)
+            val read = LinkedHashMap<ShapeFilter, List<Any>>()
+            parameters.filters.forEach { parameter -> term(parameter)?.let { (filter, values) -> read[filter] = values } }
+            return read
         }
 
-        private fun term(parameter: FilterParameter): Predicate? {
+        private fun term(parameter: FilterParameter): Pair<ShapeFilter, List<Any>>? {
             val at = path(FILTER, parameter.field, parameter.operator)
             val field = schema.field(parameter.field) ?: return refused(at, RainErrorCodes.UNKNOWN_FIELD, "names no field of this resource")
-            if (!rules.filterable.grants(
-                    field.name,
-                )
-            ) {
-                return refused(at, RainCrudErrorCodes.FIELD_NOT_GRANTED, "${field.name} is not filterable")
-            }
             val operator =
                 Operator.ofWire(parameter.operator)
                     ?: return refused(at, RainCrudErrorCodes.UNKNOWN_OPERATOR, "is not an operator of query dialect v1")
-            if (!operator.appliesTo(field)) return refused(at, RainErrorCodes.BAD_QUERY, inapplicable(operator, field))
+            operator.refusalFor(field)?.let { return refused(at, RainErrorCodes.BAD_QUERY, it) }
             val raws = parameter.values
             if (operator.takesList && raws.size > limits.maxInValues) {
                 return refused(at, RainErrorCodes.OUT_OF_RANGE, "takes at most ${limits.maxInValues} values")
@@ -286,33 +284,7 @@ public class QueryCompiler(
                         }
                     }
                 }
-            return if (values.size == raws.size) Predicate.Compare(field, operator, values) else null
-        }
-
-        private fun search(): Predicate? {
-            val text = parameters.scalars[SEARCH] ?: return null
-            val length = text.codePointCount(0, text.length)
-            return when {
-                rules.searchFields.isEmpty() -> {
-                    refused(path(SEARCH), RainCrudErrorCodes.NOT_OFFERED, "this resource offers no search")
-                }
-
-                length == 0 -> {
-                    refused(path(SEARCH), RainErrorCodes.BAD_QUERY, "is empty")
-                }
-
-                length > limits.maxSearchLength -> {
-                    refused(path(SEARCH), RainErrorCodes.OUT_OF_RANGE, "is longer than ${limits.maxSearchLength} characters")
-                }
-
-                else -> {
-                    Predicate.anyOf(
-                        rules.searchFields.map { name ->
-                            Predicate.Compare(checkNotNull(schema.field(name)), Operator.ICONTAINS, listOf(text))
-                        },
-                    )
-                }
-            }
+            return if (values.size == raws.size) ShapeFilter(field.name, operator) to values else null
         }
 
         fun sort(): SortKey? {
@@ -322,31 +294,12 @@ public class QueryCompiler(
                     is QueryGrammar.Outcome.Malformed -> return refused(path(SORT), RainErrorCodes.BAD_QUERY, parsed.reason)
                     is QueryGrammar.Outcome.Read -> parsed.value
                 }
-            if (terms.size >
-                limits.maxSortTerms
-            ) {
+            if (terms.size > limits.maxSortTerms) {
                 return refused(path(SORT), RainErrorCodes.OUT_OF_RANGE, "has more than ${limits.maxSortTerms} terms")
             }
-            val resolved =
-                terms.filter { term ->
-                    val field = schema.field(term.field)
-                    when {
-                        field == null -> {
-                            refused(path(SORT), RainErrorCodes.UNKNOWN_FIELD, "names ${term.field}, which is not a field of this resource")
-                                ?: false
-                        }
-
-                        !rules.sortable.grants(field.name) -> {
-                            refused(path(SORT), RainCrudErrorCodes.FIELD_NOT_GRANTED, "${field.name} is not sortable")
-                                ?: false
-                        }
-
-                        else -> {
-                            true
-                        }
-                    }
-                }
-            return if (resolved.size == terms.size) SortKey.of(terms) else null
+            val unknown = terms.filter { schema.field(it.field) == null }
+            unknown.forEach { refuse(path(SORT), RainErrorCodes.UNKNOWN_FIELD, "names ${it.field}, which is not a field of this resource") }
+            return if (unknown.isEmpty()) SortKey.of(terms) else null
         }
 
         fun projection(): Projection? {
@@ -356,9 +309,7 @@ public class QueryCompiler(
                     is QueryGrammar.Outcome.Malformed -> return refused(path(FIELDS), RainErrorCodes.BAD_QUERY, parsed.reason)
                     is QueryGrammar.Outcome.Read -> parsed.value
                 }
-            if (names.size >
-                limits.maxFields
-            ) {
+            if (names.size > limits.maxFields) {
                 return refused(path(FIELDS), RainErrorCodes.OUT_OF_RANGE, "names more than ${limits.maxFields} fields")
             }
             val fields =
@@ -366,18 +317,10 @@ public class QueryCompiler(
                     val field = schema.field(name)
                     when {
                         field == null -> {
-                            refused(
-                                path(FIELDS),
-                                RainErrorCodes.UNKNOWN_FIELD,
-                                "names $name, which is not a field of this resource",
-                            )
+                            refused(path(FIELDS), RainErrorCodes.UNKNOWN_FIELD, "names $name, which is not a field of this resource")
                         }
 
-                        field != schema.id &&
-                            !rules.selectable.grants(
-                                name,
-                            )
-                        -> {
+                        field != schema.id && !rules.selectable.grants(name) -> {
                             refused(path(FIELDS), RainCrudErrorCodes.FIELD_NOT_GRANTED, "$name is not selectable")
                         }
 
@@ -396,9 +339,7 @@ public class QueryCompiler(
                     is QueryGrammar.Outcome.Malformed -> return refused(path(INCLUDE), RainErrorCodes.BAD_QUERY, parsed.reason)
                     is QueryGrammar.Outcome.Read -> parsed.value
                 }
-            if (names.size >
-                limits.maxIncludes
-            ) {
+            if (names.size > limits.maxIncludes) {
                 return refused(path(INCLUDE), RainErrorCodes.OUT_OF_RANGE, "names more than ${limits.maxIncludes} relations")
             }
             val granted =
@@ -441,16 +382,6 @@ public class QueryCompiler(
             return null
         }
     }
-
-    private fun inapplicable(
-        operator: Operator,
-        field: SchemaField,
-    ): String =
-        when {
-            operator.textual -> "${operator.wire} applies to text fields; ${field.name} is ${field.kind}"
-            operator.ordering -> "${operator.wire} applies to ordered fields; ${field.name} is ${field.kind}"
-            else -> "${operator.wire} applies to nullable fields; ${field.name} is not nullable"
-        }
 
     private companion object {
         val NON_NEGATIVE = Regex("^(0|[1-9][0-9]*)$")

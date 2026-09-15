@@ -1,0 +1,8 @@
+[{"Plan": {"Node Type": "ModifyTable", "Operation": "Delete", "Relation Name": "books", "Schema": "public", "Alias": "books", "Plans": [
+  {"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Join Type": "Inner", "Inner Unique": true,
+   "Join Filter": "(books.shelf = \"ANY_subquery\".shelf)", "Plans": [
+    {"Node Type": "Seq Scan", "Parent Relationship": "Outer", "Relation Name": "shelves", "Schema": "public", "Alias": "ANY_subquery"},
+    {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Index Name": "books_pkey",
+     "Relation Name": "books", "Schema": "public", "Alias": "books", "Index Cond": "(books.id = \"ANY_subquery\".id)"}
+  ]}
+]}}]

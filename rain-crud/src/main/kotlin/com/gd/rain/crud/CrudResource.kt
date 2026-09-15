@@ -16,7 +16,6 @@ import com.gd.rain.crud.query.CursorPosition
 import com.gd.rain.crud.query.DialectV1
 import com.gd.rain.crud.query.FieldGrant
 import com.gd.rain.crud.query.ListPlan
-import com.gd.rain.crud.query.Order
 import com.gd.rain.crud.query.Predicate
 import com.gd.rain.crud.query.Projection
 import com.gd.rain.crud.query.QueryCompiler
@@ -109,10 +108,11 @@ public object CrudIds {
  * for that caller. Reads, counts, updates and deletes all carry the scope: a row outside it is not found,
  * and a bulk operation does not count it.
  *
+ * A list or a count is answered only for a query shape the rules declare ([com.gd.rain.crud.query.QueryShape]).
  * Lists page by keyset first. A cursor page reads `limit + 1` rows in the effective order (inverted for a
  * page before a cursor), keeps the `limit` nearest to the cursor and reports whether there is more that
- * way; an offset page reads `limit + 1` rows past its offset. A count is taken only when the query asks
- * for one and the resource declares a cap, and reads at most `cap + 1` rows.
+ * way; an offset page reads `limit + 1` rows past its offset ([PageReads]). A count is taken only when the
+ * query asks for one and the resource declares a cap, and reads at most `cap + 1` rows.
  *
  * The declaration is checked when the resource is constructed; every problem is refused together.
  */
@@ -259,7 +259,7 @@ public class CrudResource<T>(
         window: Window.Offset,
         scope: RowScope,
     ): Pair<List<T>, PageWindow> {
-        val rows = read(RowRead(scope, plan.filter, null, plan.order, window.limit + 1, window.offset, plan.projection))
+        val rows = read(PageReads.offset(scope, plan.filter, plan.order, window.offset, window.limit, plan.projection))
         return rows.take(window.limit).map(KeyedRow<T>::item) to PageWindow.Offset(window.limit, window.offset, rows.size > window.limit)
     }
 
@@ -270,7 +270,6 @@ public class CrudResource<T>(
     ): Pair<List<T>, PageWindow> {
         val limit = window.limit
         val position = window.position
-        val probe = limit + 1
 
         fun mint(
             direction: CursorDirection,
@@ -279,15 +278,14 @@ public class CrudResource<T>(
 
         return when (position?.direction) {
             null -> {
-                val rows = read(RowRead(scope, plan.filter, null, plan.order, probe, 0, plan.projection))
+                val rows = read(PageReads.first(scope, plan.filter, plan.order, limit, plan.projection))
                 val kept = rows.take(limit)
                 val next = if (rows.size > limit) mint(CursorDirection.NEXT, kept.last()) else null
                 kept.map(KeyedRow<T>::item) to PageWindow.Cursor(limit, next, prev = null)
             }
 
             CursorDirection.NEXT -> {
-                val seek = Predicate.Keyset(plan.order, position.keys, Predicate.Side.AFTER)
-                val rows = read(RowRead(scope, plan.filter, seek, plan.order, probe, 0, plan.projection))
+                val rows = read(PageReads.after(scope, plan.filter, plan.order, position.keys, limit, plan.projection))
                 val kept = rows.take(limit)
                 val next = if (rows.size > limit) mint(CursorDirection.NEXT, kept.last()) else null
                 val prev = kept.firstOrNull()?.let { mint(CursorDirection.PREV, it) }
@@ -295,9 +293,7 @@ public class CrudResource<T>(
             }
 
             CursorDirection.PREV -> {
-                val inverted = plan.order.map { Order(it.field, it.direction.inverted()) }
-                val seek = Predicate.Keyset(inverted, position.keys, Predicate.Side.AFTER)
-                val rows = read(RowRead(scope, plan.filter, seek, inverted, probe, 0, plan.projection))
+                val rows = read(PageReads.before(scope, plan.filter, plan.order, position.keys, limit, plan.projection))
                 // Read nearest-first before the cursor: keep the `limit` nearest, then put them back in the page's order.
                 val kept = rows.take(limit).asReversed()
                 val prev = if (rows.size > limit) mint(CursorDirection.PREV, kept.first()) else null
