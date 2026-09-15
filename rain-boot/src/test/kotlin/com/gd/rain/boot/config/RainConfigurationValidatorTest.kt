@@ -130,12 +130,13 @@ class RainConfigurationValidatorTest {
     }
 
     @Test
-    fun `an absent required section is refused`() {
+    fun `an absent required section is refused, naming every value it needs`() {
         val report = validate(*valid.filterNot { it.first.startsWith("rain.web") }.toTypedArray())
 
-        assertThat(
-            report.fatal,
-        ).contains(ConfigurationProblem("rain.web", ProblemCode.REQUIRED, "the section is required and no key under it is stated"))
+        val absent = report.fatal.single { it.path == "rain.web" }
+        assertThat(absent.code).isEqualTo(ProblemCode.REQUIRED)
+        assertThat(absent.message)
+            .isEqualTo("the section is required and no key under it is stated; it needs rain.web.body-limit-bytes")
     }
 
     @Test

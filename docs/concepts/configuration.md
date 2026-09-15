@@ -65,8 +65,8 @@ class SampleConfigurationContributor : ConfigurationContributor {
 The validator, in one pass:
 
 1. resolves the runtime selection and the stage;
-2. binds every declared section with Spring Boot's binder; a section that cannot be bound reports each missing leaf
-   by its property path (descending into members whose type implements `ConfigurationSection` or that are annotated
+2. binds every declared section with Spring Boot's binder; a required section with no key stated is reported at its
+   prefix, naming every value it needs; a section that cannot be bound reports each missing leaf by its property path (descending into members whose type implements `ConfigurationSection` or that are annotated
    `@NestedConfigurationProperty`), or the conversion failure with its source;
 3. runs each bound section's own problems (only once the stage is known);
 4. checks `@RequiredFromEnvironment` leaves: in the named stages the value must come from an environment variable;

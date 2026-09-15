@@ -1,0 +1,19 @@
+# What every deployment of this application shares. Per process, the environment states:
+#   RAIN_DEPLOYMENT_STAGE=dev|test|prod
+#   RAIN_RUNTIME_ROLES=api            (a serving process), or
+#   RAIN_RUNTIME_COMMAND=config-check (a one-shot check of this configuration)
+spring:
+  application:
+    name: rain-sample-minimal
+server:
+  # No proxy in front of this sample: requests are attributed to the connection's peer.
+  forward-headers-strategy: none
+rain:
+  web:
+    body-limit: 16KB
+    request-budget: 10s
+    client-address: direct
+sample:
+  greetings:
+    reserved-names: [root, system]
+    max-name-length: 64

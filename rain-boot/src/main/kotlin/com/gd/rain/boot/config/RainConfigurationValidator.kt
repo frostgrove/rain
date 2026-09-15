@@ -96,11 +96,13 @@ public class RainConfigurationValidator :
                 when (val binding = binder.bind(spec)) {
                     SectionBinding.Absent -> {
                         if (spec.presence == Presence.REQUIRED) {
+                            val needed = binder.missingLeaves(spec.prefix, spec.type)
                             found +=
                                 ConfigurationProblem(
                                     spec.prefix,
                                     ProblemCode.REQUIRED,
-                                    "the section is required and no key under it is stated",
+                                    "the section is required and no key under it is stated" +
+                                        if (needed.isEmpty()) "" else "; it needs ${needed.joinToString(", ")}",
                                 )
                         }
                     }
