@@ -47,7 +47,8 @@ val foundSamples: Map<String, Set<String>> =
         .filter { it.parent?.name == "samples" }
         .associate { it.path to it.mainProjectDependencies() }
 
-val verifyModuleGraph by tasks.registering {
+val verifyModuleGraph =
+    tasks.register("verifyModuleGraph") {
     group = LifecycleBasePlugin.VERIFICATION_GROUP
     description = "Checks that every rain module depends only on the modules the root build declares for it."
     val modules = foundModules
