@@ -1,0 +1,2 @@
+com.gd.rain.boot.config.ConfigurationContributor=\
+com.gd.rain.realtime.RealtimeConfigurationContributor
