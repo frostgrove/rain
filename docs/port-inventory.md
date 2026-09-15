@@ -7,88 +7,88 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | Kind | Source | Destination | Status | Note |
 |---|---|---|---|---|
 | main | `FrameworkPackages.kt` | dropped | dropped | no package scanning in rain |
-| main | `access/AccessFaults.kt` | rain-access | pending |  |
-| main | `access/AccessFieldNames.kt` | rain-access | pending |  |
-| main | `access/ModuleMetadata.kt` | rain-access | pending |  |
-| main | `access/SubjectRegistry.kt` | rain-access | pending |  |
-| main | `access/config/AccessConfiguration.kt` | rain-access | pending |  |
-| main | `access/config/AccessDeclarationConfiguration.kt` | rain-access | pending |  |
-| main | `access/config/AccessSurfaceConfiguration.kt` | rain-access | pending |  |
-| main | `access/config/DirectoryConfiguration.kt` | rain-access | pending |  |
-| main | `access/domain/Credential.kt` | rain-access | pending |  |
-| main | `access/domain/Permission.kt` | rain-access | pending |  |
-| main | `access/domain/Role.kt` | rain-access | pending |  |
-| main | `access/domain/RolePermission.kt` | rain-access | pending |  |
-| main | `access/domain/Session.kt` | rain-access | pending |  |
-| main | `access/domain/SubjectDefaultRole.kt` | rain-access | pending |  |
-| main | `access/domain/SubjectPermission.kt` | rain-access | pending |  |
-| main | `access/domain/SubjectRole.kt` | rain-access | pending |  |
-| main | `access/protection/AttemptLimiter.kt` | rain-access | pending |  |
-| main | `access/protection/BulkheadPasswordEncoder.kt` | rain-access | pending |  |
-| main | `access/protection/MemoryAttemptLimiter.kt` | rain-access | pending |  |
-| main | `access/protection/SignInAttemptsObserver.kt` | rain-access | pending |  |
-| main | `access/revoke/EvictionPolicy.kt` | rain-access | pending |  |
-| main | `access/revoke/RedisRevocationList.kt` | rain-access | pending |  |
-| main | `access/revoke/RevocationEvictionVerifier.kt` | rain-access | pending |  |
-| main | `access/revoke/RevocationList.kt` | rain-access | pending |  |
-| main | `access/security/AccessAuthenticationFilter.kt` | rain-access | pending |  |
-| main | `access/security/AccessAuthorizationManager.kt` | rain-access | pending |  |
-| main | `access/security/AccessDeniedRenderer.kt` | rain-access | pending |  |
-| main | `access/security/AccessSurface.kt` | rain-access | pending |  |
-| main | `access/security/AccessSurfaceVerifier.kt` | rain-access | pending |  |
-| main | `access/security/AuthEntryPoint.kt` | rain-access | pending |  |
-| main | `access/security/CredentialConverter.kt` | rain-access | pending |  |
-| main | `access/security/PrincipalActor.kt` | rain-access | pending |  |
-| main | `access/security/SecurityChainConfiguration.kt` | rain-access | pending |  |
-| main | `access/spi/AccessPrincipal.kt` | rain-access | pending |  |
-| main | `access/spi/Grants.kt` | rain-access | pending |  |
-| main | `access/spi/Registration.kt` | rain-access | pending |  |
-| main | `access/spi/SpiMetadata.kt` | rain-access | pending |  |
-| main | `access/spi/SubjectCredentials.kt` | rain-access | pending |  |
-| main | `access/spi/Subjects.kt` | rain-access | pending |  |
-| main | `access/store/AccessCatalog.kt` | rain-access | pending |  |
-| main | `access/store/AccessRepositories.kt` | rain-access | pending |  |
-| main | `access/store/AccessRepositoryFragments.kt` | rain-access | pending |  |
-| main | `access/token/AccessTokenIssuer.kt` | rain-access | pending |  |
-| main | `access/token/AccessTokenVerifier.kt` | rain-access | pending |  |
-| main | `access/token/PasswordEncoders.kt` | rain-access | pending |  |
-| main | `access/token/RefreshCredential.kt` | rain-access | pending |  |
-| main | `access/token/RotationClassifier.kt` | rain-access | pending |  |
-| main | `access/usecase/AccessCatalogSynchronizer.kt` | rain-access | pending |  |
-| main | `access/usecase/AccessSeeder.kt` | rain-access | pending |  |
-| main | `access/usecase/AuthResponse.kt` | rain-access | pending |  |
-| main | `access/usecase/ChangePasswordUseCase.kt` | rain-access | pending |  |
-| main | `access/usecase/GrantsResolver.kt` | rain-access | pending |  |
-| main | `access/usecase/LoginUseCase.kt` | rain-access | pending |  |
-| main | `access/usecase/OwnedTransactions.kt` | rain-access | pending |  |
-| main | `access/usecase/PasswordCredentials.kt` | rain-access | pending |  |
-| main | `access/usecase/RevocationAnnouncer.kt` | rain-access | pending |  |
-| main | `access/usecase/RotateRefreshUseCase.kt` | rain-access | pending |  |
-| main | `access/usecase/SessionIssuer.kt` | rain-access | pending |  |
-| main | `access/usecase/SessionUseCases.kt` | rain-access | pending |  |
-| main | `access/usecase/SetSubjectPasswordUseCase.kt` | rain-access | pending |  |
-| main | `access/usecase/SignUpUseCase.kt` | rain-access | pending |  |
-| main | `access/usecase/SubjectGrantsUseCase.kt` | rain-access | pending |  |
-| main | `access/web/AuthController.kt` | rain-access | pending |  |
-| main | `access/web/AuthCrossSiteFilter.kt` | rain-access | pending |  |
-| main | `access/web/AuthCrossSiteGuard.kt` | rain-access | pending |  |
-| main | `access/web/AuthTransportConfiguration.kt` | rain-access | pending |  |
-| main | `access/web/AuthViews.kt` | rain-access | pending |  |
-| main | `access/web/CredentialDelivery.kt` | rain-access | pending |  |
-| main | `access/web/DirectoryResources.kt` | rain-access | pending |  |
-| main | `access/web/RoleController.kt` | rain-access | pending |  |
-| main | `access/web/RoleService.kt` | rain-access | pending |  |
-| main | `access/web/SubjectGrantController.kt` | rain-access | pending |  |
-| main | `audit/AccessAudit.kt` | rain-access | pending | generic access events; product `userChanged` dropped |
+| main | `access/AccessFaults.kt` | rain-access | ported | internal/usecase/AccessSupport.kt AccessFaults + AccessErrorCodes |
+| main | `access/AccessFieldNames.kt` | rain-access | dropped | Go field-name inversion; wire names are direct |
+| main | `access/ModuleMetadata.kt` | rain-access | dropped | package metadata only |
+| main | `access/SubjectRegistry.kt` | rain-access | ported | internal/usecase/SubjectRegistry.kt + SubjectRegistryCheck |
+| main | `access/config/AccessConfiguration.kt` | rain-access | ported | autoconfigure/RainAccessAutoConfiguration |
+| main | `access/config/AccessDeclarationConfiguration.kt` | rain-access | ported | RainAccessAutoConfiguration Catalogue + GrantDeclarationsCheck |
+| main | `access/config/AccessSurfaceConfiguration.kt` | rain-access | ported | RainAccessAutoConfiguration.Web.Api interceptor + AccessSurfaceVerifier |
+| main | `access/config/DirectoryConfiguration.kt` | rain-access | ported | RainAccessAutoConfiguration.Web.Api directory controllers |
+| main | `access/domain/Credential.kt` | rain-access | ported | store/Rows.kt + V1__access.sql credentials |
+| main | `access/domain/Permission.kt` | rain-access | ported | store/Rows.kt + permissions table |
+| main | `access/domain/Role.kt` | rain-access | ported | store/Rows.kt + roles table |
+| main | `access/domain/RolePermission.kt` | rain-access | ported | role_permissions table |
+| main | `access/domain/Session.kt` | rain-access | ported | store/Rows.kt + sessions, subject_cutoffs |
+| main | `access/domain/SubjectDefaultRole.kt` | rain-access | ported | subject_default_roles table |
+| main | `access/domain/SubjectPermission.kt` | rain-access | ported | subject_permissions table |
+| main | `access/domain/SubjectRole.kt` | rain-access | ported | subject_roles table |
+| main | `access/protection/AttemptLimiter.kt` | rain-access | ported | internal/attempt AttemptLimiting + RedisAttemptLimiter (gap 18) |
+| main | `access/protection/BulkheadPasswordEncoder.kt` | rain-access | ported | internal/password HashingBulkhead on R4j registry |
+| main | `access/protection/MemoryAttemptLimiter.kt` | rain-access | ported | MemoryAttemptLimiter bounded, refused in prod |
+| main | `access/protection/SignInAttemptsObserver.kt` | rain-access | ported | LoginUseCase failure path + AttemptKeys.fingerprint |
+| main | `access/revoke/EvictionPolicy.kt` | rain-access | ported | EvictionPolicyAttestation + RedisEvictionPolicy |
+| main | `access/revoke/RedisRevocationList.kt` | rain-access | ported | internal/revocation/RedisRevocationList (session + cutoff keys) |
+| main | `access/revoke/RevocationEvictionVerifier.kt` | rain-access | ported | EvictionPolicyCheck |
+| main | `access/revoke/RevocationList.kt` | rain-access | ported | RevocationList + NoRevocationList |
+| main | `access/security/AccessAuthenticationFilter.kt` | rain-access | ported | web/Security.kt AccessAuthenticationFilter |
+| main | `access/security/AccessAuthorizationManager.kt` | rain-access | ported | web/Surface.kt AccessEnforcementInterceptor |
+| main | `access/security/AccessDeniedRenderer.kt` | rain-access | ported | ProblemAccessDenied |
+| main | `access/security/AccessSurface.kt` | rain-access | ported | AccessDeclarations; package-prefix exemption removed |
+| main | `access/security/AccessSurfaceVerifier.kt` | rain-access | ported | web/Surface.kt AccessSurfaceVerifier |
+| main | `access/security/AuthEntryPoint.kt` | rain-access | ported | ProblemEntryPoint |
+| main | `access/security/CredentialConverter.kt` | rain-access | ported | PresentedToken |
+| main | `access/security/PrincipalActor.kt` | rain-access | ported | PrincipalActor |
+| main | `access/security/SecurityChainConfiguration.kt` | rain-access | ported | AccessSecurityChain |
+| main | `access/spi/AccessPrincipal.kt` | rain-access | ported | AccessApi.kt AccessPrincipal, no permission list |
+| main | `access/spi/Grants.kt` | rain-access | ported | Grants.kt |
+| main | `access/spi/Registration.kt` | rain-access | ported | Subjects.kt SubjectRegistrar/SignUp |
+| main | `access/spi/SpiMetadata.kt` | rain-access | dropped | package metadata only |
+| main | `access/spi/SubjectCredentials.kt` | rain-access | ported | AccessProvisioning enrolPassword/hasPassword |
+| main | `access/spi/Subjects.kt` | rain-access | ported | Subjects.kt |
+| main | `access/store/AccessCatalog.kt` | rain-access | ported | store/CatalogueStore.kt |
+| main | `access/store/AccessRepositories.kt` | rain-access | ported | jOOQ keyset Credential/Session/GrantStore |
+| main | `access/store/AccessRepositoryFragments.kt` | rain-access | ported | folded into jOOQ stores |
+| main | `access/token/AccessTokenIssuer.kt` | rain-access | ported | token/AccessTokens.kt |
+| main | `access/token/AccessTokenVerifier.kt` | rain-access | ported | token/AccessTokens.kt |
+| main | `access/token/PasswordEncoders.kt` | rain-access | ported | Argon2PasswordHasher |
+| main | `access/token/RefreshCredential.kt` | rain-access | ported | token/RefreshCredentials.kt |
+| main | `access/token/RotationClassifier.kt` | rain-access | ported | token/RefreshCredentials.kt |
+| main | `access/usecase/AccessCatalogSynchronizer.kt` | rain-access | ported | CatalogueSynchronizer |
+| main | `access/usecase/AccessSeeder.kt` | rain-access | ported | ProvisioningService/AccessProvisioning; seed file dropped |
+| main | `access/usecase/AuthResponse.kt` | rain-access | ported | web/AccessWeb.kt AuthAnswer |
+| main | `access/usecase/ChangePasswordUseCase.kt` | rain-access | ported | usecase/Passwords.kt |
+| main | `access/usecase/GrantsResolver.kt` | rain-access | ported | GrantsService, per-request memo |
+| main | `access/usecase/LoginUseCase.kt` | rain-access | ported | usecase/SignIn.kt two-phase |
+| main | `access/usecase/OwnedTransactions.kt` | rain-access | ported | AccessTransactions |
+| main | `access/usecase/PasswordCredentials.kt` | rain-access | ported | PasswordRules |
+| main | `access/usecase/RevocationAnnouncer.kt` | rain-access | ported | SessionClosing + RevocationReplayTask |
+| main | `access/usecase/RotateRefreshUseCase.kt` | rain-access | ported | RefreshUseCase |
+| main | `access/usecase/SessionIssuer.kt` | rain-access | ported | SessionIssuer |
+| main | `access/usecase/SessionUseCases.kt` | rain-access | ported | usecase/Sessions.kt |
+| main | `access/usecase/SetSubjectPasswordUseCase.kt` | rain-access | ported | usecase/Passwords.kt |
+| main | `access/usecase/SignUpUseCase.kt` | rain-access | ported | usecase/SignIn.kt |
+| main | `access/usecase/SubjectGrantsUseCase.kt` | rain-access | ported | GrantsAdministration |
+| main | `access/web/AuthController.kt` | rain-access | ported | web/AuthController.kt |
+| main | `access/web/AuthCrossSiteFilter.kt` | rain-access | dropped | rain-web CrossSiteFilter |
+| main | `access/web/AuthCrossSiteGuard.kt` | rain-access | dropped | rain-web CrossSiteFilter |
+| main | `access/web/AuthTransportConfiguration.kt` | rain-access | ported | RainAccessAutoConfiguration.Web |
+| main | `access/web/AuthViews.kt` | rain-access | ported | web/AccessWeb.kt views |
+| main | `access/web/CredentialDelivery.kt` | rain-access | ported | CredentialCookies + DeliveryDecision |
+| main | `access/web/DirectoryResources.kt` | rain-access | ported | DirectoryControllers + AccessPermissionCodes |
+| main | `access/web/RoleController.kt` | rain-access | ported | DirectoryControllers RoleController |
+| main | `access/web/RoleService.kt` | rain-access | ported | RoleAdministration; slugify dropped |
+| main | `access/web/SubjectGrantController.kt` | rain-access | ported | DirectoryControllers SubjectGrantController |
+| main | `audit/AccessAudit.kt` | rain-access | ported | internal/audit/AccessAudit.kt AccessAuditTypes |
 | main | `audit/AuditConfiguration.kt` | rain-audit | ported | RainAuditAutoConfiguration |
 | main | `audit/AuditDetail.kt` | rain-audit | ported | bounded scalar detail checked against the declared type, deterministic JSON (gap 21 part) |
 | main | `audit/AuditEvent.kt` | rain-audit | ported | AuditEventType (declared detail keys) + AuditEvent + AuditOutcome |
 | main | `audit/AuditLogRepository.kt` | rain-audit | ported | schema rain_audit via rain.jooq-schema; actor (type, id) with no foreign key (gap 17 part) |
 | main | `audit/AuditRecorder.kt` | rain-audit | ported | JooqAuditRecorder: record inside the caller's transaction (refused outside), recordIndependently in its own; keyset reads with a bounded page |
-| main | `audit/SignInAuditRecorder.kt` | rain-access | pending | breaks the access↔audit cycle |
+| main | `audit/SignInAuditRecorder.kt` | rain-access | ported | LoginUseCase via AuditTrail.recordIndependently |
 | main | `cli/OneShotReports.kt` | split | ported | split: LlmSmokeCheck -> rain-llm SmokeLlmCommand; RedlineReport dropped (product) |
 | main | `cli/SeedStep.kt` | rain-boot | ported | rain-boot Seeder + seed command (ordered by order then name, names checked) |
-| main | `config/AccessProperties.kt` | rain-access | pending |  |
+| main | `config/AccessProperties.kt` | rain-access | ported | AccessProperties.kt |
 | main | `config/AppProperties.kt` | rain-boot | dropped | spring.application.name is required instead; shutdown budget moves to rain-jobs with spring.lifecycle |
 | main | `config/CasebankProperties.kt` | dropped | dropped | product configuration |
 | main | `config/ClientProperties.kt` | split | ported | split: LlmProperties -> rain-llm rain.llm; BreakerProperties -> resilience4j instances config checked by rain-resilience; WpsProperties dropped |
@@ -106,7 +106,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `config/RedisProperties.kt` | dropped | dropped | Boot spring.data.redis.*; revocation settings → rain-access |
 | main | `config/ResourceDeclarations.kt` | dropped | dropped | replaced by revocation server eviction-policy check (gap 14) |
 | main | `config/SeedProperties.kt` | dropped | dropped | product configuration; prod secret rule → @RequiredFromEnvironment (gap 37) |
-| main | `config/SigningKey.kt` | rain-access | pending | entropy heuristic removed (gap 21) |
+| main | `config/SigningKey.kt` | rain-access | ported | internal/token/SigningKey.kt; entropy heuristic removed |
 | main | `config/StorageProperties.kt` | dropped | dropped | product configuration |
 | main | `config/WorkspaceProperties.kt` | dropped | dropped | product configuration |
 | main | `crud/BulkDeleteRequest.kt` | rain-crud | ported | CrudResource.bulkDelete + CrudMvc.bulkDelete (strict {"ids":[…]}) |
@@ -158,9 +158,9 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `http/filter/SafeMethods.kt` | rain-web | ported | rain-web filter/Requests.kt |
 | main | `http/filter/SecurityHeadersFilter.kt` | rain-web | ported | rain-web SecurityHeadersFilter, configurable (gap 34) |
 | main | `http/limit/CallerTable.kt` | rain-web | ported | rain-web CallerTable, refusedBecauseFull counter (gap 33) |
-| main | `http/limit/CredentialGate.kt` | rain-access | pending |  |
-| main | `http/limit/CredentialGateFilter.kt` | rain-access | pending |  |
-| main | `http/limit/JsonOnlyFilter.kt` | rain-web | pending |  |
+| main | `http/limit/CredentialGate.kt` | rain-access | ported | AccessProperties.Gate + CredentialSurface |
+| main | `http/limit/CredentialGateFilter.kt` | rain-access | ported | CredentialThrottleFilter; bulkhead to hashing bulkhead |
+| main | `http/limit/JsonOnlyFilter.kt` | rain-web | ported | rain-access internal/web JsonOnlyFilter |
 | main | `http/limit/TokenBucketThrottle.kt` | rain-web | ported | rain-web TokenBucketThrottle |
 | main | `llm/LlmConfiguration.kt` | rain-llm | ported | rain-llm RainLlmAutoConfiguration (enabled-gated) |
 | main | `llm/LlmErrors.kt` | rain-llm | ported | rain-llm LlmException family + RainLlmErrorCodes + LlmFaultTranslator |
@@ -206,7 +206,7 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `realtime/Subscription.kt` | rain-realtime | ported | END sentinel, buffer+1 queue, poll returns Next |
 | main | `redis/RedisClients.kt` | dropped | dropped | Boot spring.data.redis.* (gap 14) |
 | main | `resilience/AdmissionGate.kt` | rain-resilience | ported | rain-resilience AdmissionGate over atomic BreakerRegistry.reserve; admit(free) dropped (gap 11) |
-| main | `resilience/AuthBulkheadConfiguration.kt` | rain-access | pending |  |
+| main | `resilience/AuthBulkheadConfiguration.kt` | rain-access | ported | HashingBulkhead + HashingBulkheadCheck |
 | main | `resilience/BreakerHealthContribution.kt` | rain-resilience | ported | rain-resilience breaker health per BreakerDeclaration |
 | main | `resilience/BreakerRegistry.kt` | rain-resilience | ported | rain-resilience BreakerRegistry over container CircuitBreakerRegistry, no ofDefaults (gap 12) |
 | main | `resilience/Breakers.kt` | rain-resilience | ported | enum Breaker dropped -> BreakerName/BreakerDeclaration/BreakerState/Reservation/AdmissionState |
@@ -224,39 +224,39 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | main | `workq/persistence/JobIntentRepository.kt` | rain-jobs | ported | IntentLedger |
 | main | `workq/persistence/JobInvocationRepository.kt` | rain-jobs | ported | AttemptLedger, HousekeepingLedger, AdministrationLedger |
 | test | `FrameworkBoundaryTest.kt` | dropped | dropped | Lease boundary; replaced by RainArchRules |
-| test | `access/AccessFieldNamesTest.kt` | rain-access | pending |  |
-| test | `access/PermissionCatalogueTest.kt` | rain-access | pending |  |
-| test | `access/protection/MemoryAttemptLimiterTest.kt` | rain-access | pending |  |
-| test | `access/protection/SignInAttemptsObserverTest.kt` | rain-access | pending |  |
-| test | `access/revoke/EvictionPolicyTest.kt` | rain-access | pending |  |
-| test | `access/revoke/RevocationListTest.kt` | rain-access | pending |  |
-| test | `access/security/AccessSurfaceVerifierTest.kt` | rain-access | pending |  |
-| test | `access/security/CredentialConverterTest.kt` | rain-access | pending |  |
-| test | `access/security/SecurityDefaultsTest.kt` | rain-access | pending |  |
-| test | `access/security/SecurityRefusalTest.kt` | rain-access | pending |  |
-| test | `access/token/AccessTokenTest.kt` | rain-access | pending |  |
-| test | `access/token/PasswordEncoderCompatibilityTest.kt` | rain-access | pending |  |
-| test | `access/token/RefreshCredentialTest.kt` | rain-access | pending |  |
-| test | `access/token/RotationClassifierTest.kt` | rain-access | pending |  |
-| test | `access/usecase/AccessCatalogSynchronizerTest.kt` | rain-access | pending |  |
-| test | `access/usecase/AccessSeederTest.kt` | rain-access | pending |  |
-| test | `access/web/AuthCrossSiteGuardTest.kt` | rain-access | pending |  |
-| test | `access/web/AuthViewsSerializationTest.kt` | rain-access | pending |  |
-| test | `access/web/CredentialDeliveryTest.kt` | rain-access | pending |  |
-| test | `access/web/RoleServiceTest.kt` | rain-access | pending |  |
+| test | `access/AccessFieldNamesTest.kt` | rain-access | dropped | Go name inversion not ported |
+| test | `access/PermissionCatalogueTest.kt` | rain-access | ported | GrantDeclarationsCheckTest; product code counts dropped |
+| test | `access/protection/MemoryAttemptLimiterTest.kt` | rain-access | ported | MemoryAttemptLimiterTest, AttemptLimiterCapacityTest |
+| test | `access/protection/SignInAttemptsObserverTest.kt` | rain-access | ported | SignInAttemptAuditTest |
+| test | `access/revoke/EvictionPolicyTest.kt` | rain-access | ported | EvictionPolicyCheckTest |
+| test | `access/revoke/RevocationListTest.kt` | rain-access | ported | LogoutAllWritesOneRedisKeyTest, RevocationListIT |
+| test | `access/security/AccessSurfaceVerifierTest.kt` | rain-access | ported | AccessSurfaceVerifierTest + gap 21 tests |
+| test | `access/security/CredentialConverterTest.kt` | rain-access | ported | PresentedTokenTest |
+| test | `access/security/SecurityDefaultsTest.kt` | rain-access | ported | AccessAutoConfigurationTest, UserDetailsServiceExclusionFilterTest |
+| test | `access/security/SecurityRefusalTest.kt` | rain-access | ported | SecurityRefusalTest |
+| test | `access/token/AccessTokenTest.kt` | rain-access | ported | AccessTokenTest |
+| test | `access/token/PasswordEncoderCompatibilityTest.kt` | rain-access | ported | PasswordHashingTest, HashingBulkheadTest |
+| test | `access/token/RefreshCredentialTest.kt` | rain-access | ported | RefreshCredentialTest |
+| test | `access/token/RotationClassifierTest.kt` | rain-access | ported | RotationClassifierTest |
+| test | `access/usecase/AccessCatalogSynchronizerTest.kt` | rain-access | ported | CatalogueSynchronizerTest |
+| test | `access/usecase/AccessSeederTest.kt` | rain-access | ported | AccessProvisioningTest |
+| test | `access/web/AuthCrossSiteGuardTest.kt` | rain-access | dropped | guard dropped for rain-web CrossSiteFilter |
+| test | `access/web/AuthViewsSerializationTest.kt` | rain-access | ported | AuthViewsSerializationTest |
+| test | `access/web/CredentialDeliveryTest.kt` | rain-access | ported | CredentialCookiesTest, DeliveryDecisionTest |
+| test | `access/web/RoleServiceTest.kt` | rain-access | ported | RoleAdministrationTest |
 | test | `audit/AuditDetailTest.kt` | rain-audit | ported | rain-audit AuditDetailTest |
 | test | `audit/AuditRecorderTest.kt` | rain-audit | ported | rain-audit AuditIT (transaction semantics against PostgreSQL) |
-| test | `audit/SignInAuditRecorderTest.kt` | rain-audit | pending |  |
-| test | `config/AccessConfigurationTest.kt` | rain-access | pending |  |
+| test | `audit/SignInAuditRecorderTest.kt` | rain-audit | ported | rain-access SignInAttemptAuditTest, RefusedAttemptsWriteOneLockoutRowTest |
+| test | `config/AccessConfigurationTest.kt` | rain-access | ported | AccessPropertiesRefusesZeroTest, MemoryLimiterRefusedInProdTest |
 | test | `config/ConfigFileParityTest.kt` | dropped | dropped | Lease deployment files |
 | test | `config/ConfigurationBindingTest.kt` | split | ported | split: body limit and budget -> RainWebPropertiesValidationTest, upload vs body -> MultipartLimitsCheckTest, stage/roles -> rain-boot, llm -> LlmPropertiesTest, jobs workers -> JobsConfigurationTest; workspace, receipt retention and supervisor grace dropped (product); stage from profile dropped (gap 36) |
 | test | `config/ConfigurationProblemsTest.kt` | rain-core | ported | rain-core ConfigurationProblemTest + rain-boot RainConfigurationValidatorTest |
 | test | `config/Deployments.kt` | dropped | dropped | Lease deployment files; replaced by rain-test ConfigDocuments |
-| test | `config/EvictionDomainTest.kt` | rain-access | pending | revocation server eviction-policy check |
+| test | `config/EvictionDomainTest.kt` | rain-access | ported | EvictionPolicyCheckTest, RevocationServerPolicyIT |
 | test | `config/RedisConfigurationTest.kt` | dropped | dropped | Boot spring.data.redis |
 | test | `config/ResourceDeclarationsTest.kt` | dropped | dropped | mechanism dropped |
 | test | `config/ShutdownConfigurationTest.kt` | rain-boot | dropped | shutdown budget is re-specified in rain-jobs |
-| test | `config/SigningKeyTest.kt` | rain-access | pending | entropy heuristic removed (gap 21) |
+| test | `config/SigningKeyTest.kt` | rain-access | ported | SigningKeyStrictBase64Test |
 | test | `config/TransportConfigurationTest.kt` | rain-web | ported | rain-web ProdOriginRulesTest: prod refuses *, non-https and loopback origins (rain-core Loopback) |
 | test | `config/WorkspaceConfigurationTest.kt` | dropped | dropped | product configuration |
 | test | `crud/CrudAccessTableTest.kt` | rain-crud | ported | web/MountedResourceTest |
@@ -289,9 +289,9 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `http/filter/MountedPathTest.kt` | rain-web | ported | rain-web MountedPathTest |
 | test | `http/filter/RequestBudgetFilterTest.kt` | rain-web | ported | rain-web RequestBudgetFilterTest |
 | test | `http/filter/SecurityHeadersFilterTest.kt` | rain-web | ported | rain-web SecurityHeadersOnPreSecurityRefusalTest |
-| test | `http/limit/CredentialGateFilterTest.kt` | rain-web | pending |  |
-| test | `http/limit/CredentialGateTest.kt` | rain-web | pending |  |
-| test | `http/limit/JsonOnlyFilterTest.kt` | rain-web | pending |  |
+| test | `http/limit/CredentialGateFilterTest.kt` | rain-web | ported | rain-access CredentialGateFiltersTest, HashingBulkheadTest |
+| test | `http/limit/CredentialGateTest.kt` | rain-web | ported | rain-access CredentialSurfaceTest, AccessPropertiesRefusesZeroTest |
+| test | `http/limit/JsonOnlyFilterTest.kt` | rain-web | ported | rain-access CredentialGateFiltersTest |
 | test | `http/limit/TokenBucketThrottleTest.kt` | rain-web | ported | rain-web TokenBucketThrottleTest; timing case replaced by CallerTableFullTest |
 | test | `llm/LlmGatewaySpringAiTest.kt` | rain-llm | ported | rain-llm LlmGatewayTest (ScriptedChatModel) |
 | test | `llm/LlmPortTest.kt` | rain-llm | ported | rain-llm LlmPropertiesTest + LlmSlotsTest |
@@ -331,12 +331,12 @@ Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be delete
 | test | `workq/ScheduledTasksIsolationTest.kt` | rain-jobs | ported | ScheduledTasksIsolationTest |
 | test | `workq/WorkQueueAdminTest.kt` | rain-jobs | dropped | DOCUMENT_SCOPED Lease vocabulary; CancelBySubjectIT covers cancelBySubject |
 | test | `workq/WorkqWiringTest.kt` | rain-jobs | ported | JobsAutoConfigurationTest, JobTopologyTest |
-| lease-it | `access/CredentialRepositoryIT.kt` | rain-access | pending |  |
-| lease-it | `access/DirectoryStoreIT.kt` | rain-access | pending | store SQL part ported as rain-crud JooqResourceStoreIT; service parts remain for rain-access |
-| lease-it | `access/RefreshRotationIT.kt` | rain-access | pending |  |
-| lease-it | `access/RevocationListIT.kt` | rain-access | pending |  |
-| lease-it | `access/SessionRepositoryIT.kt` | rain-access | pending |  |
-| lease-it | `persistence/AccessAggregateRoundTripIT.kt` | rain-access | pending |  |
+| lease-it | `access/CredentialRepositoryIT.kt` | rain-access | ported | CredentialStoreIT |
+| lease-it | `access/DirectoryStoreIT.kt` | rain-access | ported | rain-access RoleAdministrationIT, DirectoryPagesKeysetIT; store SQL part rain-crud JooqResourceStoreIT |
+| lease-it | `access/RefreshRotationIT.kt` | rain-access | ported | RefreshRotationIT, ConcurrentRefreshThenGraceIT |
+| lease-it | `access/RevocationListIT.kt` | rain-access | ported | RevocationListIT |
+| lease-it | `access/SessionRepositoryIT.kt` | rain-access | ported | SessionStoreIT |
+| lease-it | `persistence/AccessAggregateRoundTripIT.kt` | rain-access | ported | AccessAggregateRoundTripIT |
 | lease-it | `access/AuthSurfaceIT.kt` | rain-sample | pending |  |
 | lease-it | `access/DirectorySurfaceIT.kt` | rain-sample | pending |  |
 | lease-it | `access/SubjectGrantSurfaceIT.kt` | rain-sample | pending |  |

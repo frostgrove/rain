@@ -27,6 +27,8 @@ val declaredGraph: Map<String, Set<String>> =
         "rain-crud" to setOf("rain-web", "rain-persistence", "rain-observability", "rain-boot", "rain-core"),
         "rain-resilience" to setOf("rain-observability", "rain-boot", "rain-core"),
         "rain-audit" to setOf("rain-persistence", "rain-boot", "rain-core"),
+        "rain-access" to
+            setOf("rain-web", "rain-audit", "rain-jobs", "rain-resilience", "rain-persistence", "rain-observability", "rain-boot", "rain-core"),
         "rain-realtime" to setOf("rain-persistence", "rain-observability", "rain-boot", "rain-core"),
         "rain-jobs" to setOf("rain-persistence", "rain-observability", "rain-boot", "rain-core"),
         "rain-llm" to setOf("rain-resilience", "rain-persistence", "rain-observability", "rain-boot", "rain-core"),
