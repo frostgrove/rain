@@ -68,8 +68,12 @@ public data class TableName(
 }
 
 /**
- * A resource's shape: its table, its identifier and its other fields. The identifier is a non-null UUID
- * column, which is what makes it a total tie-break for every order.
+ * A resource's shape: its table, its identifier, its other fields and, when it has one, its version. The identifier
+ * is a non-null UUID column, which is what makes it a total tie-break for every order.
+ *
+ * [version] is `null` for a resource without optimistic versioning, or one of [fields]: a non-nullable `LONG` field
+ * the store writes itself — 1 on insert, one more on every update — and that a write by identifier states as the
+ * version it read.
  *
  * Lookups are by exact name through a map, so resolving a field costs the same however many fields a
  * resource declares.
@@ -79,6 +83,7 @@ public class ResourceSchema(
     public val table: TableName,
     public val id: SchemaField,
     fields: List<SchemaField>,
+    public val version: SchemaField?,
 ) {
     /** The identifier first, then the other fields in declaration order. */
     public val fields: List<SchemaField> = listOf(id) + fields
@@ -100,6 +105,12 @@ public class ResourceSchema(
                 .filterValues { it.size > 1 }
                 .keys
         require(columns.isEmpty()) { "resource $name maps the columns ${columns.sorted()} more than once" }
+        if (version != null) {
+            require(
+                version != id && byName[version.name] == version,
+            ) { "the version of $name is one of its fields other than the identifier" }
+            require(version.kind == FieldKind.LONG && !version.nullable) { "the version of $name is a non-nullable LONG field" }
+        }
     }
 
     /** The field named exactly [name], or `null`. */
@@ -108,9 +119,15 @@ public class ResourceSchema(
     /** Whether [field] is this schema's own declaration of that field. */
     public fun owns(field: SchemaField): Boolean = byName[field.name] == field
 
+    /** The version a store writes into a row it inserts. */
+    public val initialVersion: Long get() = INITIAL_VERSION
+
     override fun toString(): String = "ResourceSchema($name over $table)"
 
     public companion object {
+        /** The version of an inserted row, when the schema declares one. */
+        public const val INITIAL_VERSION: Long = 1
+
         /** A UUID field's value in canonical 8-4-4-4-12 form, as the wire and ids use it. */
         public val CANONICAL_UUID: Regex = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 

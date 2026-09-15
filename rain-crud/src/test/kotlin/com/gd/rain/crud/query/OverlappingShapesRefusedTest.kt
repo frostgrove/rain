@@ -39,7 +39,7 @@ class OverlappingShapesRefusedTest {
         val newestOnShelf = QueryShape.of(SortKey.parse("-createdAt"), "shelf" to Operator.EQ)
         val recentOnShelf = QueryShape.of(SortKey.parse("-createdAt"), "shelf" to Operator.EQ, "createdAt" to Operator.GTE)
         val rules = Books.rules(shapes = listOf(byShelf, amongShelves, newestOnShelf, recentOnShelf))
-        val compiler = QueryCompiler(Books.SCHEMA, rules, emptySet())
+        val compiler = QueryCompiler(Books.SCHEMA, rules, emptySet(), setOf(Books.ID))
 
         fun shapeOf(vararg parameters: Pair<String, String>) =
             compiler.list(DialectV1.parse(parameters.associate { (name, value) -> name to listOf(value) })).shape

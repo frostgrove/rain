@@ -88,6 +88,18 @@ class MountedResourceTest {
     }
 
     @Test
+    fun `mounting an update or a replacement on a resource that grants no field to write by identifier is refused`() {
+        val identifierOnly = ResourcePolicy(Books.policy().access, ScopeRule.Unrestricted, FieldGrant.only("id"))
+
+        assertThatThrownBy { MountedResource("/books", setOf(CrudOperation.UPDATE, CrudOperation.REPLACE), resource(identifierOnly)) }
+            .isInstanceOf(ConfigurationProblemsException::class.java)
+            .matches({ (it as ConfigurationProblemsException).problems.size == 2 }, "names two problems")
+            .hasMessageContaining("mounts UPDATE, but writable grants no field a write by identifier states")
+            .hasMessageContaining("mounts REPLACE, but writable grants no field a write by identifier states")
+        assertThat(MountedResource("/books", setOf(CrudOperation.CREATE), resource(identifierOnly)).routes()).hasSize(1)
+    }
+
+    @Test
     fun `mounting count on a resource without a count cap is refused`() {
         assertThatThrownBy { MountedResource("/books", setOf(CrudOperation.COUNT), resource(countCap = null)) }
             .isInstanceOf(ConfigurationProblemsException::class.java)
@@ -109,9 +121,16 @@ class MountedResourceTest {
         booksRunner().run { context ->
             val declared = context.getBean(BookController::class.java).accessDeclarations().map { it.key }
 
-            assertThat(
-                declared,
-            ).containsExactly("POST /books/bulk-delete", "GET /books/count", "GET /books", "GET /books/{id}", "DELETE /books/{id}")
+            assertThat(declared).containsExactly(
+                "POST /books",
+                "POST /books/bulk-delete",
+                "GET /books/count",
+                "GET /books",
+                "GET /books/{id}",
+                "PATCH /books/{id}",
+                "PUT /books/{id}",
+                "DELETE /books/{id}",
+            )
         }
     }
 }

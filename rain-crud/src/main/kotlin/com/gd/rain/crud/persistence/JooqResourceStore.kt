@@ -1,10 +1,13 @@
 package com.gd.rain.crud.persistence
 
 import com.gd.rain.core.id.IdGenerator
+import com.gd.rain.crud.BulkUpdateOutcome
 import com.gd.rain.crud.CrudStore
+import com.gd.rain.crud.InsertOutcome
 import com.gd.rain.crud.KeyedRow
 import com.gd.rain.crud.RowRead
 import com.gd.rain.crud.RowScope
+import com.gd.rain.crud.UpdateOutcome
 import com.gd.rain.crud.WriteValues
 import com.gd.rain.crud.query.Direction
 import com.gd.rain.crud.query.FieldKind
@@ -21,9 +24,12 @@ import org.jooq.DataType
 import org.jooq.Field
 import org.jooq.Record
 import org.jooq.Record1
+import org.jooq.ResultQuery
+import org.jooq.RowCountQuery
 import org.jooq.Select
 import org.jooq.SortField
 import org.jooq.Table
+import org.jooq.TransactionalCallable
 import org.jooq.impl.DSL
 import org.jooq.impl.SQLDataType
 import java.time.Instant
@@ -39,6 +45,10 @@ import java.util.UUID
  * states: a read has a `LIMIT`, a count reads through `LIMIT cap + 1`, and writes are addressed by
  * identifier within the scope.
  *
+ * A write that leaves a row behind checks it against the scope in the database, with the same condition a read
+ * applies, inside the transaction of the write: an insert, an update or a bulk update whose row is outside the scope
+ * afterwards is rolled back. A scope of every row needs no check, and runs no transaction of its own.
+ *
  * A keyset seek is a row-value comparison when every term shares a direction, which an index on the order's
  * columns serves as its index condition. With mixed directions it is the expanded comparison, led by a
  * non-strict bound on the first column; PostgreSQL bounds the scan by that first column only and filters
@@ -50,9 +60,15 @@ public class JooqResourceStore<T>(
     private val ids: IdGenerator,
     private val reader: RowReader<T>,
 ) : CrudStore<T> {
+    override val itemFields: Set<SchemaField> = reader.reads.toSet()
+
     private val table: Table<Record> = DSL.table(DSL.name(schema.table.schema, schema.table.name))
     private val identifier: Field<Any> = column(schema.id)
     private val everyColumn: List<Field<Any>> = schema.fields.map(::column)
+
+    init {
+        require(itemFields.all(schema::owns)) { "the reader of ${schema.name} reads only its fields" }
+    }
 
     override fun read(read: RowRead): List<KeyedRow<T>> {
         val projected = projected(read.projection).map(::column)
@@ -107,80 +123,214 @@ public class JooqResourceStore<T>(
         id: UUID,
         scope: RowScope,
         projection: Projection,
-    ): T? =
+    ): T? = dsl.fetchOne(findQuery(id, scope, projection))?.let { reader.read(Row(it)) }
+
+    /** The statement [find] runs: `SELECT` the projected columns `WHERE id = ? AND` scope. */
+    public fun findQuery(
+        id: UUID,
+        scope: RowScope,
+        projection: Projection,
+    ): Select<Record> =
         dsl
             .select(projected(projection).map(::column))
             .from(table)
             .where(byId(id, scope))
-            .fetchOne()
-            ?.let { reader.read(Row(it)) }
 
-    override fun insert(values: Map<String, Any?>): T {
+    /**
+     * The statement a write runs to check a row against the scope: `SELECT id WHERE id = ? AND` scope — after an insert
+     * or an update, whether the row written is in the scope; after an update that wrote nothing on a versioned resource,
+     * whether the row is there at a version other than the one stated.
+     */
+    public fun inScopeQuery(
+        id: UUID,
+        scope: RowScope,
+    ): Select<Record1<Any>> = dsl.select(identifier).from(table).where(byId(id, scope))
+
+    override fun insert(
+        scope: RowScope,
+        values: Map<String, Any?>,
+    ): InsertOutcome<T> {
         WriteValues.check(schema, values)
         val stated = if (values.containsKey(schema.id.name)) values else values + (schema.id.name to ids.next())
-        requireNotNull(stated[schema.id.name]) { "an inserted ${schema.name} has an identifier" }
-        val record =
-            dsl
-                .insertInto(table)
-                .set(assignments(stated))
-                .returningResult(everyColumn)
-                .fetchOne()
-        return reader.read(Row(checkNotNull(record) { "inserting into ${schema.table} returned no row" }))
+        val id = requireNotNull(stated[schema.id.name] as UUID?) { "an inserted ${schema.name} has an identifier" }
+        if (scope.predicate == null) return InsertOutcome.Inserted(inserted(dsl, stated))
+        return rollingBackOutsideScope(InsertOutcome.OutsideScope) { transaction ->
+            val item = inserted(transaction, stated)
+            if (transaction.fetchOne(inScopeQuery(id, scope)) == null) throw OutsideScopeRollback()
+            InsertOutcome.Inserted(item)
+        }
+    }
+
+    /**
+     * The statement [insert] runs for [values] that name the identifier: `INSERT … RETURNING` every column, with the
+     * initial version when the schema declares one.
+     */
+    public fun insertQuery(values: Map<String, Any?>): ResultQuery<Record> {
+        WriteValues.check(schema, values)
+        requireNotNull(values[schema.id.name]) { "an insert statement of ${schema.name} names the identifier" }
+        val version = schema.version
+        require(version == null || version.name !in values) { "the store writes the version of ${schema.name}" }
+        val stated = if (version == null) values else values + (version.name to schema.initialVersion)
+        return dsl
+            .insertInto(table)
+            .set(assignments(stated))
+            .returningResult(everyColumn)
     }
 
     override fun update(
         id: UUID,
         scope: RowScope,
         values: Map<String, Any?>,
-    ): T? {
+        expectedVersion: Long?,
+    ): UpdateOutcome<T> {
+        val query = updateQuery(id, scope, values, expectedVersion)
+        if (scope.predicate == null && schema.version == null) {
+            return dsl.fetchOne(query)?.let { UpdateOutcome.Updated(reader.read(Row(it))) } ?: UpdateOutcome.NotFound
+        }
+        return rollingBackOutsideScope(UpdateOutcome.OutsideScope) { transaction ->
+            val written = transaction.fetchOne(query)
+            when {
+                written == null && schema.version != null && transaction.fetchOne(inScopeQuery(id, scope)) != null -> {
+                    UpdateOutcome.StaleVersion
+                }
+
+                written == null -> {
+                    UpdateOutcome.NotFound
+                }
+
+                scope.predicate != null && transaction.fetchOne(inScopeQuery(id, scope)) == null -> {
+                    throw OutsideScopeRollback()
+                }
+
+                else -> {
+                    UpdateOutcome.Updated(reader.read(Row(written)))
+                }
+            }
+        }
+    }
+
+    /**
+     * The statement [update] runs: `UPDATE … SET` the values (and the version one higher) `WHERE id = ? AND` scope
+     * (`AND version = ?`) `RETURNING` every column.
+     */
+    public fun updateQuery(
+        id: UUID,
+        scope: RowScope,
+        values: Map<String, Any?>,
+        expectedVersion: Long?,
+    ): ResultQuery<Record> {
         require(values.isNotEmpty()) { "an update writes at least one field" }
         WriteValues.check(schema, values)
+        val version = schema.version
+        require((expectedVersion == null) == (version == null)) { "an update of ${schema.name} states a version exactly when it has one" }
+        val condition =
+            if (version ==
+                null
+            ) {
+                byId(id, scope)
+            } else {
+                byId(id, scope).and(column(version).eq(bind(checkNotNull(expectedVersion), FieldKind.LONG)))
+            }
         return dsl
             .update(table)
-            .set(assignments(values))
-            .where(byId(id, scope))
+            .set(versioned(values))
+            .where(condition)
             .returningResult(everyColumn)
-            .fetchOne()
-            ?.let { reader.read(Row(it)) }
     }
 
     override fun updateMany(
         ids: Set<UUID>,
         scope: RowScope,
         values: Map<String, Any?>,
-    ): Long {
+    ): BulkUpdateOutcome {
         require(values.isNotEmpty()) { "an update writes at least one field" }
         WriteValues.check(schema, values)
-        if (ids.isEmpty()) return 0
+        if (ids.isEmpty()) return BulkUpdateOutcome.Updated(0)
+        val query = updateManyQuery(ids, scope, values)
+        if (scope.predicate == null) return BulkUpdateOutcome.Updated(dsl.fetch(query).size.toLong())
+        return rollingBackOutsideScope(BulkUpdateOutcome.OutsideScope) { transaction ->
+            val written = transaction.fetch(query).map { it.get(identifier) as UUID }
+            if (written.isNotEmpty() && transaction.fetchValue(inScopeCountQuery(written.toSet(), scope)) != written.size.toLong()) {
+                throw OutsideScopeRollback()
+            }
+            BulkUpdateOutcome.Updated(written.size.toLong())
+        }
+    }
+
+    /** The statement [updateMany] runs: `UPDATE … SET` the values (and the version one higher) `WHERE id IN (…) AND` scope `RETURNING id`. */
+    public fun updateManyQuery(
+        ids: Set<UUID>,
+        scope: RowScope,
+        values: Map<String, Any?>,
+    ): ResultQuery<Record1<Any>> {
+        require(values.isNotEmpty()) { "an update writes at least one field" }
+        require(ids.isNotEmpty()) { "a bulk statement names at least one identifier" }
+        WriteValues.check(schema, values)
         return dsl
             .update(table)
-            .set(assignments(values))
+            .set(versioned(values))
             .where(byIds(ids, scope))
-            .execute()
-            .toLong()
+            .returningResult(identifier)
+    }
+
+    /** The statement [updateMany] runs to check the rows it wrote: `SELECT count(*) WHERE id IN (…) AND` scope. */
+    public fun inScopeCountQuery(
+        ids: Set<UUID>,
+        scope: RowScope,
+    ): Select<Record1<Long>> {
+        require(ids.isNotEmpty()) { "a bulk statement names at least one identifier" }
+        return dsl.select(DSL.count().cast(SQLDataType.BIGINT)).from(table).where(byIds(ids, scope))
     }
 
     override fun delete(
         id: UUID,
         scope: RowScope,
-    ): Long =
-        dsl
-            .deleteFrom(table)
-            .where(byId(id, scope))
-            .execute()
-            .toLong()
+    ): Long = dsl.execute(deleteQuery(id, scope)).toLong()
+
+    /** The statement [delete] runs: `DELETE … WHERE id = ? AND` scope. */
+    public fun deleteQuery(
+        id: UUID,
+        scope: RowScope,
+    ): RowCountQuery = dsl.deleteFrom(table).where(byId(id, scope))
 
     override fun deleteMany(
         ids: Set<UUID>,
         scope: RowScope,
     ): Long {
         if (ids.isEmpty()) return 0
-        return dsl
-            .deleteFrom(table)
-            .where(byIds(ids, scope))
-            .execute()
-            .toLong()
+        return dsl.execute(deleteManyQuery(ids, scope)).toLong()
     }
+
+    /** The statement [deleteMany] runs: `DELETE … WHERE id IN (…) AND` scope. */
+    public fun deleteManyQuery(
+        ids: Set<UUID>,
+        scope: RowScope,
+    ): RowCountQuery {
+        require(ids.isNotEmpty()) { "a bulk statement names at least one identifier" }
+        return dsl.deleteFrom(table).where(byIds(ids, scope))
+    }
+
+    private fun inserted(
+        context: DSLContext,
+        values: Map<String, Any?>,
+    ): T {
+        val record = context.fetchOne(insertQuery(values))
+        return reader.read(Row(checkNotNull(record) { "inserting into ${schema.table} returned no row" }))
+    }
+
+    /** Runs [work] in one transaction; an [OutsideScopeRollback] rolls it back and answers [outsideScope]. */
+    private fun <R : Any> rollingBackOutsideScope(
+        outsideScope: R,
+        work: (DSLContext) -> R,
+    ): R =
+        try {
+            dsl.transactionResult(TransactionalCallable { configuration -> work(DSL.using(configuration)) })
+        } catch (_: OutsideScopeRollback) {
+            outsideScope
+        }
+
+    /** Signals, inside a write's transaction, that the row written is outside the scope, so the transaction rolls back. */
+    private class OutsideScopeRollback : RuntimeException("the row written is outside the scope", null, false, false)
 
     private fun projected(projection: Projection): List<SchemaField> =
         when (projection) {
@@ -190,9 +340,17 @@ public class JooqResourceStore<T>(
 
             is Projection.Only -> {
                 require(projection.fields.all(schema::owns)) { "a projection of ${schema.name} names only its fields" }
+                require(projection.fields.containsAll(itemFields)) { "a projection of ${schema.name} holds every field its reader reads" }
                 projection.fields.toList()
             }
         }
+
+    private fun versioned(values: Map<String, Any?>): Map<Field<Any>, Field<Any>> {
+        val version = schema.version ?: return assignments(values)
+        require(version.name !in values) { "the store writes the version of ${schema.name}" }
+        val column = column(version)
+        return assignments(values) + (column to column.plus(1))
+    }
 
     private fun byId(
         id: UUID,

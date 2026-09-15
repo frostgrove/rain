@@ -1,0 +1,39 @@
+[
+  {
+    "Plan": {
+      "Node Type": "ModifyTable",
+      "Operation": "Update",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "books",
+      "Schema": "public",
+      "Alias": "books",
+      "Startup Cost": 0.15,
+      "Total Cost": 8.17,
+      "Plan Rows": 0,
+      "Plan Width": 0,
+      "Disabled": false,
+      "Plans": [
+        {
+          "Node Type": "Index Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Scan Direction": "Forward",
+          "Index Name": "books_shelf_id",
+          "Relation Name": "books",
+          "Schema": "public",
+          "Alias": "books",
+          "Startup Cost": 0.15,
+          "Total Cost": 8.17,
+          "Plan Rows": 1,
+          "Plan Width": 46,
+          "Disabled": false,
+          "Output": ["'x'::text", "(version + 1)", "ctid"],
+          "Index Cond": "((books.shelf = 'a'::text) AND (books.id = '00000000-0000-7000-8000-000000000001'::uuid))",
+          "Filter": "(books.version = 3)"
+        }
+      ]
+    }
+  }
+]

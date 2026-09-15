@@ -184,6 +184,6 @@ class AuditIT {
         val plan = QueryPlans.explain(fixture.dataSource, fixture.dsl.renderInlined(query), generic = false)
 
         assertThat(plan.usesIndex("ix_audit_log_resource")).describedAs(plan.json).isTrue()
-        assertThat(plan.boundedScan("audit_log")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+        assertThat(plan.boundedScan("rain_audit", "audit_log")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
     }
 }

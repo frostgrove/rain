@@ -1,0 +1,24 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Index Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Scan Direction": "Forward",
+      "Index Name": "books_shelf_created_at_id",
+      "Relation Name": "books",
+      "Schema": "public",
+      "Alias": "books",
+      "Startup Cost": 0.15,
+      "Total Cost": 8.17,
+      "Plan Rows": 1,
+      "Plan Width": 48,
+      "Disabled": false,
+      "Output": [
+        "id",
+        "title"
+      ],
+      "Index Cond": "((books.shelf = 'a'::text) AND (books.id = '00000000-0000-7000-8000-000000000001'::uuid))"
+    }
+  }
+]

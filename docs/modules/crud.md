@@ -5,8 +5,8 @@ query shapes a resource declares; row-level policy on every read and write; keys
 at a declared cap; problem+json refusals. A plan proof in its test fixtures shows, against the application's database,
 that an index serves every statement a declared shape can run.
 
-Add it when an application exposes tables as list, count, item and delete endpoints and wants the query surface
-declared, not grown.
+Add it when an application exposes tables as list, count, item, create, update, replace and delete endpoints and wants
+the query and write surface declared, not grown.
 
 ## Dependency
 
@@ -70,6 +70,7 @@ object Books {
             table = TableName("public", "books"),
             id = ID,
             fields = listOf(TITLE, SHELF, PAGES, PRICE, PUBLISHED_ON, CREATED_AT, AVAILABLE, ISBN, COPIES),
+            version = null,
         )
 }
 ```
@@ -79,7 +80,7 @@ object Books {
 | `SchemaField(name, column, kind, nullable)` | `name` is the wire name, matched exactly, `^[A-Za-z][A-Za-z0-9_]{0,62}$` — it cannot contain the dialect's `[`, `]`, `,` or a leading `-`; `column` matches `^[A-Za-z_][A-Za-z0-9_]{0,62}$`; nullability is stated, never read from the database |
 | `FieldKind` | decides how a wire value is read, which operators apply, and the one Kotlin type a value is carried as (below) |
 | `TableName(schema, name)` | both parts stated, each matching the column pattern |
-| `ResourceSchema(name, table, id, fields)` | `name` matches the field-name pattern; `id` is a non-nullable `UUID` field, which makes it a total tie-break for every order; no field name and no column appears twice; `fields` lists the identifier first; `field(name)` is a map lookup |
+| `ResourceSchema(name, table, id, fields, version)` | `name` matches the field-name pattern; `id` is a non-nullable `UUID` field, which makes it a total tie-break for every order; no field name and no column appears twice; `fields` lists the identifier first; `field(name)` is a map lookup; `version` is `null`, or one of `fields` other than the identifier: a non-nullable `LONG` the store writes — 1 on insert, one more on every update — and a write by identifier states |
 
 | `FieldKind` | Column | Carried as | Ordered (`gt`, `gte`, `lt`, `lte`, sorting) |
 |---|---|---|---|
@@ -112,7 +113,7 @@ val RULES =
                 QueryShape.of(SortKey.NONE, "publishedOn" to Operator.EQ),
                 QueryShape.of(SortKey.NONE, "price" to Operator.IS_NULL),
             ),
-        selectable = FieldGrant.only("title", "shelf", "pages", "price", "publishedOn", "createdAt", "available", "copies"),
+        selectable = FieldGrant.only("id", "title", "shelf", "pages", "price", "publishedOn", "createdAt", "available", "copies"),
         includable = FieldGrant.only("reviews"),
         pagination = Pagination(defaultLimit = 10, maxLimit = 50, maxOffset = 1_000, countCap = 50),
     )
@@ -123,7 +124,7 @@ val RULES =
 | Member | What it declares |
 |---|---|
 | `shapes` | the list queries the resource answers; see [the exact-shape rule](#the-exact-shape-rule) |
-| `selectable` | the fields `fields` may name; the identifier is always returned and may be named without a grant |
+| `selectable` | the fields `fields` may name, the identifier included (every item carries the identifier, whatever `fields` names); every sort field of every shape is one of them |
 | `includable` | the relations `include` may name |
 | `pagination` | how the resource pages and whether it counts |
 | `limits` | the bounds of one query |
@@ -179,9 +180,9 @@ val POLICY =
 | `Action` | `READ` (list, count, item), `CREATE`, `UPDATE` (update, bulk update), `DELETE` (delete, bulk delete) |
 | `ActionAccess.Permissions(permissions)` | the caller holds every one; at least one, none empty or containing whitespace; `ActionAccess.permissions(vararg)` |
 | `ActionAccess.Authenticated(why)` | any authenticated caller; `why` is not blank |
-| `ResourcePolicy(access, scope, writable)` | an action without an entry in `access` is refused to everybody; `writable` is the fields a write may name |
+| `ResourcePolicy(access, scope, writable)` | an action without an entry in `access` is refused to everybody; `writable` is the fields a write may name — never the version, which the store writes |
 | `ScopeRule.Unrestricted` | every row |
-| `ScopeRule.Rows { caller -> predicate }` | the rows matching the predicate for this caller; it may read only fields the schema declares |
+| `ScopeRule.Rows { caller -> predicate }` | the rows matching the predicate for this caller; it may read only fields the schema declares; every read is confined to them, and every write leaves its row matching the predicate or writes nothing |
 | `Predicate` | `Predicate.eq`, `isNull`, `isNotNull`, `Compare(field, operator, values)`, `AllOf`, `AnyOf` (each of at least two), `allOf`, `anyOf` |
 | `CallerLookup` | `current(): Caller` — the caller of the operation on the current thread |
 | `Caller.Anonymous`, `Caller.Authenticated` | an authenticated caller has an `actor` and answers `holdsAll(permissions)` |
@@ -191,7 +192,7 @@ asked about the permissions one operation needs, never for everything a caller h
 bounded lookup.
 
 Every operation of a resource resolves the caller and checks the action's access first — before its identifier, its
-query or an empty id list is read — then confines itself to the scope:
+query, its body or an empty id list is read — then confines itself to the scope:
 
 | Caller | Answer |
 |---|---|
@@ -200,40 +201,50 @@ query or an empty id list is read — then confines itself to the scope:
 | authenticated, a permission missing | `403 forbidden` |
 
 Reads, counts, items, updates and deletes, single and bulk, carry the scope in their statement: a row outside it is
-`404 not_found`, and a bulk operation neither writes nor counts it. A create is not confined: `CrudStore.insert` takes no
-scope, so a row the caller could not read afterwards is inserted.
+`404 not_found`, and a bulk operation neither writes nor counts it. A write that leaves a row behind — a create, an update,
+a replacement, a bulk update — leaves it inside the scope: the database compares the row as stored with the scope, in the
+write's transaction, and a row outside it is `403 outside_scope` with nothing written (`ScopedCreateIT`).
 
 ### Store
 
-`CrudStore<T>` is storage for one resource. It enforces no permission, but every method except `insert` takes the
-`RowScope` it is confined to (`RowScope.Everything` or `RowScope.Matching(predicate)`), so an unscoped read has to say
-so.
+`CrudStore<T>` is storage for one resource. It enforces no permission, but every method takes the `RowScope` it is
+confined to (`RowScope.Everything` or `RowScope.Matching(predicate)`), writes included, so an unscoped operation has to
+say so. A write that leaves a row behind leaves it inside the scope, or writes nothing.
 
-| Method | Contract |
+| Member | Contract |
 |---|---|
+| `itemFields` | the fields every row must carry for the store to make an item; a query whose projection leaves one out is refused before any statement runs |
 | `read(RowRead)` | at most `read.limit` rows in `read.order`, each a `KeyedRow` with its item and the values of the order fields |
 | `countUpTo(scope, filter, cap)` | `min(count, cap + 1)`, reading at most `cap + 1` rows |
 | `find(id, scope, projection)` | the row, or `null` |
-| `insert(values)` | inserts; mints the identifier when `values` does not name one |
-| `update(id, scope, values)` | writes non-empty `values` to the row if it is in scope; `null` otherwise |
-| `updateMany(ids, scope, values)`, `delete(id, scope)`, `deleteMany(ids, scope)` | write within scope; answer how many rows |
+| `insert(scope, values)` | `InsertOutcome.Inserted(item)`, or `OutsideScope` with nothing inserted; mints the identifier when `values` does not name one; writes version 1 on a versioned schema |
+| `update(id, scope, values, expectedVersion)` | `UpdateOutcome.Updated(item)`, `NotFound`, `StaleVersion` or `OutsideScope`; writes non-empty `values` and, on a versioned schema, the version one higher, only when the row is at `expectedVersion` (`null` exactly when the schema has no version) |
+| `updateMany(ids, scope, values)` | `BulkUpdateOutcome.Updated(count)`, or `OutsideScope` with nothing written; no version check, but a versioned row's version still rises |
+| `delete(id, scope)`, `deleteMany(ids, scope)` | delete within scope; answer how many rows |
 
 `RowRead(scope, filter, seek, order, limit, offset, projection)` is one bounded read: a non-empty order, `limit` at least
 1, `offset` not negative, and a keyset seek only with offset 0 and over exactly the order's fields.
 
 `JooqResourceStore(schema, dsl, ids, reader)` is the store over a table, in typed jOOQ. The table is
 `DSL.name(schema, table)`, every column a named field and every value a typed bind, so no text a caller sent becomes
-SQL. `readQuery(read)` and `countQuery(scope, filter, cap)` answer the statements it runs:
+SQL. `readQuery`, `countQuery`, `findQuery`, `insertQuery`, `updateQuery`, `updateManyQuery`, `inScopeQuery`,
+`inScopeCountQuery`, `deleteQuery` and `deleteManyQuery` answer the statements it runs:
 
-| Operation | Statement |
+| Operation | Statements |
 |---|---|
 | read | `SELECT` the projected and order columns `WHERE` scope, filter and seek `ORDER BY` the order `LIMIT`, and `OFFSET` when it is not 0 |
 | count | `SELECT count(*) FROM (SELECT 1 … WHERE scope AND filter LIMIT cap + 1)` |
-| find | `WHERE id = ? AND` scope |
-| insert | `INSERT … RETURNING` every column |
-| update | `UPDATE … WHERE id = ? AND` scope `RETURNING` every column |
-| bulk update, bulk delete | `WHERE id IN (…) AND` scope |
+| find | `SELECT` the projected columns `WHERE id = ? AND` scope |
+| insert | `INSERT … RETURNING` every column; under a scope, then `SELECT id WHERE id = ? AND` scope |
+| update | `UPDATE … SET` the values (and `version = version + 1`) `WHERE id = ? AND` scope (`AND version = ?`) `RETURNING` every column; under a scope or on a versioned schema, then `SELECT id WHERE id = ? AND` scope — after a write, whether the row is still in the scope; after none, whether it is there at another version |
+| bulk update | `UPDATE … WHERE id IN (…) AND` scope `RETURNING id`; under a scope, then `SELECT count(*) WHERE id IN (`the ids written`) AND` scope |
 | delete | `DELETE … WHERE id = ? AND` scope |
+| bulk delete | `DELETE … WHERE id IN (…) AND` scope |
+
+A write and its check run in one transaction (jOOQ's `transactionResult` on the store's `DSLContext`, a savepoint inside
+an application transaction). The check is the database's: the row as stored — with its defaults, and whatever a trigger
+wrote — is compared with the same condition a read applies, and a row outside the scope rolls the transaction back. A scope
+of every row needs no check, and an unversioned update or an insert under it opens no transaction.
 
 A keyset seek is a row-value comparison, `(created_at, id) < (?, ?)`, when every term of the order has one direction. With
 mixed directions it is the expanded comparison led by a non-strict bound on the first column; PostgreSQL bounds such a
@@ -241,8 +252,9 @@ scan by the first column only, and the plan proof refuses those cursor pages.
 
 A timestamp is bound as the `OffsetDateTime` in UTC a `timestamptz` takes and read back as an `Instant`.
 
-`RowReader<T>` turns a `Row` into an item. `RowReader.fields(schema)` answers a map from field name to value holding
-exactly the fields the row carries, so a request with `fields` answers those fields and the identifier.
+`RowReader<T>` turns a `Row` into an item and declares `reads`, every field it asks a row for; `RowReader.of(reads) { row ->
+… }` builds one. `RowReader.fields(schema)` reads the identifier and answers a map from field name to value holding exactly
+the fields the row carries, so a request with `fields` answers those fields and the identifier.
 
 `Row` is read by exact column label:
 
@@ -254,8 +266,9 @@ exactly the fields the row carries, so a request with `fields` answers those fie
 | `columns`, `has(column)` | the labels the row carries |
 
 A column the statement did not select, a label in another case, and a value of another type all throw
-`RowShapeException`; nothing reads as a zero value and nothing is converted. A reader that requires columns other than
-the identifier therefore fails on a request with `fields`, including `fields=id`, which no grant refuses.
+`RowShapeException`; nothing reads as a zero value and nothing is converted. A projection always holds the fields the
+reader reads — a query whose `fields` leaves one out is `400 bad_query`, `/fields` `required` — so a request never meets
+a reader that throws for a column it left out (`ProjectionFollowsOneRuleTest`).
 
 ### Relations
 
@@ -276,26 +289,45 @@ are attached in the order they are named. Keeping the lookup itself bounded is t
 
 `CrudResource(rules, policy, store, callers, relations)`:
 
-| Method | Behaviour |
+| Member | Behaviour |
 |---|---|
 | `list(parameters)` | one page, and a capped count when asked |
 | `count(parameters)` | a `CappedCount` |
 | `get(id, parameters)` | the item; `id` as the wire spells it |
-| `create(values)` | the inserted item |
-| `update(id, values)` | the written row; empty `values` reads the row |
-| `updateMany(ids, values)` | how many rows were written; `values` is not empty |
+| `create(values)`, `create { input }` | the inserted item |
+| `update(id, values)`, `update(id) { input }` | the written item; the values name at least one field |
+| `replace(id, values)`, `replace(id) { input }` | the written item; the values state every field of `replaceable` |
+| `updateMany(ids, values)` | how many rows were written |
 | `delete(id)` | `id` as a `UUID` or as the wire spells it |
-| `deleteMany(ids)`, `bulkDelete(ids)` | how many rows were deleted; `bulkDelete` reads the ids as the wire spells them |
+| `deleteMany(ids)`, `bulkDelete { input }` | how many rows were deleted; `bulkDelete` reads the ids as the wire spells them |
+| `replaceable` | the fields a write by identifier may state: every field `writable` grants except the identifier and the version |
 
 `parameters` is the request's query parameters, each with every value it was given (`CrudMvc.parameters(request)`).
-Write values are keyed by field name and carried as their kind's type; the application reads a write body into them.
+Write values are keyed by field name and carried as their kind's type. An operation that takes its input as a function —
+a `WriteInput` (the values and the violations met while reading them from a request) or the bulk ids — calls it only once
+the caller is authorized, and reads a wire identifier after the caller too, so a transport hands the resource its request
+unread (`UnauthenticatedMalformedBodyIs401Test`).
+
+On a versioned schema the version is one of the values: an update and a replacement state the version they read; a create
+and a bulk update never state it.
 
 | Write problem | Answer |
 |---|---|
 | a name that is not a field | `422 validation_failed`, violation `unknown_field` at `/<name>` |
-| a field `writable` does not grant | `422 validation_failed`, violation `field_not_granted` at `/<name>`, `is not writable` |
-| a value of another type than its kind's | `IllegalArgumentException`: a programming error, `500 internal` |
-| more ids than `maxBulkIds` | `400 bad_request`, violation `out_of_range` at `/ids` |
+| a value in a body that does not read | `422`, `invalid_format` at `/<name>` |
+| a field `writable` does not grant | `422`, `field_not_granted` at `/<name>`, `is not writable` |
+| the identifier in an update or a replacement | `422`, `field_not_granted` at `/id` |
+| the version in a create or a bulk update | `422`, `field_not_granted` at the version's name |
+| no version, or `null`, in an update or a replacement on a versioned schema | `422`, `required` at the version's name |
+| `null` for a field that is not nullable | `422`, `required` at `/<name>` |
+| a replacement without a field of `replaceable` | `422`, `required` at `/<name>`; never written as NULL |
+| an update or a replacement that states no field | `422`, `required` at the root |
+| several of the above | one `422` naming every one |
+| a typed value of another type than its kind's | `IllegalArgumentException`: a programming error, `500 internal` |
+| no row with the identifier in the caller's scope | `404 not_found` |
+| the row is at another version | `409 stale_version` |
+| the row as stored would be outside the caller's scope | `403 outside_scope`; nothing is written |
+| more ids than `maxBulkIds` | `400 bad_query`, violation `out_of_range` at `/ids`, like every other bound |
 | an id in `bulkDelete` that is not canonical | `400 invalid_id`, one violation at `/ids/<index>` each |
 | a database refusal | classified by rain-persistence, e.g. `409 unique` ([errors](../concepts/errors.md#data-access)) |
 
@@ -319,11 +351,7 @@ class BookResources {
         callers: CallerLookup,
         lookup: ReviewLookup,
     ): MountedResource<Map<String, Any?>> =
-        MountedResource(
-            "/books",
-            setOf(CrudOperation.LIST, CrudOperation.COUNT, CrudOperation.GET, CrudOperation.DELETE, CrudOperation.BULK_DELETE),
-            CrudResource(Books.RULES, Books.POLICY, store, callers, listOf(reviews(lookup))),
-        )
+        MountedResource("/books", CrudOperation.entries.toSet(), CrudResource(Books.RULES, Books.POLICY, store, callers, listOf(reviews(lookup))))
 }
 
 @RestController
@@ -342,6 +370,24 @@ class BookController(
         @PathVariable("id") id: String,
         request: HttpServletRequest,
     ): Map<String, Any?> = CrudMvc.get(books.resource, id, request)
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    fun create(
+        @RequestBody(required = false) body: String?,
+    ): Map<String, Any?> = CrudMvc.create(books.resource, body)
+
+    @PatchMapping("/{id}")
+    fun update(
+        @PathVariable("id") id: String,
+        @RequestBody(required = false) body: String?,
+    ): Map<String, Any?> = CrudMvc.update(books.resource, id, body)
+
+    @PutMapping("/{id}")
+    fun replace(
+        @PathVariable("id") id: String,
+        @RequestBody(required = false) body: String?,
+    ): Map<String, Any?> = CrudMvc.replace(books.resource, id, body)
 
     @DeleteMapping("/{id}")
     fun delete(
@@ -364,17 +410,30 @@ route's `EndpointDeclaration` from the policy the resource enforces — the perm
 
 | `CrudOperation` | Route | Action | Handler |
 |---|---|---|---|
-| `CREATE` | `POST <prefix>` | create | the application's, calling `create` |
+| `CREATE` | `POST <prefix>` | create | `CrudMvc.create(resource, body)`: the inserted item; the controller states `201` |
 | `BULK_DELETE` | `POST <prefix>/bulk-delete` | delete | `CrudMvc.bulkDelete(resource, body)`: the body is exactly `{"ids":[…]}` with string ids, duplicate keys refused; anything else is `400 malformed_body` |
 | `COUNT` | `GET <prefix>/count` | read | `CrudMvc.count(resource, request)` |
 | `LIST` | `GET <prefix>` | read | `CrudMvc.list(resource, request)` |
 | `GET` | `GET <prefix>/{id}` | read | `CrudMvc.get(resource, id, request)` |
-| `UPDATE` | `PATCH <prefix>/{id}` | update | the application's, calling `update` |
-| `REPLACE` | `PUT <prefix>/{id}` | update | the application's |
+| `UPDATE` | `PATCH <prefix>/{id}` | update | `CrudMvc.update(resource, id, body)`: writes the fields the body names |
+| `REPLACE` | `PUT <prefix>/{id}` | update | `CrudMvc.replace(resource, id, body)`: states every field of `replaceable`; an absent one is refused, never written as NULL |
 | `DELETE` | `DELETE <prefix>/{id}` | delete | `CrudMvc.delete(resource, id)` |
 
-Refusals are `Fault`s and render as problem+json through rain-web's exception handler. `CrudMvc.bulkDelete` reads the
-body before the resource checks the caller, so a body it cannot read is `400 malformed_body` for any caller.
+A write body (`CrudBodies.write`) is one JSON object whose members are field names. A body that is not JSON, not one
+object, names a member twice or has anything after the object is `400 malformed_body`. Each value is JSON `null` or the
+JSON type of its field's kind, spelled as [query dialect v1](#values) spells the kind:
+
+| Kind | JSON value |
+|---|---|
+| `TEXT` | a string |
+| `BOOLEAN` | `true` or `false` |
+| `INT`, `LONG` | a number without fraction or exponent, within the kind's range: `1.0` is refused |
+| `DECIMAL` | a number with an optional fraction and no exponent: `1e3` is refused |
+| `UUID`, `TIMESTAMP`, `DATE` | a string in the dialect's spelling |
+
+Refusals are `Fault`s and render as problem+json through rain-web's exception handler. Every `CrudMvc` helper hands the
+resource its input unread, so an anonymous caller is `401` and a caller without the permission `403` whatever body or
+identifier it sent.
 
 ## Declaration problems
 
@@ -385,15 +444,20 @@ starts — and throw `ConfigurationProblemsException` naming every problem at on
 |---|---|---|
 | `crud:<resource>.relations` | `contradicts` | a relation name declared more than once |
 | `crud:<resource>.writable` | `invalid` | `writable` grants a name that is not a field |
+| `crud:<resource>.writable` | `contradicts` | `writable` grants the version, which the store writes |
+| `crud:<resource>.reader` | `invalid` | the store's reader reads a name that is not a field |
+| `crud:<resource>.reader` | `contradicts` | `selectable` is not `None` and does not grant a field other than the identifier the reader reads, so no `fields` selection could be answered |
 | `crud:<resource>.selectable` | `invalid` | `selectable` grants a name that is not a field |
 | `crud:<resource>.includable` | `invalid` | `includable` grants a name that is not a relation |
 | `crud:<resource>.shapes` | `contradicts` | a shape declared more than once; the same filters in another order are the same shape |
-| `crud:<resource>.shapes` | `invalid` | a shape that filters by a name that is not a field, applies an operator the field does not take, has more filters than `maxFilterTerms`, sorts by more terms than `maxSortTerms`, or sorts by a name that is not a field or by a nullable field (a cursor cannot page by it) |
+| `crud:<resource>.shapes` | `invalid` | a shape that filters by a name that is not a field, applies an operator the field does not take, has more filters than `maxFilterTerms`, sorts by more terms than `maxSortTerms`, or sorts by a name that is not a field, by a nullable field (a cursor cannot page by it), or by a field `selectable` does not grant (a cursor carries its values) |
 | `crud:<resource>.mount` | `invalid` | a prefix that does not match `^(/[A-Za-z0-9._~-]+)+$`, or no operation |
-| `crud:<resource>.mount` | `contradicts` | an operation whose action the policy declares no access for; `LIST` or `COUNT` on a resource without shapes; `COUNT` without a count cap |
+| `crud:<resource>.mount` | `contradicts` | an operation whose action the policy declares no access for; `LIST` or `COUNT` on a resource without shapes; `COUNT` without a count cap; `UPDATE` or `REPLACE` on a resource whose `replaceable` is empty |
 
 A malformed single value — a field or column name, a `Pagination` or `QueryLimits` number outside its range, an empty
-`FieldGrant.Only`, a repeated sort term — is an `IllegalArgumentException` where it is written. A scope predicate that
+`FieldGrant.Only`, a repeated sort term, a version that is not a non-nullable `LONG` field of the schema, a
+`JooqResourceStore` reader reading a field its schema does not declare — is an `IllegalArgumentException` where it is
+written. A scope predicate that
 reads a field the schema does not declare is an `IllegalStateException` on the first operation that applies it.
 
 Which indexes a shape needs is not a declaration problem: the [plan proof](#the-plan-proof) decides it against the
@@ -432,7 +496,7 @@ matching, no case folding.
 | `limit` | yes | refused | refused | the page size, `1..maxLimit`; absent serves `defaultLimit` |
 | `offset` | yes | refused | refused | selects an offset page; not with `cursor` |
 | `cursor` | yes | refused | refused | continues a cursor page |
-| `fields` | yes | refused | yes | comma-separated names; the identifier is always returned |
+| `fields` | yes | refused | yes | comma-separated names `selectable` grants; the identifier is always returned |
 | `include` | yes | refused | yes | comma-separated relation names |
 | `count` | yes | yes | refused | the one value `capped` |
 
@@ -497,6 +561,11 @@ each as its kind's canonical string (an `Instant` or `LocalDate` in ISO form, a 
 strict: exactly those four members, no duplicate member, and every key re-encodes to the text it was read from. A cursor
 presented with another sort is refused, because it was made for other columns.
 
+A cursor is readable, and a caller can rewrite its keys. Its keys are values of sort fields, and every sort field of every
+shape is selectable, so a cursor shows nothing the caller could not select. A rewritten cursor only moves where a page
+starts: the page is still read within the caller's scope, the request's filters and its `fields`
+(`TamperedCursorNeverWidensReadIT`).
+
 ### Count
 
 `count=capped` on a list adds a count to the page; `GET /count` answers only the count. Both need a declared `countCap`.
@@ -534,9 +603,10 @@ A request is refused in this order, and each step names every problem it finds: 
 | `sort`, `fields` or `include` malformed | `bad_query` | `/sort`, `/fields`, `/include` `bad_query` |
 | more than `maxSortTerms`, `maxFields` or `maxIncludes` | `bad_query` | the parameter, `out_of_range` |
 | `sort` or `fields` names no field; `include` names no relation | `bad_query` | the parameter, `unknown_field` |
-| `fields` names a field `selectable` does not grant; `include` a relation `includable` does not | `bad_query` | the parameter, `field_not_granted` |
+| `fields` names a field `selectable` does not grant, the identifier included; `include` a relation `includable` does not | `bad_query` | the parameter, `field_not_granted` |
+| `fields` leaves out a field the store's reader reads (`CrudStore.itemFields`) | `bad_query` | `/fields` `required`, one per field |
 | `count` other than `capped` | `bad_query` | `/count` `invalid_format` |
-| `count=capped` without a count cap | `bad_query` | `/count` `not_offered` |
+| `count=capped`, or the count route, without a count cap | `bad_query` | `/count` `not_offered` |
 | a parameter the operation has no use for (see the table above) | `bad_query` | the parameter, `bad_query` |
 | no declared shape is the request | `not_offered` | — |
 | a cursor that cannot be read or was made for another order | `invalid_cursor` | `/cursor` `invalid_cursor` |
@@ -561,7 +631,7 @@ can never serve that way are not part of the dialect:
 `DroppedOperatorsNeverBoundedIT` holds the evidence. It renders each of these conditions over a table that carries every
 index that could serve it — b-trees, `text_pattern_ops` b-trees (plain and lower-cased), trigram GIN and GiST indexes
 (plain and lower-cased) and a btree_gist index — and explains a page in identifier order, a page in the filtered field's
-order and a capped count on PostgreSQL 18: plan criterion v2 accepts none of them, while `eq`, `gte` and `in` over the same
+order and a capped count on PostgreSQL 18: plan criterion v3 accepts none of them, while `eq`, `gte` and `in` over the same
 table are bounded. A request with one of these operators is `unknown_operator`; `search` is `unknown_parameter`.
 
 ## Responses
@@ -627,6 +697,11 @@ An item, `GET /books/{id}?include=reviews`:
 ```
 
 `DELETE /books/{id}` answers `{"deleted":1}`, and the same delete again is `404 not_found`.
+`POST /books` with a write body answers `201` and the inserted item; `PATCH /books/{id}` with `{"pages":500}` answers the
+whole written item, and `PUT /books/{id}` the same for a body stating every writable field. A refused write body names
+every problem, e.g. `422 validation_failed` with `/colour` `unknown_field`, `/copies` `invalid_format` and `/shelf`
+`required` together (`CrudWriteHttpTest`).
+
 `POST /books/bulk-delete` with `{"ids":["…","…"]}` answers how many rows in the caller's scope were deleted:
 
 ```json
@@ -636,9 +711,10 @@ An item, `GET /books/{id}?include=reviews`:
 ## The plan proof
 
 The pagination bounds the rows a statement returns; the shapes and the application's indexes bound the rows it examines.
-`CrudPlanProof`, version 1, in rain-crud's test fixtures, explains every statement a resource can run for its declared
-shapes against the application's database and judges each plan by criterion v2 of rain-test's
-[`QueryPlan.boundedScan`](test.md#plan-criterion-v2) over the resource's table.
+`CrudPlanProof`, version 2, in rain-crud's test fixtures, explains every statement the store runs for each mounted
+operation of a resource — its declared shapes' pages and counts, and its statements by identifier — against the
+application's database under every stated scope, and judges each plan by criterion v3 of rain-test's
+[`QueryPlan.boundedScan`](test.md#plan-criterion-v3) over the resource's schema-qualified table.
 
 ### Running it
 
@@ -658,7 +734,7 @@ class BooksPlanProofIT {
         val result =
             CrudPlanProof.verify(
                 store,
-                books,
+                MountedResource("/books", CrudOperation.entries.toSet(), books),
                 listOf(
                     ProofScope("everything", RowScope.Everything),
                     ProofScope("shelf a", RowScope.Matching(Predicate.eq(Books.SHELF, "a"))),
@@ -671,14 +747,15 @@ class BooksPlanProofIT {
 }
 ```
 
-`verify(store, resource, scopes, dataSource)` takes the resource's own `JooqResourceStore`, the resource built from the
-declarations the application serves, and at least one `ProofScope(name, scope)` — typically one per scope rule, for a
+`verify(store, mounted, scopes, dataSource)` takes the resource's own `JooqResourceStore`, the `MountedResource` the
+application serves — the proof explains exactly the statements of its mounted operations — and at least one
+`ProofScope(name, scope)` — typically one per scope rule, for a
 representative caller — each named once. The caller lookup is never asked.
 
 | Result | What it holds |
 |---|---|
-| `PlanProofResult.statements` | every `ProvenStatement`: shape, scope name, `StatementKind`, the values it was rendered with, the SQL |
-| `PlanProofResult.findings` | every `PlanFinding`: the statement, every reason criterion v2 gives, the plan JSON |
+| `PlanProofResult.statements` | every `ProvenStatement`: shape (`null` for a statement by identifier), scope name, `StatementKind`, the values it was rendered with, the SQL |
+| `PlanProofResult.findings` | every `PlanFinding`: the statement, every reason criterion v3 gives, the plan JSON |
 | `assertBounded()` | fails with `<n> of <m> statements are not bounded by their plans:` and every finding |
 
 ```
@@ -705,17 +782,26 @@ production data. A migration that seeds rows into the table makes the proof not 
 
 ### What it enumerates
 
-For every declared shape (declaration order) × stated scope (stated order) × `StatementKind` (enum order) × value
+First, for every declared shape (declaration order) × stated scope (stated order) × `StatementKind` (enum order) × value
 variant, the proof renders the statement the resource runs — through `PageReads`, `JooqResourceStore.readQuery` and
-`countQuery`, which `CrudResource` uses too — with its values inlined, and explains it with `QueryPlans.explain`.
+`countQuery`, which `CrudResource` uses too — with its values inlined, and explains it with `QueryPlans.explain`. Then,
+for every stated scope × `StatementKind` × variant, it renders the statements addressed by identifier through the store's
+`findQuery`, `insertQuery`, `updateQuery`, `inScopeQuery`, `deleteQuery` and `deleteManyQuery`, keyed by the
+representative `UUID` at ordinal 0 (a bulk list by ordinals 0, 1, …).
 
 | `StatementKind` | Statement | When |
 |---|---|---|
-| `FIRST_PAGE` | the first cursor page of `maxLimit` rows | always |
-| `SEEK_FORWARD` | the cursor page after a row | always |
-| `SEEK_BACKWARD` | the cursor page before a row, read nearest-first in the inverted order | always |
-| `OFFSET_PAGE` | the page of `min(maxLimit, maxOffset)` rows ending at `maxOffset` | `maxOffset ≥ 1` |
-| `CAPPED_COUNT` | the capped count | a count cap is declared |
+| `FIRST_PAGE` | the first cursor page of `maxLimit` rows | `LIST` mounted |
+| `SEEK_FORWARD` | the cursor page after a row | `LIST` mounted |
+| `SEEK_BACKWARD` | the cursor page before a row, read nearest-first in the inverted order | `LIST` mounted |
+| `OFFSET_PAGE` | the page of `min(maxLimit, maxOffset)` rows ending at `maxOffset` | `LIST` mounted, `maxOffset ≥ 1` |
+| `CAPPED_COUNT` | the capped count | `LIST` or `COUNT` mounted, a count cap declared |
+| `ITEM` | one item by identifier | `GET` mounted |
+| `INSERT` | the insert of the identifier and every other field `writable` grants | `CREATE` mounted |
+| `UPDATE` | the update by identifier of every field of `replaceable`, stating version 1 on a versioned resource | `UPDATE` or `REPLACE` mounted |
+| `ROW_IN_SCOPE` | `SELECT id WHERE id = ? AND` scope | `CREATE` mounted under a scope; `UPDATE` or `REPLACE` mounted under a scope or on a versioned resource |
+| `DELETE` | the delete by identifier | `DELETE` mounted |
+| `BULK_DELETE` | the delete of one identifier and of `maxBulkIds` identifiers | `BULK_DELETE` mounted |
 
 The value variants of a shape are every combination of each filter's variants:
 
@@ -726,8 +812,8 @@ The value variants of a shape are every combination of each filter's variants:
 | `isnull` | `true` and `false`, its whole domain |
 
 A value is `RepresentativeValues.of(kind, ordinal)` at ordinal 0, then 1, 2 … along an `in` list; a seek is keyed by the
-ordinal-0 value of each order field. An `eq` filter, and the first value of an `in` filter, instead take the value the
-stated scope pins the same field to — an `eq`, or an `in` with one value, among the scope's top-level conjuncts — because
+ordinal-0 value of each order field. An `eq` filter, the first value of an `in` filter and a written field instead take
+the value the stated scope pins the same field to — an `eq`, or an `in` with one value, among the scope's top-level conjuncts — because
 two constants equated to one column make PostgreSQL plan a statement that reads nothing, which no request runs.
 
 | Kind | Value at ordinal *n* |
@@ -740,12 +826,13 @@ two constants equated to one column make PostgreSQL plan a statement that reads 
 | `DATE` | `2000-01-01` plus *n* days |
 
 The books resource declares 12 shapes; `filter[title][in]` and `filter[price][isnull]` have two variants each, so each
-scope has 14 variants × 5 kinds, and the two scopes 140 statements. Statements addressed by identifier — an item, an
-update, a delete, a bulk write — are not part of the proof.
+scope has 14 variants × 5 kinds, and the two scopes 140 statements. Mounted with every operation, `everything` adds six
+statements by identifier and `shelf a` seven — its create and update also check the row — 153 in all
+(`PlanProofCoversEveryMountedStatementIT`).
 
 ### What index a shape needs
 
-Criterion v2 accepts a page when the table is read by a b-tree index scan with no `Filter`, every index condition bounds
+Criterion v3 accepts a page when the table is read by a b-tree index scan with no `Filter`, every index condition bounds
 the scanned range, and the `Limit` sits directly above the scan with no `Sort` between them. For a shape under a scope that
 means one index whose key is:
 
@@ -807,6 +894,11 @@ CREATE INDEX books_shelf_price_not_null_id ON public.books (shelf, id) WHERE pri
 | `filter[publishedOn][eq]` | `(published_on, id)` | `(shelf, published_on, id)` |
 | `filter[price][isnull]` | `(id) WHERE price IS NULL` and `(id) WHERE price IS NOT NULL` | `(shelf, id)` with the same two predicates |
 
+Statements by identifier need no index beyond the primary key. Criterion v3 bounds a scan whose conditions pin a unique
+key: `WHERE id = ? AND shelf = 'a'` reads at most one entry even through `books_shelf_id (shelf, id)`, which PostgreSQL
+prefers to the primary key, and `id IN (…)` of `maxBulkIds` identifiers reads at most that many. A table whose identifier
+has no unique index makes every statement by identifier that reads it a finding.
+
 Worked through for `filter[shelf][eq]` with `sort=-createdAt` under the scope `shelf a`, where `maxLimit` is 50,
 `maxOffset` 1000 and the count cap 50. The effective order is `created_at DESC, id DESC`; the scope and the pinned filter
 both compare `shelf = 'a'`:
@@ -836,9 +928,11 @@ offset page — whether the table holds ten rows or ten million. Without `books_
 | `unknown_operator` | this is not an operator of the query dialect | a violation at `/filter/<field>/<op>` |
 | `invalid_cursor` | the cursor cannot continue this query | `400`, with a violation at `/cursor` |
 | `not_offered` | this resource does not offer that | `400` for a request no declared shape is; a violation at `/count` when no count cap is declared |
+| `outside_scope` | the row would be outside the rows you may reach | `403` for a write whose row, as stored, would be outside the caller's scope |
 
 rain-crud also answers with rain-core's `unauthenticated`, `forbidden`, `not_found`, `unknown_parameter`, `bad_query`,
-`bad_request`, `unknown_field`, `invalid_format`, `out_of_range`, `invalid_id`, `malformed_body` and `validation_failed`
+`unknown_field`, `invalid_format`, `out_of_range`, `required`, `invalid_id`, `malformed_body`, `validation_failed` and
+`stale_version`
 ([rain-core](core.md#error-codes)).
 
 ## Scale guarantees
@@ -852,13 +946,15 @@ rain-crud also answers with rain-core's `unauthenticated`, `forbidden`, `not_fou
 - Finding a request's shape, a field and a relation is a map lookup, whatever the number of shapes, fields or relations.
 - A relation is attached once per page, over at most `limit` items.
 - A permission check asks only about the permissions the operation needs.
-- A write by identifier is one statement addressed by the identifier within the scope; a bulk write is one statement over
-  at most `maxBulkIds` identifiers.
+- A write by identifier is one statement addressed by the identifier within the scope, and at most one more by identifier
+  to check the row against the scope or to tell a stale version; a bulk write is one statement over at most `maxBulkIds`
+  identifiers, and a bulk update at most one more over the identifiers it wrote. The plan proof proves the statements of
+  every mounted operation bounded.
 - A query is at most `maxFilterTerms` filters, `maxInValues` values per `in`, `maxSortTerms` sort terms, `maxFields`
   fields and `maxIncludes` relations.
 
-`CursorPagingIT`, `KeysetTieBreakIT`, `CappedCountIT`, `ScopedUpdateDeleteIT` and the plan-proof tests hold these against
-PostgreSQL.
+`CursorPagingIT`, `KeysetTieBreakIT`, `CappedCountIT`, `ScopedUpdateDeleteIT`, `ScopedCreateIT` and the plan-proof tests
+hold these against PostgreSQL.
 
 ## What it does not do
 
@@ -866,8 +962,9 @@ PostgreSQL.
 - It never serves the nearest shape, clamps a limit, assumes a zone or tries a second spelling of a value.
 - It creates no index and no migration, and it does not run the plan proof at start-up; the application's tests do.
 - It does not state which plan PostgreSQL chooses on production data.
-- It mounts no route and reads no write body; create, update and replace handlers are the application's.
-- It does not confine a create to the caller's scope, and it checks no version on update.
-- It does not encrypt or authenticate cursors: a cursor is readable JSON carrying its boundary row's order values, whatever
-  `fields` selected, and only a cursor made for the request's order is accepted.
+- It mounts no route: the routes are the application's request mappings, each one line over `CrudMvc`.
+- It does not check a version on a bulk update.
+- It does not encrypt or authenticate cursors: a cursor is readable JSON carrying its boundary row's values of sort
+  fields, all of them selectable; only a cursor made for the request's order is accepted, and a rewritten one never reads
+  outside the scope, the filters or `fields`.
 - It reads no security context; the caller comes from `CallerLookup`.

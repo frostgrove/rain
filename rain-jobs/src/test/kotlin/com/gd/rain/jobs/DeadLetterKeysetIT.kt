@@ -111,7 +111,7 @@ class DeadLetterKeysetIT {
         assertThat(all.usesIndex("ix_job_invocation_dead_letters")).describedAs(all.json).isTrue()
         assertThat(one.usesIndex("ix_job_invocation_dead_letters_definition")).describedAs(one.json).isTrue()
         listOf(all, one).forEach { plan ->
-            assertThat(plan.boundedScan("job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+            assertThat(plan.boundedScan("rain_jobs", "job_invocation")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
         }
     }
 }

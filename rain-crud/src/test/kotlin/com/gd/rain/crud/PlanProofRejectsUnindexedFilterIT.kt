@@ -7,6 +7,8 @@ import com.gd.rain.crud.proof.StatementKind
 import com.gd.rain.crud.query.Operator
 import com.gd.rain.crud.query.QueryShape
 import com.gd.rain.crud.query.SortKey
+import com.gd.rain.crud.web.CrudOperation
+import com.gd.rain.crud.web.MountedResource
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Tag
@@ -20,7 +22,11 @@ class PlanProofRejectsUnindexedFilterIT {
     private fun proof(vararg shapes: QueryShape): PlanProofResult =
         CrudPlanProof.verify(
             database.store,
-            CrudResource(Books.rules(shapes = shapes.toList()), Books.policy(), database.store, SwitchableCallers(), emptyList()),
+            MountedResource(
+                "/books",
+                setOf(CrudOperation.LIST, CrudOperation.COUNT),
+                CrudResource(Books.rules(shapes = shapes.toList()), Books.policy(), database.store, SwitchableCallers(), emptyList()),
+            ),
             listOf(ProofScope("everything", RowScope.Everything)),
             database.dataSource,
         )
@@ -29,7 +35,7 @@ class PlanProofRejectsUnindexedFilterIT {
     fun `a filter on a column no index holds is a Filter in every statement`() {
         val result = proof(QueryShape.of(SortKey.parse("-createdAt"), "copies" to Operator.GTE))
 
-        assertThat(result.findings.map { it.statement.kind }).containsExactly(*StatementKind.entries.toTypedArray())
+        assertThat(result.findings.map { it.statement.kind }).containsExactly(*SHAPE_KINDS)
         result.findings.forEach { finding ->
             assertThat(finding.reasons).describedAs("%s", finding).anyMatch { it.contains("carries a Filter") && it.contains("copies") }
         }

@@ -132,7 +132,10 @@ public class QueryRules(
      * Every way these rules disagree with [schema] and the resource's [relations], all at once: a grant
      * naming a field or relation that is not declared, a shape declared twice, and a shape that filters by an
      * undeclared field, applies an operator its field's kind does not take, has more filters or sort terms
-     * than the limits allow, or sorts by an undeclared or nullable field.
+     * than the limits allow, or sorts by an undeclared or nullable field or by one [selectable] does not grant.
+     *
+     * A sort field must be selectable because a cursor carries the boundary row's value of every sort field in
+     * the clear: what a caller may select is then all a cursor can show it.
      */
     public fun problems(
         schema: ResourceSchema,
@@ -194,6 +197,14 @@ public class QueryRules(
                         problem(
                             "shapes",
                             "shape $shape sorts by ${term.field}, which is nullable; a cursor cannot page by it",
+                        )
+                    }
+
+                    !selectable.grants(term.field) -> {
+                        problem(
+                            "shapes",
+                            "shape $shape sorts by ${term.field}, which selectable does not grant; a cursor carries the value of " +
+                                "every sort field",
                         )
                     }
                 }

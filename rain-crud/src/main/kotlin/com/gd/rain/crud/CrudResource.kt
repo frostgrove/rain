@@ -101,12 +101,35 @@ public object CrudIds {
 }
 
 /**
+ * The values of one write, keyed by field name and carried as their kinds' types, and the [violations] found while
+ * reading them from a request (a name that is no field, a value that does not read), which the resource refuses
+ * together with its own.
+ */
+public class WriteInput(
+    values: Map<String, Any?>,
+    violations: List<Violation>,
+) {
+    public val values: Map<String, Any?> = LinkedHashMap(values)
+    public val violations: List<Violation> = violations.toList()
+
+    public companion object {
+        /** Values an application states itself, with nothing refused while reading them. */
+        public fun of(values: Map<String, Any?>): WriteInput = WriteInput(values, emptyList())
+    }
+}
+
+/**
  * A declared resource: its rules, its policy and its store, one layer above any transport.
  *
- * Every operation first authenticates and authorizes the caller against the policy — before any
- * shortcut, so an empty id list still needs the permission — then confines itself to the policy's scope
- * for that caller. Reads, counts, updates and deletes all carry the scope: a row outside it is not found,
- * and a bulk operation does not count it.
+ * Every operation first authenticates and authorizes the caller against the policy — before it reads any input:
+ * an identifier, a query, a write body, an empty id list — then confines itself to the policy's scope for that
+ * caller. Reads, counts, updates and deletes all carry the scope: a row outside it is not found, and a bulk
+ * operation does not count it. A write that leaves a row behind — a create, an update, a replacement, a bulk update —
+ * leaves it inside the scope, as the database decides it in the write's transaction, or it writes nothing and is
+ * `403 outside_scope`.
+ *
+ * The operations that take their input as a function (`create { … }`, `update(id) { … }`, `bulkDelete { … }`) call
+ * it only once the caller is authorized, so a transport reads a request body after the caller is known.
  *
  * A list or a count is answered only for a query shape the rules declare ([com.gd.rain.crud.query.QueryShape]).
  * Lists page by keyset first. A cursor page reads `limit + 1` rows in the effective order (inverted for a
@@ -127,6 +150,13 @@ public class CrudResource<T>(
 
     private val relations: Map<String, ResourceRelation<T>> = relations.associateBy(ResourceRelation<T>::name)
 
+    /**
+     * The fields a write by identifier may state: every field `writable` grants except the identifier and the version.
+     * A replacement states every one of them.
+     */
+    public val replaceable: List<SchemaField> =
+        schema.fields.filter { it != schema.id && it != schema.version && policy.writable.grants(it.name) }
+
     private val compiler: QueryCompiler
 
     init {
@@ -140,10 +170,35 @@ public class CrudResource<T>(
             writable.names.filter { schema.field(it) == null }.sorted().forEach {
                 problems += ConfigurationProblem("crud:${schema.name}.writable", ProblemCode.INVALID, "grants $it, which is not a field")
             }
+            schema.version?.takeIf { it.name in writable.names }?.let {
+                problems +=
+                    ConfigurationProblem(
+                        "crud:${schema.name}.writable",
+                        ProblemCode.CONTRADICTS,
+                        "grants ${it.name}, the version, which the store writes",
+                    )
+            }
+        }
+        store.itemFields.filterNot(schema::owns).map(SchemaField::name).sorted().forEach {
+            problems += ConfigurationProblem("crud:${schema.name}.reader", ProblemCode.INVALID, "reads $it, which is not a field")
+        }
+        if (rules.selectable != FieldGrant.None) {
+            store.itemFields
+                .filter { schema.owns(it) && it != schema.id && !rules.selectable.grants(it.name) }
+                .map(SchemaField::name)
+                .sorted()
+                .forEach {
+                    problems +=
+                        ConfigurationProblem(
+                            "crud:${schema.name}.reader",
+                            ProblemCode.CONTRADICTS,
+                            "reads $it, which selectable does not grant, so no fields selection could be answered",
+                        )
+                }
         }
         problems += rules.problems(schema, this.relations.keys)
         if (problems.isNotEmpty()) throw ConfigurationProblemsException(problems)
-        compiler = QueryCompiler(schema, rules, this.relations.keys)
+        compiler = QueryCompiler(schema, rules, this.relations.keys, store.itemFields)
     }
 
     public val relationNames: Set<String> get() = relations.keys
@@ -178,35 +233,79 @@ public class CrudResource<T>(
         return attach(listOf(item), plan.includes).single()
     }
 
-    public fun create(values: Map<String, Any?>): T {
-        authorize(Action.CREATE)
-        checkWritable(values)
-        return store.insert(values)
+    /** Inserts [values]; see [create] with an input function. */
+    public fun create(values: Map<String, Any?>): T = create { WriteInput.of(values) }
+
+    /**
+     * Inserts the values [input] answers, read once the caller is authorized. The values name only writable fields and
+     * never the version; the inserted row is in the caller's scope or nothing is inserted (`403 outside_scope`).
+     */
+    public fun create(input: () -> WriteInput): T {
+        val caller = authorize(Action.CREATE)
+        val values = checkedWrite(input(), WriteKind.CREATE)
+        return when (val outcome = store.insert(scopeFor(caller), values)) {
+            is InsertOutcome.Inserted -> outcome.item
+            is InsertOutcome.OutsideScope -> throw outsideScope()
+        }
     }
 
-    /** Writes [values] to the row [id] within the caller's scope; `404` when there is no such row. An empty write reads the row. */
+    /** Writes [values] to the row [id]; see [update] with an input function. */
     public fun update(
         id: UUID,
         values: Map<String, Any?>,
+    ): T = updateAs(authorize(Action.UPDATE), id, WriteInput.of(values), WriteKind.UPDATE)
+
+    /**
+     * Writes the values [input] answers to the row [id] (as the wire spells it) within the caller's scope: at least one
+     * writable field, never the identifier, and the version the row was read at when the schema declares one. `404` when
+     * no such row is in the scope, `409 stale_version` when its version is another, `403 outside_scope` when the row
+     * written would leave the scope. The identifier is read, and then [input], once the caller is authorized.
+     */
+    public fun update(
+        id: String,
+        input: () -> WriteInput,
     ): T {
         val caller = authorize(Action.UPDATE)
-        checkWritable(values)
-        val scope = scopeFor(caller)
-        val written = if (values.isEmpty()) store.find(id, scope, Projection.Full) else store.update(id, scope, values)
-        return written ?: throw Fault.notFound()
+        val identifier = CrudIds.parse(id, ID_PATH)
+        return updateAs(caller, identifier, input(), WriteKind.UPDATE)
     }
 
-    /** Writes the non-empty [values] to the rows among [ids] within the caller's scope; answers how many were written. */
+    /** Replaces the row [id] with [values]; see [replace] with an input function. */
+    public fun replace(
+        id: UUID,
+        values: Map<String, Any?>,
+    ): T = updateAs(authorize(Action.UPDATE), id, WriteInput.of(values), WriteKind.REPLACE)
+
+    /**
+     * Replaces the row [id] with the values [input] answers: an [update] that states every field of [replaceable] — an
+     * absent one is `422 required`, never written as NULL. Fields `writable` does not grant keep their values.
+     */
+    public fun replace(
+        id: String,
+        input: () -> WriteInput,
+    ): T {
+        val caller = authorize(Action.UPDATE)
+        val identifier = CrudIds.parse(id, ID_PATH)
+        return updateAs(caller, identifier, input(), WriteKind.REPLACE)
+    }
+
+    /**
+     * Writes the values to the rows among [ids] within the caller's scope, without a version check (a versioned row's
+     * version still rises); answers how many were written. `403 outside_scope`, writing nothing, when a row written
+     * would leave the scope.
+     */
     public fun updateMany(
         ids: Set<UUID>,
         values: Map<String, Any?>,
     ): Long {
         val caller = authorize(Action.UPDATE)
-        require(values.isNotEmpty()) { "a bulk update writes at least one field" }
-        checkWritable(values)
+        val checked = checkedWrite(WriteInput.of(values), WriteKind.BULK_UPDATE)
         checkBulk(ids.size)
         if (ids.isEmpty()) return 0
-        return store.updateMany(ids, scopeFor(caller), values)
+        return when (val outcome = store.updateMany(ids, scopeFor(caller), checked)) {
+            is BulkUpdateOutcome.Updated -> outcome.count
+            is BulkUpdateOutcome.OutsideScope -> throw outsideScope()
+        }
     }
 
     /** Deletes the row [id] within the caller's scope; `404` when there is no such row. */
@@ -227,9 +326,13 @@ public class CrudResource<T>(
         return deleteManyAs(caller, ids)
     }
 
-    /** [deleteMany] for ids as the wire spells them, each refused at `/ids/<index>` when it is not canonical. */
-    public fun bulkDelete(ids: List<String>): Long {
+    /**
+     * [deleteMany] for the ids [input] answers as the wire spells them, read once the caller is authorized: at most
+     * `maxBulkIds` (`400 bad_query` at `/ids`), each refused at `/ids/<index>` when it is not canonical.
+     */
+    public fun bulkDelete(input: () -> List<String>): Long {
         val caller = authorize(Action.DELETE)
+        val ids = input()
         checkBulk(ids.size)
         val refused =
             ids.indices
@@ -237,6 +340,24 @@ public class CrudResource<T>(
                 .map { Violation.at(path(BULK_IDS, it), RainErrorCodes.INVALID_ID) }
         if (refused.isNotEmpty()) throw Fault(FaultKind.BAD_REQUEST, RainErrorCodes.INVALID_ID, violations = refused)
         return deleteManyAs(caller, ids.mapTo(LinkedHashSet()) { checkNotNull(ResourceSchema.canonicalUuid(it)) })
+    }
+
+    private fun updateAs(
+        caller: Caller.Authenticated,
+        id: UUID,
+        input: WriteInput,
+        kind: WriteKind,
+    ): T {
+        val values = checkedWrite(input, kind)
+        val version = schema.version
+        val expected = version?.let { values.getValue(it.name) as Long }
+        val written = if (version == null) values else values - version.name
+        return when (val outcome = store.update(id, scopeFor(caller), written, expected)) {
+            is UpdateOutcome.Updated -> outcome.item
+            is UpdateOutcome.NotFound -> throw Fault.notFound()
+            is UpdateOutcome.StaleVersion -> throw Fault.conflict(RainErrorCodes.STALE_VERSION)
+            is UpdateOutcome.OutsideScope -> throw outsideScope()
+        }
     }
 
     private fun deleteAs(
@@ -313,8 +434,7 @@ public class CrudResource<T>(
         scope: RowScope,
         filter: Predicate?,
     ): CappedCount {
-        val cap =
-            rules.pagination.countCap ?: throw Fault(FaultKind.BAD_REQUEST, RainCrudErrorCodes.NOT_OFFERED, "this resource offers no count")
+        val cap = checkNotNull(rules.pagination.countCap) { "a count is compiled only for a resource that declares a count cap" }
         return CappedCount.of(store.countUpTo(scope, filter, cap), cap)
     }
 
@@ -358,24 +478,90 @@ public class CrudResource<T>(
             }
         }
 
-    private fun checkWritable(values: Map<String, Any?>) {
-        val violations =
-            values.keys.sorted().mapNotNull { name ->
+    /**
+     * Every problem of a write, refused together as `422 validation_failed` with the violations its input carried: a
+     * name that is no field; the identifier in a write by identifier; the version in a create or a bulk update, or its
+     * absence (or NULL) in an update or a replacement; a field `writable` does not grant; NULL for a field that is not
+     * nullable; a replacement without a field of [replaceable]; an update that states no field.
+     */
+    private fun checkedWrite(
+        input: WriteInput,
+        kind: WriteKind,
+    ): Map<String, Any?> {
+        val values = input.values
+        val violations = input.violations.toMutableList()
+        val version = schema.version
+        values.keys.sorted().forEach { name ->
+            val field = schema.field(name)
+            val value = values[name]
+            val problem =
                 when {
-                    schema.field(name) == null -> Violation.at(path(name), RainErrorCodes.UNKNOWN_FIELD, "is not a field of this resource")
-                    !policy.writable.grants(name) -> Violation.at(path(name), RainCrudErrorCodes.FIELD_NOT_GRANTED, "is not writable")
-                    else -> null
+                    field == null -> {
+                        RainErrorCodes.UNKNOWN_FIELD to "is not a field of this resource"
+                    }
+
+                    field == version -> {
+                        when {
+                            kind == WriteKind.CREATE || kind == WriteKind.BULK_UPDATE -> {
+                                RainCrudErrorCodes.FIELD_NOT_GRANTED to "is the version, which the store writes"
+                            }
+
+                            value == null -> {
+                                RainErrorCodes.REQUIRED to VERSION_REQUIRED
+                            }
+
+                            else -> {
+                                null
+                            }
+                        }
+                    }
+
+                    field == schema.id && kind != WriteKind.CREATE -> {
+                        RainCrudErrorCodes.FIELD_NOT_GRANTED to "is the identifier, which a write by identifier does not change"
+                    }
+
+                    !policy.writable.grants(name) -> {
+                        RainCrudErrorCodes.FIELD_NOT_GRANTED to "is not writable"
+                    }
+
+                    value == null && !field.nullable -> {
+                        RainErrorCodes.REQUIRED to "is not nullable"
+                    }
+
+                    else -> {
+                        null
+                    }
                 }
+            problem?.let { (code, message) -> violations += Violation.at(path(name), code, message) }
+        }
+        val pointed = violations.map(Violation::path).toSet()
+        val byIdentifier = kind == WriteKind.UPDATE || kind == WriteKind.REPLACE
+        if (version != null && byIdentifier && version.name !in values && path(version.name) !in pointed) {
+            violations += Violation.at(path(version.name), RainErrorCodes.REQUIRED, VERSION_REQUIRED)
+        }
+        if (kind == WriteKind.REPLACE) {
+            replaceable.filter { it.name !in values && path(it.name) !in pointed }.forEach {
+                violations +=
+                    Violation.at(path(it.name), RainErrorCodes.REQUIRED, "is not stated; a replacement states every writable field")
             }
+        }
+        val stated = values.keys.any { name -> schema.field(name)?.let { it != version && it != schema.id } == true }
+        if (kind != WriteKind.CREATE && !stated && input.violations.isEmpty() && violations.isEmpty()) {
+            violations += Violation.at(emptyList(), RainErrorCodes.REQUIRED, "a write by identifier states at least one field")
+        }
         if (violations.isNotEmpty()) throw Fault.validation(violations)
         WriteValues.check(schema, values)
+        return values
     }
+
+    private fun outsideScope(): Fault =
+        Fault(FaultKind.FORBIDDEN, RainCrudErrorCodes.OUTSIDE_SCOPE, "the row written would be outside the rows this caller may reach")
 
     private fun checkBulk(size: Int) {
         if (size > rules.limits.maxBulkIds) {
             throw Fault(
                 FaultKind.BAD_REQUEST,
-                RainErrorCodes.BAD_REQUEST,
+                RainErrorCodes.BAD_QUERY,
                 violations =
                     listOf(
                         Violation.at(path(BULK_IDS), RainErrorCodes.OUT_OF_RANGE, "names more than ${rules.limits.maxBulkIds} ids"),
@@ -384,8 +570,11 @@ public class CrudResource<T>(
         }
     }
 
+    private enum class WriteKind { CREATE, UPDATE, REPLACE, BULK_UPDATE }
+
     private companion object {
         const val BULK_IDS = "ids"
+        const val VERSION_REQUIRED = "states the version the row was read at"
         val ID_PATH: List<PathStep> = path("id")
     }
 }

@@ -3,7 +3,7 @@ package com.gd.rain.test
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/** How criterion v2 reads PostgreSQL's deparsed `Index Cond` text. */
+/** How criterion v3 reads PostgreSQL's deparsed `Index Cond` text. */
 class IndexConditionsTest {
     private fun read(condition: String): List<String>? =
         IndexConditions.parse(condition)?.map { "${it.columns.joinToString(",")} ${it.kind}" }
@@ -54,7 +54,38 @@ class IndexConditionsTest {
     fun `only an equality against one value is single-valued`() {
         assertThat(checkNotNull(IndexConditions.parse("(books.id = 'x'::uuid)")).single().singleValue).isTrue()
         assertThat(checkNotNull(IndexConditions.parse("(books.shelf = ANY ('{a,b}'::text[]))")).single().singleValue).isFalse()
+        assertThat(checkNotNull(IndexConditions.parse("(books.shelf = ANY ('{a}'::text[]))")).single().singleValue).isFalse()
         assertThat(checkNotNull(IndexConditions.parse("(books.isbn IS NULL)")).single().singleValue).isFalse()
         assertThat(checkNotNull(IndexConditions.parse("(books.pages >= 5)")).single().singleValue).isFalse()
+    }
+
+    private fun values(condition: String): Int? = checkNotNull(IndexConditions.parse(condition)).single().values
+
+    @Test
+    fun `= ANY over an inline array literal equates the column with as many values as the literal has elements`() {
+        assertThat(values("(books.id = 'x'::uuid)")).isEqualTo(1)
+        assertThat(values("(books.shelf = ANY ('{a,b,c}'::text[]))")).isEqualTo(3)
+        assertThat(values("(books.shelf = ANY ('{}'::text[]))")).isZero()
+        assertThat(values("(books.shelf = ANY ('{\"a,b\",\"c}d\",NULL}'::text[]))")).isEqualTo(3)
+        assertThat(values("(books.shelf = ANY ('{\"a\\\"b\",c}'::text[]))")).isEqualTo(2)
+        assertThat(values("(books.shelf = ANY ('{it''s,b}'::text[]))")).isEqualTo(2)
+        assertThat(values("(books.title = ANY ('{x,y}'::character varying[]))")).isEqualTo(2)
+    }
+
+    @Test
+    fun `= ANY over anything but a one-dimensional inline literal states no number of values`() {
+        listOf(
+            "(books.id = ANY (\$1))",
+            "(books.id = ANY (ARRAY[books.a, books.b]))",
+            "(books.pages = ANY ('{{1,2},{3,4}}'::integer[]))",
+            "(books.pages = ANY ('[1:2]={1,2}'::integer[]))",
+            "(books.shelf = ANY ('{\"a}'::text[]))",
+            "(books.shelf = ANY ('{a\\'::text[]))",
+            "(books.shelf = ANY ('{a,b}'::text))",
+            "(books.shelf = ANY ('{a,b}'))",
+            "(books.shelf = ANY ('a,b'::text[]))",
+            "(books.pages >= 5)",
+            "(books.price IS NULL)",
+        ).forEach { condition -> assertThat(values(condition)).describedAs(condition).isNull() }
     }
 }

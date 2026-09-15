@@ -169,7 +169,7 @@ class DeclarationProblemsTest {
     private fun rules(
         shapes: List<QueryShape>,
         includable: FieldGrant = FieldGrant.None,
-    ) = QueryRules(shapes, FieldGrant.None, includable, Pagination(10, 50, 100, null))
+    ) = QueryRules(shapes, FieldGrant.All, includable, Pagination(10, 50, 100, null))
 
     @Test
     fun `a shape sorted by a nullable column is refused at declaration`() {
@@ -208,7 +208,7 @@ class DeclarationProblemsTest {
 
     @Test
     fun `the compiler refuses rules with problems`() {
-        assertThatThrownBy { QueryCompiler(Books.SCHEMA, rules(listOf(QueryShape.of(SortKey.parse("nope")))), emptySet()) }
+        assertThatThrownBy { QueryCompiler(Books.SCHEMA, rules(listOf(QueryShape.of(SortKey.parse("nope")))), emptySet(), setOf(Books.ID)) }
             .isInstanceOf(com.gd.rain.core.config.ConfigurationProblemsException::class.java)
     }
 
@@ -233,7 +233,7 @@ class DeclarationProblemsTest {
     @Test
     fun `a schema's identifier is a non-null UUID and its names and columns are unique`() {
         val table = TableName("public", "books")
-        assertThatThrownBy { ResourceSchema("books", table, SchemaField("id", "id", FieldKind.TEXT, false), emptyList()) }
+        assertThatThrownBy { ResourceSchema("books", table, SchemaField("id", "id", FieldKind.TEXT, false), emptyList(), null) }
             .isInstanceOf(IllegalArgumentException::class.java)
         assertThatThrownBy {
             ResourceSchema(
@@ -241,6 +241,7 @@ class DeclarationProblemsTest {
                 table,
                 Books.ID,
                 listOf(Books.TITLE, SchemaField("title", "other", FieldKind.TEXT, false)),
+                null,
             )
         }.hasMessageContaining("field names [title]")
         assertThatThrownBy {
@@ -249,6 +250,7 @@ class DeclarationProblemsTest {
                 table,
                 Books.ID,
                 listOf(Books.TITLE, SchemaField("heading", "title", FieldKind.TEXT, false)),
+                null,
             )
         }.hasMessageContaining("columns [title]")
         assertThatThrownBy { SchemaField("a[b]", "a", FieldKind.TEXT, false) }.isInstanceOf(IllegalArgumentException::class.java)
@@ -257,5 +259,5 @@ class DeclarationProblemsTest {
 
 /** The contract every store keeps, run against the in-memory store. */
 class MemoryStoreContractTest : CrudStoreContract() {
-    override fun freshStore(): MemoryStore = MemoryStore(Books.SCHEMA)
+    override fun freshStore(schema: ResourceSchema): MemoryStore = MemoryStore(schema)
 }

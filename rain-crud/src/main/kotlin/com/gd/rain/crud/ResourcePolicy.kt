@@ -75,7 +75,11 @@ public sealed interface ScopeRule {
     /** Every row. */
     public data object Unrestricted : ScopeRule
 
-    /** The rows matching the predicate for this caller; it is applied to every read and every write. */
+    /**
+     * The rows matching the predicate for this caller. Every read and every write is confined to them, and a write that
+     * leaves a row behind — a create, an update, a replacement, a bulk update — leaves it matching the predicate, or it
+     * writes nothing.
+     */
     public fun interface Rows : ScopeRule {
         public fun of(caller: Caller.Authenticated): Predicate
     }

@@ -50,7 +50,7 @@ class ScopedUpdateDeleteIT {
     @Test
     fun `a bulk delete deletes and counts only the rows inside the scope`() {
         assertThat(resource.deleteMany(setOf(theirs))).isZero()
-        assertThat(resource.bulkDelete(listOf(theirs.toString(), mine.toString()))).isEqualTo(1)
+        assertThat(resource.bulkDelete { listOf(theirs.toString(), mine.toString()) }).isEqualTo(1)
 
         assertThat(database.stored(theirs)).isNotNull()
         assertThat(database.stored(mine)).isNull()

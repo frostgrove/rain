@@ -52,11 +52,11 @@ class CrudResourcePolicyTest {
         val resource = resource()
 
         assertThat(faultOf { resource.deleteMany(emptySet()) }.kind).isEqualTo(FaultKind.FORBIDDEN)
-        assertThat(faultOf { resource.bulkDelete(emptyList()) }.kind).isEqualTo(FaultKind.FORBIDDEN)
+        assertThat(faultOf { resource.bulkDelete { emptyList() } }.kind).isEqualTo(FaultKind.FORBIDDEN)
         assertThat(faultOf { resource.updateMany(emptySet(), mapOf("pages" to 1)) }.kind).isEqualTo(FaultKind.FORBIDDEN)
 
         val deleter = signIn("a", Books.DELETE)
-        assertThat(resource.bulkDelete(emptyList())).isZero()
+        assertThat(resource.bulkDelete { emptyList() }).isZero()
         assertThat(deleter.asked).containsExactly(setOf(Books.DELETE))
         assertThat(store.operations).isEmpty()
     }
@@ -97,11 +97,10 @@ class CrudResourcePolicyTest {
         assertThat(resource.count(emptyMap())).isEqualTo(CappedCount(1, exact = true))
         assertThat(faultOf { resource.get(theirs.toString(), emptyMap()) }.kind).isEqualTo(FaultKind.NOT_FOUND)
         assertThat(faultOf { resource.update(theirs, mapOf("pages" to 9)) }.kind).isEqualTo(FaultKind.NOT_FOUND)
-        assertThat(faultOf { resource.update(theirs, emptyMap()) }.kind).isEqualTo(FaultKind.NOT_FOUND)
         assertThat(resource.updateMany(setOf(mine, theirs), mapOf("pages" to 7))).isEqualTo(1)
         assertThat(faultOf { resource.delete(theirs) }.kind).isEqualTo(FaultKind.NOT_FOUND)
         assertThat(resource.deleteMany(setOf(theirs))).isZero()
-        assertThat(resource.bulkDelete(listOf(theirs.toString()))).isZero()
+        assertThat(resource.bulkDelete { listOf(theirs.toString()) }).isZero()
 
         assertThat(store.stored(theirs)).containsEntry("pages", 1)
         assertThat(store.stored(mine)).containsEntry("pages", 7)
@@ -145,8 +144,8 @@ class CrudResourcePolicyTest {
         signIn("a", *Books.EVERY_PERMISSION.toTypedArray())
         val resource = resource()
 
-        assertThat(faultOf { resource.bulkDelete(List(501) { "x" }) }.pointedCodes()).containsExactly("/ids out_of_range")
-        val malformed = faultOf { resource.bulkDelete(listOf("0192f1c0-0000-7000-8000-000000000001", "nope", "1-1-1-1-1")) }
+        assertThat(faultOf { resource.bulkDelete { List(501) { "x" } } }.pointedCodes()).containsExactly("/ids out_of_range")
+        val malformed = faultOf { resource.bulkDelete { listOf("0192f1c0-0000-7000-8000-000000000001", "nope", "1-1-1-1-1") } }
         assertThat(malformed.code.value).isEqualTo("invalid_id")
         assertThat(malformed.pointedCodes()).containsExactly("/ids/1 invalid_id", "/ids/2 invalid_id")
         assertThat(

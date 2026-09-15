@@ -1,8 +1,8 @@
 package com.gd.rain.test
 
 /**
- * Reads the `Index Cond` text PostgreSQL's EXPLAIN prints for a b-tree scan, as far as criterion v2 needs it:
- * which key columns each clause compares, whether the clause is an equality, and whether it equates them with one value.
+ * Reads the `Index Cond` text PostgreSQL's EXPLAIN prints for a b-tree scan, as far as criterion v3 needs it:
+ * which key columns each clause compares, whether the clause is an equality, and how many values it equates them with.
  *
  * PostgreSQL deparses the index qualification as one parenthesised expression: a single clause
  * `(col op value)`, or `((clause) AND (clause) …)`. Each clause is `col op value`, `col = ANY (…)`,
@@ -10,6 +10,11 @@ package com.gd.rain.test
  * column may be qualified (`books.shelf`) and quoted (`"Weird Col"`). Anything else — an expression on the
  * left, text that does not split into clauses — is not read: [parse] answers `null`, and the criterion
  * refuses the scan rather than guess.
+ *
+ * `col = ANY ('{…}'::type[])` — an inline one-dimensional array literal, which is how PostgreSQL deparses an
+ * `IN` list of constants — equates the column with as many values as the literal has elements. `= ANY` over
+ * anything else — a parameter `$1` of a generic plan, an `ARRAY[…]` of expressions, a subquery — is an
+ * equality whose number of values the text does not state.
  */
 internal object IndexConditions {
     enum class Kind { EQUALITY, RANGE }
@@ -18,9 +23,17 @@ internal object IndexConditions {
         val text: String,
         val columns: List<String>,
         val kind: Kind,
+        /**
+         * How many values the clause equates its columns with: 1 for `=` against one value, `k` for `= ANY` against an
+         * inline array literal of `k` elements; `null` for a range, `IS NULL`, and `= ANY` over anything but such a literal.
+         */
+        val values: Int?,
+        /** Whether the clause is `= ANY (…)`. */
+        val overArray: Boolean,
+    ) {
         /** An `=` against one value (not `= ANY (…)`, not `IS NULL`): at most one entry of a unique index matches it. */
-        val singleValue: Boolean,
-    )
+        val singleValue: Boolean get() = values == 1 && !overArray
+    }
 
     private const val OPERATOR_CHARACTERS = "+-*/<>=~!@#%^&|`?"
 
@@ -45,23 +58,56 @@ internal object IndexConditions {
             }
         if (text.getOrNull(end) != ' ') return null
         val rest = text.substring(end + 1)
-        val (kind, singleValue) =
-            when (rest) {
-                "IS NULL" -> {
-                    Kind.EQUALITY to false
-                }
+        if (rest == "IS NULL") return Clause(text, columns, Kind.EQUALITY, values = null, overArray = false)
+        if (rest == "IS NOT NULL") return Clause(text, columns, Kind.RANGE, values = null, overArray = false)
+        val operator = rest.takeWhile { it in OPERATOR_CHARACTERS }
+        if (operator.isEmpty() || rest.getOrNull(operator.length) != ' ') return null
+        val operand = rest.substring(operator.length + 1)
+        return when {
+            operator != "=" -> Clause(text, columns, Kind.RANGE, values = null, overArray = false)
+            operand.startsWith("ANY ") -> Clause(text, columns, Kind.EQUALITY, inlineArrayLength(operand.substring(4)), overArray = true)
+            else -> Clause(text, columns, Kind.EQUALITY, values = 1, overArray = false)
+        }
+    }
 
-                "IS NOT NULL" -> {
-                    Kind.RANGE to false
-                }
+    /**
+     * The number of elements of `('{…}'::type[])`: a parenthesised, single-quoted one-dimensional array literal with
+     * its array cast and nothing else; `null` for any other operand.
+     */
+    private fun inlineArrayLength(operand: String): Int? {
+        val inner = unwrap(operand) ?: return null
+        if (!inner.startsWith('\'')) return null
+        val literalEnd = quotedEnd(inner, 0) ?: return null
+        val cast = inner.substring(literalEnd)
+        if (!cast.startsWith("::") || !cast.endsWith("[]") || cast.any { it == '\'' || it == '(' || it == ')' }) return null
+        val array = inner.substring(1, literalEnd - 1).replace("''", "'")
+        return arrayElements(array)
+    }
 
-                else -> {
-                    val operator = rest.takeWhile { it in OPERATOR_CHARACTERS }
-                    if (operator.isEmpty() || rest.getOrNull(operator.length) != ' ') return null
-                    if (operator == "=") Kind.EQUALITY to !rest.substring(operator.length + 1).startsWith("ANY ") else Kind.RANGE to false
-                }
+    /**
+     * The number of elements of PostgreSQL's text form of a one-dimensional array with default bounds: `{}`, or `{e,e,…}`
+     * where an element is unquoted text or a double-quoted one with backslash escapes. `null` for nested arrays,
+     * explicit bounds (`[1:2]={…}`), unbalanced quotes or anything else.
+     */
+    private fun arrayElements(text: String): Int? {
+        if (text.length < 2 || text.first() != '{' || text.last() != '}') return null
+        val body = text.substring(1, text.length - 1)
+        if (body.isEmpty()) return 0
+        var elements = 1
+        var quoted = false
+        var index = 0
+        while (index < body.length) {
+            val character = body[index]
+            when {
+                character == '\\' -> index++
+                quoted -> quoted = character != '"'
+                character == '"' -> quoted = true
+                character == '{' || character == '}' -> return null
+                character == ',' -> elements++
             }
-        return Clause(text, columns, kind, singleValue)
+            index++
+        }
+        return if (quoted || index > body.length) null else elements
     }
 
     /** The last identifier of a qualified column reference that spans all of [reference], unquoted; `null` otherwise. */

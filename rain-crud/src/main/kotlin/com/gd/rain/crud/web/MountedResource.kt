@@ -11,6 +11,9 @@ import com.gd.rain.web.route.EndpointDeclaration
 /**
  * The HTTP operations of a resource, in the order they are declared. `/count` comes before `/{id}` so
  * a router that matches in declaration order never reads `count` as an identifier.
+ *
+ * `UPDATE` (`PATCH`) writes the fields its body names; `REPLACE` (`PUT`) states every field a write by identifier may
+ * state ([CrudResource.replaceable]), and a field it leaves out is refused, never written as NULL.
  */
 public enum class CrudOperation(
     public val method: String,
@@ -39,8 +42,9 @@ public data class CrudRoute(
  *
  * The declaration of each route is derived from the policy the resource enforces, so the permission is
  * written once. Mounting an operation whose action the policy declares no access for, the list or `/count`
- * on a resource that declares no query shape, or `/count` on a resource that declares no count cap, is
- * refused when this is constructed.
+ * on a resource that declares no query shape, `/count` on a resource that declares no count cap, or an update or a
+ * replacement on a resource whose `writable` grants no field a write by identifier states, is refused when this is
+ * constructed.
  */
 public class MountedResource<T>(
     public val prefix: String,
@@ -64,6 +68,16 @@ public class MountedResource<T>(
         if (resource.rules.shapes.isEmpty()) {
             this.operations.filter { it == CrudOperation.LIST || it == CrudOperation.COUNT }.forEach {
                 problems += ConfigurationProblem(where, ProblemCode.CONTRADICTS, "mounts $it, but the resource declares no query shape")
+            }
+        }
+        if (resource.replaceable.isEmpty()) {
+            this.operations.filter { it == CrudOperation.UPDATE || it == CrudOperation.REPLACE }.forEach {
+                problems +=
+                    ConfigurationProblem(
+                        where,
+                        ProblemCode.CONTRADICTS,
+                        "mounts $it, but writable grants no field a write by identifier states",
+                    )
             }
         }
         if (CrudOperation.COUNT in this.operations && resource.rules.pagination.countCap == null) {

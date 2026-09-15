@@ -3,16 +3,11 @@ package com.gd.rain.crud.web
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonPropertyOrder
 import com.gd.rain.core.error.Fault
-import com.gd.rain.core.error.FaultKind
-import com.gd.rain.core.error.RainErrorCodes
 import com.gd.rain.crud.CappedCount
 import com.gd.rain.crud.CrudResource
 import com.gd.rain.crud.Page
 import com.gd.rain.crud.PageWindow
 import jakarta.servlet.http.HttpServletRequest
-import tools.jackson.core.JacksonException
-import tools.jackson.core.StreamReadFeature
-import tools.jackson.databind.json.JsonMapper
 
 /**
  * A list page on the wire.
@@ -85,11 +80,12 @@ public class DeletedBody(
  * @GetMapping fun list(request: HttpServletRequest) = CrudMvc.list(books, request)
  * ```
  *
- * Refusals are [Fault]s and render as problem+json through rain-web's exception handler.
+ * Every helper hands the resource its input unread: the resource authorizes the caller first and reads the
+ * identifier, the query or the body only then, so a caller who may not do something is `401` or `403` whatever it
+ * sent. Bodies are read by [CrudBodies]. Refusals are [Fault]s and render as problem+json through rain-web's exception
+ * handler.
  */
 public object CrudMvc {
-    private val STRICT: JsonMapper = JsonMapper.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()
-
     /** The request's parameters, each with every value it was given, as the dialect reads them. */
     public fun parameters(request: HttpServletRequest): Map<String, List<String>> =
         request.parameterMap.entries.associate { (name, values) -> name to values.toList() }
@@ -110,6 +106,26 @@ public object CrudMvc {
         request: HttpServletRequest,
     ): T = resource.get(id, parameters(request))
 
+    /** `POST <prefix>` with a write body; answers the inserted item. */
+    public fun <T> create(
+        resource: CrudResource<T>,
+        body: String?,
+    ): T = resource.create { CrudBodies.write(resource.schema, body) }
+
+    /** `PATCH <prefix>/{id}` with a write body naming the fields to write; answers the written item. */
+    public fun <T> update(
+        resource: CrudResource<T>,
+        id: String,
+        body: String?,
+    ): T = resource.update(id) { CrudBodies.write(resource.schema, body) }
+
+    /** `PUT <prefix>/{id}` with a write body naming every writable field; answers the written item. */
+    public fun <T> replace(
+        resource: CrudResource<T>,
+        id: String,
+        body: String?,
+    ): T = resource.replace(id) { CrudBodies.write(resource.schema, body) }
+
     public fun <T> delete(
         resource: CrudResource<T>,
         id: String,
@@ -122,23 +138,5 @@ public object CrudMvc {
     public fun <T> bulkDelete(
         resource: CrudResource<T>,
         body: String?,
-    ): DeletedBody = DeletedBody(resource.bulkDelete(bulkIds(body)))
-
-    private fun bulkIds(body: String?): List<String> {
-        val root =
-            try {
-                STRICT.readTree(body ?: throw malformed())
-            } catch (_: JacksonException) {
-                throw malformed()
-            }
-        if (!root.isObject || root.propertyNames().toSet() != setOf(BULK_IDS)) throw malformed()
-        val ids = root.required(BULK_IDS)
-        if (!ids.isArray || !ids.values().all { it.isString }) throw malformed()
-        return ids.values().map { it.stringValue() }
-    }
-
-    private fun malformed(): Fault =
-        Fault(FaultKind.BAD_REQUEST, RainErrorCodes.MALFORMED_BODY, "the body is {\"ids\":[…]} with string ids")
-
-    private const val BULK_IDS = "ids"
+    ): DeletedBody = DeletedBody(resource.bulkDelete { CrudBodies.ids(body) })
 }

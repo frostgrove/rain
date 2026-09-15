@@ -31,6 +31,7 @@ class DialectV1Test {
             Books.SCHEMA,
             Books.rules(includable = FieldGrant.only("reviews"), shapes = Books.SHAPES + operatorShapes),
             setOf("reviews"),
+            setOf(Books.ID),
         )
 
     private fun parameters(vararg parameters: Pair<String, String>): Map<String, List<String>> =
@@ -127,7 +128,8 @@ class DialectV1Test {
 
     @Test
     fun `in takes at most maxInValues values, and a query at most maxFilterTerms filters`() {
-        val tight = QueryCompiler(Books.SCHEMA, Books.rules(limits = QueryLimits(maxInValues = 2, maxFilterTerms = 1)), emptySet())
+        val tight =
+            QueryCompiler(Books.SCHEMA, Books.rules(limits = QueryLimits(maxInValues = 2, maxFilterTerms = 1)), emptySet(), setOf(Books.ID))
 
         assertThat(faultOf { tight.list(DialectV1.parse(mapOf("filter[title][in]" to listOf("a", "b", "c")))) }.pointedCodes())
             .containsExactly("/filter/title/in out_of_range")
@@ -187,7 +189,7 @@ class DialectV1Test {
     fun `count is capped, and only where a cap is declared`() {
         assertThat(list("count" to "capped").counted).isTrue()
         assertThat(refusal("count" to "exact").pointedCodes()).containsExactly("/count invalid_format")
-        val uncapped = QueryCompiler(Books.SCHEMA, Books.rules(countCap = null), emptySet())
+        val uncapped = QueryCompiler(Books.SCHEMA, Books.rules(countCap = null), emptySet(), setOf(Books.ID))
         assertThat(
             faultOf {
                 uncapped.list(DialectV1.parse(mapOf("count" to listOf("capped"))))

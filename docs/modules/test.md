@@ -1,7 +1,7 @@
 # rain-test
 
 Test support for rain modules and rain applications: one PostgreSQL server per test JVM with a fresh database per
-test, query plans judged by plan criterion v2 — which proves a statement bounded without depending on how many rows a
+test, query plans judged by plan criterion v3 — which proves a statement bounded without depending on how many rows a
 test inserted — and a clock a test moves by hand.
 
 Add it to the test classpath of anything that tests against PostgreSQL or reads time.
@@ -77,8 +77,9 @@ boundedness can be judged from the plan alone. On one connection of `dataSource`
 2. runs `EXPLAIN (FORMAT JSON, VERBOSE, GENERIC_PLAN)` for a statement with `$1`-style placeholders, or
    `EXPLAIN (FORMAT JSON, VERBOSE)` with `generic = false` for a statement with its values inlined (jOOQ's
    `renderInlined`);
-3. describes, from the catalog, every index an index scan of the plan uses: its access method, its key columns in index
-   order (`null` for an expression key) and whether it is unique (`pg_index.indisunique`);
+3. describes, from the catalog, every index an index scan of the plan uses and every unique index of a relation an index
+   scan reads: its relation, its access method, its key columns in index order (`null` for an expression key), whether it
+   is unique (`pg_index.indisunique`) and whether it has a predicate (`pg_index.indpred`);
 4. rolls the transaction back and restores the connection's auto-commit, also when the statement cannot be explained.
 
 A pooled connection is therefore handed back as it was lent (`ExplainLeavesPooledConnectionUnchangedIT`). `EXPLAIN`
@@ -86,7 +87,7 @@ without `ANALYZE` does not run the statement. `VERBOSE` is what reports each sca
 
 | `QueryPlans.SETTINGS` | |
 |---|---|
-| `enable_seqscan = off` | criterion v2 never accepts a sequential scan |
+| `enable_seqscan = off` | criterion v3 never accepts a sequential scan |
 | `enable_bitmapscan = off` | nor a bitmap scan |
 | `enable_tidscan = off` | nor a TID scan |
 | `max_parallel_workers_per_gather = 0` | no parallel plan |
@@ -98,7 +99,8 @@ subquery picked.
 
 | `QueryPlan` member | Answers |
 |---|---|
-| `boundedScan(relation)` | the `PlanVerdict` of criterion v2 for the relation |
+| `boundedScan(schema, relation)` | the `PlanVerdict` of criterion v3 for the relation in the schema |
+| `boundedScan(relation)` | the same for a bare relation name, accepted only when the plan reads that name in one schema |
 | `usesIndex(name)` | whether any node reads the named index |
 | `scansSequentially(relation)` | whether any node is a `Seq Scan` of the relation |
 | `hasLimit()` | whether the plan has a `Limit` node anywhere; `boundedScan` is the criterion for boundedness |
@@ -107,44 +109,59 @@ subquery picked.
 | Type | What it is |
 |---|---|
 | `QueryPlan(json, indexes)` | one `EXPLAIN (FORMAT JSON, VERBOSE)` plan and the descriptions of the indexes it uses; the JSON is parsed on construction, and anything but a one-plan EXPLAIN document is an `IllegalArgumentException`, so a plan captured as a file can be judged too |
-| `PlanIndex(schema, name, method, keyColumns, unique)` | an index as the catalog describes it; a partial unique index is unique among the rows its predicate admits |
+| `PlanIndex(schema, table, name, method, keyColumns, unique, partial)` | an index of `schema.table` as the catalog describes it; a partial unique index is unique only among the rows its predicate admits |
 | `PlanVerdict.Bounded` | every read of the relation is bounded |
 | `PlanVerdict.Unbounded(reasons)` | at least one reason, for every read of the relation that fails |
 
-`boundedScan` names a relation as the plan's `Relation Name` does: the table name, without its schema.
+`boundedScan(schema, relation)` names a relation as the VERBOSE plan does, by its `Schema` and `Relation Name`. A bare
+`boundedScan(relation)` is accepted only when every read of that name is in one schema; a plan that reads the name in
+two schemas (`public.books` and `archive.books`) refuses it with an `IllegalArgumentException` naming both, and a name
+holding a `.` is refused too (`AmbiguousRelationNameRefusedTest`). A qualified relation in a plan explained without
+`VERBOSE`, which carries no schema, is unbounded with the reason that the plan names no schema.
 
 ```kotlin
 val plan = QueryPlans.explain(fixture.dataSource, fixture.dsl.renderInlined(query), generic = false)
 
 assertThat(plan.usesIndex("ix_audit_log_resource")).describedAs(plan.json).isTrue()
-assertThat(plan.boundedScan("audit_log")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
+assertThat(plan.boundedScan("rain_audit", "audit_log")).describedAs(plan.json).isEqualTo(PlanVerdict.Bounded)
 ```
 
 A statement whose every read of a table is bounded costs the same whether the table holds ten rows or ten million; that
 is what the assertion proves, and why it needs no large fixture. rain-crud's [plan proof](crud.md#the-plan-proof) runs
-every statement of every declared query shape of a resource through `QueryPlans.explain` and `boundedScan`.
+every statement a mounted resource runs — its declared query shapes' pages and counts, and its statements by identifier —
+through `QueryPlans.explain` and `boundedScan`.
 
-### Plan criterion v2
+### Plan criterion v3
 
-Criterion **v2**: whether every row a plan reads from a relation is bounded, whatever the size of the relation — by the
-statement's own `LIMIT` (and `OFFSET`), or by the uniqueness of the key it looks up.
+Criterion **v3** (`QueryPlan.CRITERION_VERSION`): whether every row a plan reads from a relation is bounded, whatever
+the size of the relation — by the statement's own `LIMIT` (and `OFFSET`), or by a unique key the read is pinned to.
 
 The plan is `Bounded` when it reads the relation at all and every node that reads it (every node naming it as
-`Relation Name`, except the `ModifyTable` a write targets) is a unique lookup (rule 0) or satisfies all of rules 1–5:
+`Relation Name` in `Schema`, except the `ModifyTable` a write targets) is a unique-key lookup (rule 0) or satisfies all of
+rules 1–5:
 
-0. **Unique lookup.** An `Index Scan` or `Index Only Scan` of a unique b-tree index whose `Index Cond` has an `=` clause
-   against one value (not `= ANY`, not `IS NULL`) on every key column reads at most one index entry each time it runs, so
-   its `Filter` is evaluated on at most one row and no `Limit` is needed. It is bounded when it runs once (rule 5) or, as
-   the `Inner` input of a `Nested Loop` — with or without `Inner Unique`, with or without a `Join Filter` — when that
-   join's `Outer` input has a bounded output and the join runs once. A unique lookup also counts as a bounded output
-   wherever rule 4 asks for one.
+0. **Unique-key lookup.** An `Index Scan` or `Index Only Scan` of a b-tree index, every clause of whose `Index Cond`
+   bounds the scanned range (rule 3), and whose `Index Cond` pins a unique key of the relation. A unique key is the key
+   columns, none an expression, of a unique b-tree index described in the plan's `PlanIndex`es: the scanned index itself,
+   or another index of the same relation without a predicate (a partial unique index is unique only among the rows it
+   holds). The `Index Cond` pins the key when
+   - every key column has an `=` clause against one value (not `= ANY`, not `IS NULL`): the scan reads at most one entry
+     each time it runs; or
+   - the key has exactly one column, compared by `= ANY` with an inline array literal of *k* elements
+     (`= ANY ('{…}'::uuid[])`, as PostgreSQL deparses an `IN` list of constants): the scan reads at most *k* entries each
+     time it runs. `= ANY` over a parameter (`$1` of a generic plan) or any other operand states no *k* and pins nothing.
+
+   Its `Filter` is then evaluated on at most that many rows and no `Limit` is needed. It is bounded when it runs once
+   (rule 5) or, as the `Inner` input of a `Nested Loop` — with or without `Inner Unique`, with or without a `Join Filter` —
+   when that join's `Outer` input has a bounded output and the join runs once. A unique-key lookup also counts as a
+   bounded output wherever rule 4 asks for one.
 1. **Index scan.** It is an `Index Scan` or an `Index Only Scan`.
 2. **No filter.** It carries no `Filter`: every condition is an `Index Cond`.
 3. **Bounding conditions.** Its index is a b-tree described in the plan's `PlanIndex`es, and every clause of its
    `Index Cond` bounds the scanned range: a clause on key column *k* is preceded, on every key column before *k*, by an
    equality clause (`=`, `= ANY (…)` or `IS NULL`); a row comparison covers consecutive key columns. A clause on a later
    column alone would be checked against every entry of the range instead of ending it, so the entries visited would grow
-   with the relation. A clause criterion v2 cannot read (an expression key, any other form) makes the scan unbounded.
+   with the relation. A clause criterion v3 cannot read (an expression key, any other form) makes the scan unbounded.
 4. **Limited or keyed.** Either
    - *limited*: walking up from the scan through its row input, the first node that is not `LockRows`, a `Subquery Scan`
      without `Filter` or a `Result` without `Filter` is a `Limit`. Every other node between them — `Sort`,
@@ -160,16 +177,20 @@ The plan is `Bounded` when it reads the relation at all and every node that read
 5. **Executed once.** From that `Limit` (or that `Nested Loop`) up to the root, every edge is an `Outer`, `InitPlan`,
    `Subquery` or `Member` edge: nothing re-executes it once per row of another input.
 
-Rows read are then at most the `LIMIT` plus `OFFSET` for a limited scan, and at most one per row of the bounded outer
-input for a keyed scan. Nodes above the `Limit` are not constrained, so a capped count (`Aggregate` over `Limit`) and
-`DELETE … WHERE id IN (SELECT … LIMIT n)` are bounded.
+Rows read are then at most the `LIMIT` plus `OFFSET` for a limited scan, at most one per row of the bounded outer input
+for a keyed scan, and at most one (or *k*) per run for a unique-key lookup. Nodes above the `Limit` are not constrained,
+so a capped count (`Aggregate` over `Limit`) and `DELETE … WHERE id IN (SELECT … LIMIT n)` are bounded.
 
 A plan that reads no relation at all — PostgreSQL proved the conditions contradictory and planned a constant-false
 `Result` — reads no row of the relation and is bounded. A plan that reads other relations but not this one is unbounded
 for it, so a misspelled relation (or a view, whose plan reads the tables under it) is never proven by default.
 
-`Unbounded` lists every reason, for every read of the relation that fails. v2 adds rule 0 to v1; every plan v1 accepts,
-v2 accepts.
+`Unbounded` lists every reason, for every read of the relation that fails. v2 added rule 0 for a scan of the unique index
+itself with `=` on every key column; v3 extends rule 0 to a scan of another index that pins a non-partial unique key —
+PostgreSQL plans `WHERE id = ? AND shelf = ?` over `(shelf, id)` rather than the primary key — and to `= ANY` over an
+inline literal on a one-column unique key. A scan v2 accepts by rule 0 bounds its range trivially, so every plan v2
+accepts, v3 accepts. `QueryPlanBoundedScanTest` holds plans captured from PostgreSQL 18 for both extensions, and
+`UniqueKeyThroughAnotherIndexIT` explains them against a live database.
 
 A bounded page, over `books_shelf_created_at_id` (b-tree on `shelf, created_at, id`):
 
@@ -198,9 +219,12 @@ A capped count over the same index:
 
 The `Aggregate` is above the `Limit`, where nothing is constrained; the scan satisfies rules 1–5.
 
-A unique lookup: `SELECT id FROM t WHERE id = 1` over `CREATE TABLE t (id int PRIMARY KEY)`. The plan has no `Limit`,
-but its scan reads the unique b-tree index of the primary key with `=` against one value on its only key column, so it
-reads at most one entry and runs once (rule 0).
+A unique-key lookup: `SELECT id FROM t WHERE id = 1` over `CREATE TABLE t (id int PRIMARY KEY)`. The plan has no
+`Limit`, but its scan reads the unique b-tree index of the primary key with `=` against one value on its only key column,
+so it reads at most one entry and runs once (rule 0). So does `SELECT note FROM keyed WHERE id = 7 AND grp = 1` over an
+index `(grp, id)`: its `Index Cond` bounds the range of `(grp, id)` and pins the primary key `(id)`. And
+`DELETE FROM keyed WHERE id IN (1, 2, 3) AND grp = 1` reads at most three entries: its `Index Cond` compares the
+one-column primary key by `= ANY ('{1,2,3}'::integer[])`.
 
 Plans the criterion refuses, with a reason it names (`QueryPlanBoundedScanTest`, over captured plans):
 
@@ -212,12 +236,13 @@ Plans the criterion refuses, with a reason it names (`QueryPlanBoundedScanTest`,
 | no `Limit` | `no Limit is above Index Scan using books_shelf_created_at_id on books` |
 | a `Sort` below the `Limit` | `Sort is between Index Scan using books_shelf_created_at_id on books and any Limit above it` |
 | a range on a later key column | `Index Cond clause (books.pages >= 5) of Index Only Scan using books_created_at_id_pages on books does not bound the scanned range of public.books_created_at_id_pages (btree on created_at, id, pages): key columns created_at, id before it have no equality condition` |
-| a GiST index | `Index Scan using books_title_trgm on books reads a gist index; criterion v2 bounds b-tree scans only` |
-| an expression key | `Index Scan using books_lower_title on books has an Index Cond criterion v2 cannot read: (lower(books.title) = 'dune'::text)` |
+| a GiST index | `Index Scan using books_title_trgm on books reads a gist index; criterion v3 bounds b-tree scans only` |
+| an expression key | `Index Scan using books_lower_title on books has an Index Cond criterion v3 cannot read: (lower(books.title) = 'dune'::text)` |
+| `= ANY ($1)` of a generic plan on the primary key | `ModifyTable on books is between Index Scan using books_pkey on books and any Limit above it` |
 | a `Limit` in a SubPlan | `Limit runs once per row of Index Scan using shelves_pkey on shelves (a SubPlan input)` |
 | a keyed scan of a non-unique index under a join that is not `Inner Unique` | `Index Scan using ix_job_intent_held_invocation on job_intent is the inner input of a Nested Loop that is not Inner Unique` |
 | an index the plan carries no description of | `the plan carries no description of index public.books_shelf_created_at_id` |
-| another relation only | `the plan reads no relation named authors` |
+| another relation only | `the plan reads no relation named public.authors` |
 
 ### Time
 

@@ -25,7 +25,7 @@ How that reads in rain:
 | rows of a job profile the application no longer declares | kept and reported on every pass; no assumed retention |
 
 Rule sets that can change carry a version: problem format v1, status table v1, query dialect v1, cursor format v1, plan
-criterion v2, the rain-crud plan proof version 1, `NotifyRules` version 1, the breaker configuration rules version 1.
+criterion v3, the rain-crud plan proof version 2, `NotifyRules` version 1, the breaker configuration rules version 1.
 
 ## Design for ten million rows
 
@@ -51,15 +51,16 @@ rain-crud list answers only a declared query shape, reads `limit + 1` rows and c
 
 Scale is proven from the query plan, not from timing or row counts. An integration test renders the real statement,
 explains it with `QueryPlans` ([rain-test](modules/test.md)) — sequential, bitmap and TID scans and parallel plans
-disabled — and asserts `QueryPlan.boundedScan`, plan criterion v2, for each table it reads: every read is a b-tree index
+disabled — and asserts `QueryPlan.boundedScan`, plan criterion v3, for each schema-qualified table it reads: every read is a b-tree index
 scan without a `Filter` whose index conditions bound the scanned range, under a `Limit` or keyed by a bounded input, and
-run once — or a lookup of at most one entry of a unique index. A statement whose plan passes costs the same at ten rows
+run once — or a lookup pinned to a unique key, reading at most one entry (or one per value of an inline `IN` list). A statement whose plan passes costs the same at ten rows
 and at ten million, so the test needs no large fixture. rain's own: `AuditIT`, `RetentionUsesIndexIT`,
 `DeadLetterKeysetIT`, `ReaperIT`, `CancelBySubjectIT`, `HeldReservationIsKeyedByInvocationIT`, `CursorPagingIT`,
 `CappedCountIT`; `LlmSlotsIT` asserts the indexes its statements read and that neither table is scanned sequentially.
 
-A rain-crud resource is proven as a whole: `CrudPlanProof` explains every statement of every declared query shape against
-the application's migrated, empty database ([rain-crud](modules/crud.md#the-plan-proof)).
+A rain-crud resource is proven as a whole: `CrudPlanProof` explains every statement the store runs for every mounted
+operation — the pages and counts of every declared query shape, and every statement by identifier — under every stated
+scope, against the application's migrated, empty database ([rain-crud](modules/crud.md#the-plan-proof)).
 
 ## Configuration
 

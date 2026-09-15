@@ -5,6 +5,8 @@ import com.gd.rain.crud.proof.ProofScope
 import com.gd.rain.crud.proof.StatementKind
 import com.gd.rain.crud.query.QueryShape
 import com.gd.rain.crud.query.SortKey
+import com.gd.rain.crud.web.CrudOperation
+import com.gd.rain.crud.web.MountedResource
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -31,12 +33,12 @@ class PlanProofMixedDirectionIT {
         val result =
             CrudPlanProof.verify(
                 database.store,
-                resource,
+                MountedResource("/books", setOf(CrudOperation.LIST, CrudOperation.COUNT), resource),
                 listOf(ProofScope("everything", RowScope.Everything)),
                 database.dataSource,
             )
 
-        assertThat(result.statements.map { it.kind }).containsExactly(*StatementKind.entries.toTypedArray())
+        assertThat(result.statements.map { it.kind }).containsExactly(*SHAPE_KINDS)
         assertThat(result.findings.map { it.statement.kind }).containsExactly(StatementKind.SEEK_FORWARD, StatementKind.SEEK_BACKWARD)
         result.findings.forEach { finding ->
             assertThat(finding.planJson).contains("books_title_pages_desc_id_desc")
@@ -44,3 +46,13 @@ class PlanProofMixedDirectionIT {
         }
     }
 }
+
+/** The statements a list and a count run for one shape value variant, in the order the proof explains them. */
+val SHAPE_KINDS: Array<StatementKind> =
+    arrayOf(
+        StatementKind.FIRST_PAGE,
+        StatementKind.SEEK_FORWARD,
+        StatementKind.SEEK_BACKWARD,
+        StatementKind.OFFSET_PAGE,
+        StatementKind.CAPPED_COUNT,
+    )

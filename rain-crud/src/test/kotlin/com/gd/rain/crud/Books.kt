@@ -32,12 +32,25 @@ object Books {
     val ISBN = SchemaField("isbn", "isbn", FieldKind.TEXT, nullable = true)
     val COPIES = SchemaField("copies", "copies", FieldKind.LONG, nullable = false)
 
+    val VERSION = SchemaField("version", "version", FieldKind.LONG, nullable = false)
+
     val SCHEMA: ResourceSchema =
         ResourceSchema(
             name = "books",
             table = TableName("public", "books"),
             id = ID,
             fields = listOf(TITLE, SHELF, PAGES, PRICE, PUBLISHED_ON, CREATED_AT, AVAILABLE, ISBN, COPIES),
+            version = null,
+        )
+
+    /** The same table with its version column declared: the store writes it, and a write by identifier states it. */
+    val VERSIONED: ResourceSchema =
+        ResourceSchema(
+            name = "books",
+            table = TableName("public", "books"),
+            id = ID,
+            fields = listOf(TITLE, SHELF, PAGES, PRICE, PUBLISHED_ON, CREATED_AT, AVAILABLE, ISBN, COPIES, VERSION),
+            version = VERSION,
         )
 
     const val DDL: String = """
@@ -51,7 +64,8 @@ object Books {
             created_at timestamptz NOT NULL,
             available boolean NOT NULL,
             isbn text,
-            copies bigint NOT NULL
+            copies bigint NOT NULL,
+            version bigint NOT NULL DEFAULT 1
         );
         CREATE INDEX books_created_at_id ON public.books (created_at, id);
         CREATE INDEX books_title_id ON public.books (title, id);
@@ -96,6 +110,20 @@ object Books {
 
     val EVERY_PERMISSION: Set<String> = setOf(READ, WRITE, DELETE)
 
+    /** The fields a books query may select: every field but isbn and the version. */
+    val SELECTABLE: FieldGrant =
+        FieldGrant.only(
+            "id",
+            "title",
+            "shelf",
+            "pages",
+            "price",
+            "publishedOn",
+            "createdAt",
+            "available",
+            "copies",
+        )
+
     /** isbn is not selectable; every other field is. Pass [includable] with the relations the resource declares. */
     fun rules(
         countCap: Long? = 50,
@@ -103,10 +131,11 @@ object Books {
         limits: QueryLimits = QueryLimits(),
         includable: FieldGrant = FieldGrant.None,
         shapes: List<QueryShape> = SHAPES,
+        selectable: FieldGrant = SELECTABLE,
     ): QueryRules =
         QueryRules(
             shapes = shapes,
-            selectable = FieldGrant.only("title", "shelf", "pages", "price", "publishedOn", "createdAt", "available", "copies"),
+            selectable = selectable,
             includable = includable,
             pagination = Pagination(defaultLimit = 10, maxLimit = 50, maxOffset = maxOffset, countCap = countCap),
             limits = limits,
