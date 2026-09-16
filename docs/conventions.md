@@ -159,7 +159,10 @@ code of a module that owns tables needs a PostgreSQL: a throwaway Testcontainers
 
 - A test that depends on time moves a `MutableClock`; one that depends on a random draw injects it (`Jitter`); one that
   depends on a timer or a scheduler drives a fake by hand.
-- A test that starts a context states its stage and roles; there is no implicit test role.
+- A test that starts a context states its stage and roles; there is no implicit test role. It states them, as every
+  property of its process, as `--name=value` arguments to `run`, which outrank `application.yml`;
+  `SpringApplicationBuilder.properties(...)` sets default properties, which the file overrides
+  ([rain-test](modules/test.md#a-database-per-test)).
 - Each integration test gets a database of its own (`RainPostgres.freshDatabase`).
 - A query over an extensible table has a plan assertion (`QueryPlan.boundedScan`), and every rain-crud resource has a
   `CrudPlanProof` test.

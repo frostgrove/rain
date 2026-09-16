@@ -153,6 +153,7 @@ under, and the key rain-audit reads it from.
 | `validation_failed` | the request is not valid |
 | `malformed_body` | the request body could not be read |
 | `invalid_id` | the identifier could not be read |
+| `invalid_cursor` | the page cursor could not be read |
 | `unknown_field` | the request names a field that does not exist |
 | `unknown_parameter` | the request names a parameter that does not exist |
 | `bad_request` | the request could not be understood |
@@ -175,6 +176,10 @@ under, and the key rain-audit reads it from.
 | `deadline_exceeded` | the request did not finish within its time budget |
 | `unmapped_status` | the request failed |
 | `internal` | the request failed |
+
+`invalid_cursor` is rain-core's because rain-access and rain-crud both refuse a page cursor they cannot read with it, and
+one application uses both: a code two catalogs declare refuses the start (`ErrorCatalogsRegisterTogetherTest` registers
+every catalog of rain and its samples together).
 
 ## Health checks, schema, commands
 

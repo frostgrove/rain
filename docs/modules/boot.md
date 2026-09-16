@@ -60,6 +60,25 @@ command. Per process they are usually stated as environment variables: `RAIN_DEP
 comma-separated value (`roles: api,worker`); a YAML list is refused, because its elements (`rain.runtime.roles[0]`, …)
 are keys no section declares.
 
+### Environment variable names
+
+Spring Boot binds an environment variable to a property by one rule, which rain does not change: the property's name with
+every `.` written `_`, every `-` left out, in upper case.
+
+| Property | Environment variable |
+|---|---|
+| `rain.deployment.stage` | `RAIN_DEPLOYMENT_STAGE` |
+| `rain.runtime.roles` | `RAIN_RUNTIME_ROLES` |
+| `rain.access.token.signing-key` | `RAIN_ACCESS_TOKEN_SIGNINGKEY` |
+| `sample.seed.initial-password` | `SAMPLE_SEED_INITIALPASSWORD` |
+| `spring.datasource.url` | `SPRING_DATASOURCE_URL` |
+| `spring.data.redis.host` | `SPRING_DATA_REDIS_HOST` |
+
+These are the names `samples/rain-sample/compose.yaml` states. Spring Boot also binds the older spelling with every `-`
+written `_` (`RAIN_ACCESS_TOKEN_SIGNING_KEY`). A variable is never judged as an undeclared key, so a misspelt one is not
+refused — nothing reads it — while the same misspelling as a JVM system property is: `-Drain.web.request-budgett=10s` is
+`unknown_key`, from property source `systemProperties`.
+
 Bean-time problems rain-boot reports:
 
 | Path | Code | When |

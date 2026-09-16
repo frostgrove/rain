@@ -67,7 +67,7 @@ Role `worker`:
 | Property | Required or default | Meaning | Validation |
 |---|---|---|---|
 | `rain.jobs.workers.<definition>` | required for every declared definition, and only for those: an application that declares none states none (YAML `workers: {}` states nothing, too) | how many attempts of the definition one process runs at once; the profile's scheduler has the sum as threads | at least 1; a key naming no declared definition is `unknown_key`; a definition without a key is `required` |
-| `rain.jobs.required-recurring` | required; an empty list is a statement | the application's recurring work this deployment runs | names match `^[a-z][a-z0-9.-]{0,127}$`, none twice; in the worker role it equals the names of the `RecurringWork` beans |
+| `rain.jobs.required-recurring` | required; an empty list is a statement | the recurring work this deployment runs, the application's and its modules' | names match `^[a-z][a-z0-9.-]{0,127}$`, none twice; in the worker role it equals the names of the `RecurringWork` beans, a module's included |
 | `rain.jobs.drain-grace` | required | how long a stopping worker waits for running attempts, all schedulers together | positive |
 | `rain.jobs.reserved-connections` | required | pool connections kept for everything that is not a job scheduler | not negative |
 | `rain.jobs.lease.ttl` | `60s` | how long an attempt's lease lasts without renewal | positive |
@@ -293,6 +293,17 @@ so draining attempts keep their leases. An attempt interrupted by the stop is re
 Each `RecurringWork` is one db-scheduler recurring task with a fixed delay of its `interval`, so exactly one worker in
 the cluster runs it per interval. All recurring work shares one scheduler, `recurring`, with one thread per task. rain's
 own are `rain.jobs.reaper` and `rain.jobs.retention`.
+
+Those two are never named in `rain.jobs.required-recurring`; every `RecurringWork` bean is, whichever module contributes
+it. [rain-access](access.md#recurring-work-commands) contributes `access.session-retention` to every worker, and
+`access.revocation-replay` when `rain.access.revocation.store` is `redis`, so the worker of an application with rain-access
+and a Redis revocation list states them beside its own, as `samples/rain-sample` does:
+
+```yaml
+rain:
+  jobs:
+    required-recurring: [ticket.escalation-sweep, access.session-retention, access.revocation-replay]
+```
 
 ### Retention
 

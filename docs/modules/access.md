@@ -157,6 +157,7 @@ bound is refused, never corrected.
 | `rain.access.web.delivery` | required | where a sign-in's credentials go: `cookies`, `body` or `both` ([delivery](#delivery)) | one of the three |
 | `rain.access.web.page.default-size` | `50` | items of a list route that states no `limit` | at least 1 |
 | `rain.access.web.page.max-size` | `200` | the largest `limit` a list route and `GrantsLookup.directPermissionsOf` accept; both refuse any other as `400 bad_query` with `out_of_range` at `/limit` | at least 1; not below `default-size` (`contradicts`) |
+| `rain.access.web.max-bulk-ids` | `100` | the most ids one bulk request names: `POST <base>/roles/bulk-delete` | at least 1 |
 | `rain.access.token.issuer` | required | the token's `iss`, and the only one accepted | not blank |
 | `rain.access.token.audience` | required | the token's `aud`, and the only one accepted | not blank |
 | `rain.access.token.signing-key` | required | the HS256 key ([signing key](#signing-key)) | resolves to at least 32 bytes; in `prod` not a raw literal, and from an environment variable |
@@ -377,9 +378,10 @@ A system role that grants every permission holds them; any other role is given t
 
 A system role refuses rename, delete and detach with `403 system_role`; attaching a permission to it is allowed. An
 application role is created with an explicit slug and deleted in bounded steps: its holders, then its permissions, are
-removed `grants.role-deletion-batch` rows per transaction, then the role row. A bulk delete reads every named role first — an
-unknown id is `404`, a system role `403 system_role` — and deletes nothing unless every one may go; each deletion is
-recorded on its own.
+removed `grants.role-deletion-batch` rows per transaction, then the role row. A bulk delete names at most `web.max-bulk-ids`
+ids — more is `400 bad_request` before any id is read — and reads every named role first: an unknown id is `404`, a
+system role `403 system_role`, and nothing is deleted unless every one may go. A role named twice is deleted once, and
+each deletion is recorded on its own (`RoleAdministrationRulesTest`, `DirectorySurfaceIT`).
 
 A subject holds roles and direct permissions. Granting needs the subject to be active in its directory (`422
 unusable_subject`) and, for a role, within `grants.max-roles-per-subject` (`409 too_many_roles`), counted up to the
@@ -399,8 +401,8 @@ back rather than parsed from an error.
 | Declaration | A request passes when |
 |---|---|
 | `@Access(public = true, why = "…")` | always |
-| `@Access(authenticated = true, why = "…")` | it authenticated as an active subject; otherwise `401 unauthenticated` |
-| `@Access(permissions = ["ticket.read", …])` | its subject holds every named code — directly, through a role, or through a role that grants every permission; anonymous is `401 unauthenticated`, a missing code `403 forbidden` |
+| `@Access(authenticated = true, why = "…")` | it authenticated as an active subject; otherwise the refusal [kept](#the-security-chain) for the token it presented, or `401 unauthenticated` when it presented none |
+| `@Access(permissions = ["ticket.read", …])` | its subject holds every named code — directly, through a role, or through a role that grants every permission; a request without a principal is refused as for `authenticated`, a missing code is `403 forbidden` |
 
 `@Access` is read from the handler method, else from its class, composed annotations included. A controller whose
 routes are derived from a table implements `DeclaresItsOwnAccess` and answers an `EndpointDeclaration` per method and
@@ -457,12 +459,16 @@ A functional route with no method predicate answers every method. The one exempt
 
 `AccessEnforcementInterceptor` runs before every handler of a request mapping or a functional route, before the handler's
 arguments — its body included — are read. It finds the declaration the verification checked: for a request mapping by
-the handler and its best-matching pattern, for a functional route by `METHOD pattern`; for either, a `HEAD` request with no
-`HEAD` declaration is held to the pattern's `GET` declaration (a `GET` route answers `HEAD`, RFC 9110 §9.3.2). A public
-declaration passes; otherwise the request needs a principal, and a permissioned one asks `GrantsLookup.heldBy` for exactly
-the named codes, once per request. A request that reaches a handler with no declaration is an internal failure, never a
-pass. A route another handler mapping serves — a WebSocket upgrade — is not enforced here: its `MountsItsOwnSurface`
-declaration is checked for form and duplicates, and the route checks what it declares before it serves.
+the handler and its best-matching pattern, for a functional route by `METHOD pattern` — the pattern Spring's
+`RouterFunctionMapping` records in `HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE`, as a request mapping's is
+(`FunctionalRoutesAreVerifiedTest` routes through Spring's own mapping). For either kind of route, a `HEAD` request with
+no `HEAD` declaration is held to the pattern's `GET` declaration (a `GET` route answers `HEAD`, RFC 9110 §9.3.2). A public declaration passes;
+otherwise the request needs a principal — without one it is refused with the refusal the security chain
+[kept](#the-security-chain) for the credential it presented, or `401 unauthenticated` when it presented none — and a
+permissioned one asks `GrantsLookup.heldBy` for exactly the named codes, once per request. A request that reaches a
+handler with no declaration is an internal failure, never a pass. A route another handler mapping serves — a WebSocket
+upgrade — is not enforced here: its `MountsItsOwnSurface` declaration is checked for form and duplicates, and the route
+checks what it declares before it serves.
 
 ### The security chain
 
@@ -472,17 +478,26 @@ logout filter, no request cache, no CSRF token (rain-web's cross-site filter ref
 problem documents with a code and no `WWW-Authenticate` header, so no browser prompts for a password.
 
 In it, `AccessAuthenticationFilter` turns a presented access token into an `AccessPrincipal`. A request presenting no
-token continues anonymous; whether its route needs one is the route's declaration. A request presenting a token is
-refused, whatever its route declares, when:
+token continues anonymous; whether its route needs a caller is the route's declaration. A presented token that
+authenticates nobody refuses nothing in the filter either: the request continues anonymous, and why the token failed is
+kept on it. A public route serves it as the anonymous request it is — a browser still holding the cookie of a closed
+session, or of an expired token, signs in again and refreshes — and a route whose [enforcement](#enforcement) needs a
+caller answers with the kept refusal (`StaleCredentialDoesNotBlockPublicRoutesTest`, `RedisStoresApplicationIT`). The
+first of these the filter finds is kept:
 
-| Found | Answer |
+| Found | Kept refusal |
 |---|---|
-| two access cookies, two `Authorization` headers, or a token in a cookie and a header | `401 unauthenticated` |
-| the token does not verify | `401 unauthenticated` |
-| its subject type is not served | `401 unauthenticated` |
-| its session was closed, by itself or by a cutoff of its subject | `401 unauthenticated` |
-| its subject is not active | `401 unauthenticated` |
+| two access cookies | `401 unauthenticated`, detail "the request carries more than one access cookie" |
+| two `Authorization` headers | `401 unauthenticated`, "the request carries more than one Authorization header" |
+| a token in a cookie and in a header | `401 unauthenticated`, "the request presents an access token in a cookie and in a header" |
+| the token does not verify, an expired one included | `401 unauthenticated`, "the access token is not valid" |
+| its subject type is not served | `401 unauthenticated`, "the access token names a subject type this application does not serve" |
+| its session was closed, by itself or by a cutoff of its subject | `401 unauthenticated`, "the session has been closed" |
 | the revocation list cannot be asked | `503 revocation_unavailable` |
+| its subject is not active | `401 unauthenticated`, "the subject is not active" |
+
+A route another handler mapping serves reads no kept refusal: the check it makes of its own declaration sees an anonymous
+request.
 
 An `Authorization` header with a scheme other than `Bearer` (compared case-insensitively), or a value that is not one
 token, presents nothing. The principal is kept on the request, so the request log names it after the security context is
@@ -525,8 +540,8 @@ that time is one no request can have.
 
 | Member | Behaviour |
 |---|---|
-| `ensureRole(slug, name, permissions)` | creates an application role when no role has the slug, then attaches the named codes it does not hold; never detaches, never renames; an undeclared code is `422 unknown_permission`; answers the role's id |
-| `setDefaultRole(type, slug)` | binds the role a sign-up of `type` is granted; an unserved type is `400 unknown_subject_type`, an unknown slug `422 unknown_role` |
+| `ensureRole(slug, name, permissions)` | creates an application role when no role has the slug, then attaches the named codes it does not hold; never detaches, never renames; an undeclared code is `422 unknown_permission`; a slug off its pattern, or a name that is blank or over 256 characters — what the role routes refuse — is an `IllegalArgumentException`; answers the role's id |
+| `setDefaultRole(type, slug)` | binds the role a sign-up of `type` is granted, and records `default-role-changed` only when the binding changes; an unserved type is `400 unknown_subject_type`, an unknown slug `422 unknown_role` |
 | `grantRole(subject, slug)` | as the grant route: the subject active, within the role ceiling |
 | `enrolPassword(subject, identifier, password)` | `Enrolled` when a credential was written under the normalised identifier, `AlreadyEnrolled` when the subject already has one; `409 identifier_taken` when another subject of the type signs in with it; hashes |
 | `hasPassword(subject)` | whether the subject has a password credential |
@@ -538,11 +553,21 @@ administrator role" is not an answer to "somebody can administer this deployment
 
 ## HTTP surface
 
-Every route is under `rain.access.web.base-path` (`<base>` below) and is mounted in the `api` role. Bodies are JSON, read
-field by field: a missing field is `422 validation_failed` with a `required` violation at its pointer, a field of the
-wrong JSON type an `invalid_format` violation, and an absent body reads as one with no fields. Every route refuses a query
-parameter it does not read (`400 unknown_parameter`), and an id in the path is a canonical UUID or `400 invalid_id` — no
-other spelling names the same id.
+Every route is under `rain.access.web.base-path` (`<base>` below) and is mounted in the `api` role. Every route refuses a
+query parameter it does not read (`400 unknown_parameter`), and an id in the path is a canonical UUID or `400 invalid_id`
+— no other spelling names the same id.
+
+A body is one JSON object naming only the fields its route reads; the names are checked before any field is read, so a
+misspelt field is heard rather than ignored, as a misspelt query parameter is (`JsonBodyIsStrictTest`,
+`DirectorySurfaceIT`, `AccountSurfaceIT`):
+
+| Body | Answer |
+|---|---|
+| names a field the route does not read | `422 validation_failed`, one `unknown_field` violation at each such field's pointer; a body naming more than 100 is refused naming 100, marked `partial` |
+| JSON that is not an object: an array, a string, a number, `true`, `null` | `400 malformed_body` |
+| text that is not JSON | `400 bad_request` |
+| absent | read as an object with no fields: each required field is `422 validation_failed` with a `required` violation at its pointer |
+| a field of the wrong JSON type | `422 validation_failed`, `invalid_format` at the field |
 
 ### Credential routes
 
@@ -556,7 +581,7 @@ other spelling names the same id.
 | `POST <base>/auth/password` | authenticated | `{"current","next"}` | `204` |
 | `GET <base>/auth/me` | authenticated | — | `{"subject","session","profile"}` |
 | `GET <base>/auth/sessions` | authenticated | `after`, `limit` | a page of the subject's open sessions, newest first |
-| `DELETE <base>/auth/sessions/{sessionId}` | authenticated | — | `204`; a session of another subject matches nothing and closes nothing |
+| `DELETE <base>/auth/sessions/{sessionId}` | authenticated | — | `204`; a session already closed closes nothing more; a session of another subject matches nothing and closes nothing |
 
 A sign-in delivered in the body:
 
@@ -625,7 +650,7 @@ a page can hold fewer than `limit` items — even none — and still have a `nex
 | `POST <base>/roles` | `access.role.write` | `{"slug","name"}` | `201`, the role |
 | `PATCH <base>/roles/{roleId}` | `access.role.write` | `{"name"}` | the role |
 | `DELETE <base>/roles/{roleId}` | `access.role.delete` | — | `204` |
-| `POST <base>/roles/bulk-delete` | `access.role.delete` | `{"ids":[…]}`, a non-empty array of canonical ids | `204` |
+| `POST <base>/roles/bulk-delete` | `access.role.delete` | `{"ids":[…]}`, a non-empty array of at most `web.max-bulk-ids` canonical ids | `204` |
 | `GET <base>/roles/{roleId}/permissions` | `access.role.read` | `after` (a permission id), `limit` | a page of the role's permissions |
 | `POST <base>/roles/{roleId}/permissions` | `access.role.write` | `{"permission"}`, a code | `204` |
 | `DELETE <base>/roles/{roleId}/permissions/{code}` | `access.role.write` | — | `204` |
@@ -647,7 +672,9 @@ load alongside: a role's permissions are their own page.
 
 `PUT …/password` takes the identifier from the directory's profile, normalised the way sign-in normalises what it looks
 up; writes the credential, or replaces the identifier and hash of the existing one; and closes every session of the
-subject. A subject the directory does not describe is `404`.
+subject. A subject the directory does not describe is `404`. An identifier another subject of the type signs in with is
+`409 identifier_taken` whether or not the subject already had a credential, and nothing is written
+(`SetSubjectPasswordTest`, `DirectorySurfaceIT`).
 
 ### Refusals
 
@@ -656,16 +683,20 @@ subject. A subject the directory does not describe is `404`.
 | `400 invalid_delivery` | delivery is `both` and `Rain-Auth-Delivery` is absent, repeated, or anything but exactly `cookies` or `body` |
 | `400 unknown_subject_type` | the path names a subject type this application does not serve, with a violation at `/subjectType` |
 | `400 invalid_id`, `400 unknown_parameter`, `400 bad_query`, `400 invalid_cursor` | see above |
+| `400 malformed_body` | a body that is JSON but not an object |
+| `400 bad_request` | a body that is not JSON; a bulk delete naming more than `web.max-bulk-ids` ids, with an `out_of_range` violation at `/ids` |
 | `401 bad_credentials` | a sign-in that does not prove its password, or a password change whose current password is wrong |
-| `401 unauthenticated` | a refresh credential that is not usable, presented twice or not at all; a route that needs a principal, called without one |
+| `401 unauthenticated` | a refresh credential that is not usable, presented twice or not at all; a route that needs a principal, called without one or with an access token that authenticates nobody |
 | `403 forbidden` | a permission is missing |
 | `403 system_role` | renaming, deleting or detaching a permission from a system role |
 | `404 not_found` | a role, or an operator's subject, that does not exist |
 | `409 identifier_taken`, `409 already_enrolled` | a sign-up or password set whose identifier another subject of the type signs in with; a sign-up for a subject that already has a password |
 | `409 too_many_roles` | a grant beyond `grants.max-roles-per-subject` |
 | `415 unsupported_media_type` | a body on a credential route that is not `application/json` |
-| `422 validation_failed` | a missing or mistyped field; a new password under `password.min-length` (`weak_password`) or over `password.max-bytes` (`password_too_long`); an identifier over its bound (`too_long`); a malformed slug (`invalid_format`) or one already taken (`unique`) |
-| `422 unknown_role`, `422 unknown_permission`, `422 unusable_subject` | a slug no role has, a code no module declares, a grant to a subject that is not active; each with a violation at the field |
+| `422 validation_failed` | what the request itself spells wrong: a field the route does not read (`unknown_field`), a missing (`required`) or mistyped (`invalid_format`) field, an id in a bulk delete that is not canonical (`invalid_id`), a new password under `password.min-length` (`weak_password`) or over `password.max-bytes` (`password_too_long`), an identifier over its bound (`too_long`) |
+| `422 invalid_format`, `422 unique` | a slug that does not match the slug pattern; a slug another role already has |
+| `422 required`, `422 too_long` | a role name that is blank; a role name over 256 characters |
+| `422 unknown_role`, `422 unknown_permission`, `422 unusable_subject` | a slug no role has, a code no module declares, a grant to a subject that is not active |
 | `429 too_many_attempts` | the identifier or the address is locked; `Retry-After` is the rest of the lock |
 | `429 too_many_requests` | the client address is past its bucket on the credential routes; `Retry-After` is the gap between two tokens |
 | `503 overloaded` | no hashing permit in time, or the waiting queue is full; `Retry-After` is the bulkhead's `max-wait-duration` when it is positive |
@@ -673,6 +704,11 @@ subject. A subject the directory does not describe is `404`.
 | `503 audit_unavailable` | the evidence of a change could not be written; nothing was changed |
 | `503 revocation_unavailable` | the revocation list could not be asked or told |
 | `503 unavailable` | the attempt store could not be asked |
+
+A `422` raised by a rule of the roles, the catalogue or the directory carries its one violation's code as the top-level
+`code` as well, with the violation at the field — `422 unknown_role` at `/role`, `422 too_long` at `/name` — so a client
+branches on the code without reading `errors`; only what the request itself spells wrong answers `validation_failed`
+(`DirectorySurfaceIT`).
 
 ```json
 {"type":"about:blank","title":"Bad Request","status":400,"detail":"this application serves no subject of this type","code":"unknown_subject_type","errors":[{"pointer":"/subjectType","code":"unknown_subject_type","message":"\"robot\" is not a subject type this application serves"}]}
@@ -759,7 +795,10 @@ session.
 
 `POST …/logout` closes the principal's own session and `DELETE …/sessions/{id}` another session of the same subject,
 each in a transaction with its evidence, then announces the closed session to the revocation list. A list that cannot be
-told is `503 revocation_unavailable` after the session is closed in the database; the replay announces it again.
+told is `503 revocation_unavailable` after the session is closed in the database; the replay announces it again. A
+session that is already closed is `204` as well: the call closes nothing, records no second row, and announces the
+session again with the instant it was closed, since the list may have lost it. A session of another subject matches
+nothing, records nothing and announces nothing (`LogoutRecordsOnlyWhatItClosedTest`, `AccountSurfaceIT`).
 
 `POST …/logout-all` closes every session of the subject issued up to now, keeping the current one unless
 `includingCurrent` is true:
@@ -777,13 +816,18 @@ session announcement (`LogoutAllWritesOneRedisKeyTest`).
 ### Changing and setting a password
 
 A subject changing its own password presents the current one, which behind a valid session is a password oracle: it is
-charged to the same attempt keys a sign-in with the account's identifier is, and a wrong one is `401 bad_credentials` and
-a `sign-in-failed` row. The current password is verified and the new one hashed outside any transaction; the new hash is
-written only while the credential is still the version verified, with one re-run when it changed and then `503
-credential_changed`. With `password.revoke-other-sessions-on-change`, the same transaction writes a cutoff keeping the
-current session, completed as for `logout-all`.
+charged to the same attempt keys a sign-in with the account's identifier is, and a wrong one is recorded exactly as a
+failed sign-in — a `sign-in-failed` row in a transaction of its own, and one `lockout-opened` row for each key the failure
+locked — and answers `401 bad_credentials`. A locked key refuses sign-in and password change alike with `429
+too_many_attempts`, and a successful change clears the identifier's counter (`ChangePasswordTest`). The current
+password is verified and the new one hashed outside any transaction; the new hash is written only while the credential is
+still the version verified, with one re-run when it changed and then `503 credential_changed`. With
+`password.revoke-other-sessions-on-change`, the same transaction writes a cutoff keeping the current session, completed
+as for `logout-all`.
 
-An operator setting another subject's password (`PUT …/password`) closes every session of the subject, the same way.
+An operator setting another subject's password (`PUT …/password`) closes every session of the subject, the same way;
+an identifier another subject of the type signs in with is `409 identifier_taken`, whether or not the subject had a
+credential.
 
 ### Sign-in
 
@@ -883,8 +927,8 @@ reads. With `revocation.store: none` there is no list: a closed session's access
 A token is revoked when its session's key exists, or when its subject's cutoff key names a cutoff at or after the token's
 `sit` and a session other than the kept one. A check is one `MGET` of both keys. A revocation whose lifetime has already
 passed writes no key: no token can name it. Closed sessions are written in one pipeline; a cutoff is written by a script
-that never replaces a later cutoff. The list fails closed: a read that fails is `503 revocation_unavailable`, never
-"live" (`RevocationListIT`).
+that never replaces a later cutoff. The list fails closed: a read that fails is never "live" — the request
+is anonymous, and a route that needs a caller answers `503 revocation_unavailable` (`RevocationListIT`, `RedisOutageIT`).
 
 ### The server keeps what it is told
 
@@ -947,6 +991,10 @@ its own. The actor of a row is the authenticated subject (`accessPrincipalActor`
 | `role-changed` | `role` | `change`, `slug`, `permission` |
 | `default-role-changed` | `subject-type` | `slug` |
 
+A call that changes nothing records nothing: a grant already held, a revoke of nothing, attaching a permission a role holds
+or detaching one it lacks, binding the default role a type already has, closing a session already closed
+(`GrantsAdministrationTest`, `RoleAdministrationRulesTest`, `ProvisioningRulesTest`, `LogoutRecordsOnlyWhatItClosedTest`).
+
 A log line names a session by `sid_fp`, the first eight bytes of an HMAC-SHA256 of the session id in hex, never by the
 id: a session id in a log store is half of what it takes to close somebody else's session. The HMAC key is derived from
 the signing key under a fixed label, so replicas agree without a second secret. No identifier, password or token is
@@ -972,14 +1020,15 @@ logged.
 | `already_enrolled` | this subject already signs in with a password | `409` |
 | `identifier_taken` | this identifier already signs in | `409` |
 | `invalid_delivery` | the request does not say how credentials are delivered | `400` |
-| `invalid_cursor` (rain-core) | the page cursor could not be read | `400` |
 | `credential_changed` | the credential changed while the request was being checked; try again | `503` |
 | `audit_unavailable` | the change could not be recorded; nothing was changed | `503` |
 | `revocation_unavailable` | whether this session is still open could not be established; try again | `503` |
 
 rain-access also answers with `RainErrorCodes` ([rain-core](core.md#error-codes)): `unauthenticated`, `forbidden`,
-`not_found`, `invalid_id`, `unknown_parameter`, `bad_query`, `unsupported_media_type`, `too_many_requests`,
-`unavailable`, `validation_failed` and its violation codes.
+`not_found`, `invalid_id`, `invalid_cursor` (declared once, in rain-core, since rain-crud pages with it too),
+`unknown_parameter`, `bad_query`, `bad_request`, `malformed_body`, `unsupported_media_type`, `too_many_requests`,
+`unavailable`, and `validation_failed` with its violation codes; `invalid_format`, `unique`, `required`, `too_long` and
+`out_of_range` are also the top-level code of a `422` a rule raises ([refusals](#refusals)).
 
 ## Health checks
 
@@ -1046,8 +1095,10 @@ unique code index returned. Retention statements use their index under a `Limit`
 | `access.session-retention` | `worker` | every `session.retention.interval`: deletes sessions that expired or were closed more than `retention.keep-for` ago, and cutoffs older than `session.ttl` (every session they close has expired), in batches; warns when it stops at its budget |
 | `access.revocation-replay` | `worker`, `revocation.store: redis` | every `revocation.redis.replay.interval`, as [above](#replay) |
 
-Each is a [rain-jobs](jobs.md#recurring-work) `RecurringWork`, run by exactly one worker of the cluster per interval. No
-command.
+Each is a [rain-jobs](jobs.md#recurring-work) `RecurringWork`, run by exactly one worker of the cluster per interval, and
+is named in the worker's `rain.jobs.required-recurring`: `access.session-retention` always, `access.revocation-replay`
+when `revocation.store` is `redis`. A worker whose list leaves one out, or names one it does not run, is refused
+([rain-jobs](jobs.md#configuration)). No command.
 
 ## What it does not do
 

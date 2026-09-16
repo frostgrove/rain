@@ -43,7 +43,7 @@ Bean-time problem:
 |---|---|
 | `AuditEventType(module, action, resourceKind, detailKeys)` | a kind of evidence, declared as a bean by the module or application that records it; `module`, `action` and `resourceKind` match `^[a-z][a-z0-9_-]{0,63}$`; `id` is `<module>.<action>` |
 | `AuditOutcome` | `OK` (`ok`), `REFUSED` (`refused`), `FAILED` (`failed`) |
-| `AuditDetail.of(vararg entries)` | at most 32 entries under keys matching `^[a-z][a-z0-9_]{0,63}$`; values are strings of at most 1024 characters, integers or booleans; serialised as one JSON object with keys in lexical order, so the same detail is always the same bytes |
+| `AuditDetail.of(vararg entries)` | at most 32 entries under keys matching `^[a-z][a-z0-9_]{0,63}$`; values are strings of at most 1024 characters, integers or booleans; serialised as one JSON object with keys in lexical order, so the same detail is always written as the same bytes |
 | `AuditEvent(type, outcome, resourceId, detail, actor)` | one piece of evidence; `detail` may only carry keys its type declares; `resourceId` is 1 to 256 characters; `actor` overrides the current actor when the event is about someone else |
 | `AuditRecorder.record(event)` | inserts inside the caller's transaction, so the evidence commits or rolls back with the change; refused with `IllegalStateException` outside a transaction |
 | `AuditRecorder.recordIndependently(event)` | inserts in a transaction of its own, for an outcome the caller's transaction will not commit, such as a refusal |
@@ -57,6 +57,14 @@ trail is exactly what the declaration allows. Recording an event whose type is n
 
 Each row takes its id from `IdGenerator`, `occurred_at` from the `Clock`, the actor from the event or else from
 `CurrentActor`, and `request_id` from the MDC key `request_id` that rain-web's request log sets.
+
+A detail is canonical where it is written: `record` inserts `AuditDetail.json()` — keys in lexical order, no whitespace,
+`"` and `\` escaped, a character below U+0020 as `\u00xx`, every other character as itself, integers in decimal. The
+column is `jsonb`, which keeps the value and not its text, so `AuditEntry.detailJson` is PostgreSQL's text of the value,
+not the bytes written: keys ordered by length and then bytewise, a space after every `:` and `,`.
+`AuditDetail.of("reason" to "duplicate", "merged_into" to "t-2")` is written `{"merged_into":"t-2","reason":"duplicate"}`
+and reads back as `{"reason": "duplicate", "merged_into": "t-2"}`. A detail read back is compared with one written as
+parsed JSON, never as text.
 
 ```kotlin
 @Bean
