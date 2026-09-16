@@ -14,14 +14,17 @@ import java.time.Duration
 /**
  * `rain.jobs`, required whenever rain-jobs is on the classpath.
  *
- * Required, because no value is right for every deployment: [workers] (one ceiling per declared definition),
- * [requiredRecurring] (the application's recurring work this deployment runs; an empty list is a statement too),
- * [drainGrace] and [reservedConnections]. The nested sections carry declared tuning defaults.
+ * Required, because no value is right for every deployment: [requiredRecurring] (the application's recurring work this
+ * deployment runs; an empty list is a statement too), [drainGrace] and [reservedConnections]. [workers] holds one
+ * ceiling for every declared definition and no other; each ceiling is required ([JobCatalogCheck] refuses a declared
+ * definition without one), so the map itself is empty unless stated — the one right value for an application that
+ * declares no definition, which a module with recurring work of its own (rain-access) can be. The nested sections carry
+ * declared tuning defaults.
  */
 @ConfigurationProperties(JobsProperties.PREFIX)
 public data class JobsProperties(
     /** Per definition name: how many of its attempts one process runs at once. Its profile's scheduler has Σ threads. */
-    public val workers: Map<String, Int>,
+    public val workers: Map<String, Int> = emptyMap(),
     public val requiredRecurring: List<String>,
     /** How long a stopping worker waits for running attempts, for all schedulers together. */
     public val drainGrace: Duration,

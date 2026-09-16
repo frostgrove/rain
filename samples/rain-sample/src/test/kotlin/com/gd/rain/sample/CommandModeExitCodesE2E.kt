@@ -81,7 +81,7 @@ class CommandModeExitCodesE2E {
     ): Exited = run(environment() + ("RAIN_RUNTIME_COMMAND" to name), *arguments)
 
     @Test
-    fun `config-check, migrate, seed and ticket-report exit 0 with their results on standard output`() {
+    fun `config-check, migrate, seed and ticket-report exit 0 with their results on standard output, and no banner or log line there`() {
         val checked = command("config-check")
         val migrated = command("migrate")
         val seeded = command("seed")
@@ -100,6 +100,7 @@ class CommandModeExitCodesE2E {
         assertThat(seeded.code).describedAs(seeded.err).isZero()
         assertThat(seeded.out).isEmpty()
         assertThat(seeded.err).contains("seeded: helpdesk.roles", "seeded: helpdesk.agents", "seeding complete: ran=2")
+        assertThat(seeded.err).describedAs("log lines, through rain-boot's console appender").contains("access catalogue synchronised")
         assertThat(reported.code).describedAs(reported.err).isZero()
         assertThat(reported.out).isEmpty()
         assertThat(reported.err).contains("ticket-report: 0 open tickets; last page")

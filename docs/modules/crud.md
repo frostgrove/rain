@@ -183,6 +183,8 @@ val POLICY =
 | `ResourcePolicy(access, scope, writable)` | an action without an entry in `access` is refused to everybody; `writable` is the fields a write may name — never the version, which the store writes |
 | `ScopeRule.Unrestricted` | every row |
 | `ScopeRule.Rows { caller -> predicate }` | the rows matching the predicate for this caller; it may read only fields the schema declares; every read is confined to them, and every write leaves its row matching the predicate or writes nothing |
+| `ScopeRule.EveryRowWhenHolding(permissions, otherwise)` | every row for a caller holding every one of `permissions`; for any other caller, the rows `otherwise` (a `Rows`) answers. Decided per caller, on every operation, by one `holdsAll` question about exactly `permissions`, so one resource and one set of query shapes serve both; `permissions` is at least one, none empty or containing whitespace |
+| `CrudResource.scopeOf(caller)` | the `RowScope` the policy gives an authenticated caller: `Everything` or `Matching(predicate)` |
 | `Predicate` | `Predicate.eq`, `isNull`, `isNotNull`, `Compare(field, operator, values)`, `AllOf`, `AnyOf` (each of at least two), `allOf`, `anyOf` |
 | `CallerLookup` | `current(): Caller` — the caller of the operation on the current thread |
 | `Caller.Anonymous`, `Caller.Authenticated` | an authenticated caller has an `actor` and answers `holdsAll(permissions)` |
@@ -750,7 +752,9 @@ class BooksPlanProofIT {
 `verify(store, mounted, scopes, dataSource)` takes the resource's own `JooqResourceStore`, the `MountedResource` the
 application serves — the proof explains exactly the statements of its mounted operations — and at least one
 `ProofScope(name, scope)` — typically one per scope rule, for a
-representative caller — each named once. The caller lookup is never asked.
+representative caller — each named once. The caller lookup is never asked. `resource.scopeOf(caller)` answers the scope the policy gives a caller, so a
+proof states exactly the scopes its policy yields: for `EveryRowWhenHolding`, one for a caller holding the permissions and
+one for a caller who does not (`PlanProofUnderEveryRowWhenHoldingIT`).
 
 | Result | What it holds |
 |---|---|

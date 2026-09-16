@@ -2,6 +2,7 @@ package com.gd.rain.sample.stand
 
 import com.gd.rain.access.SurfaceExemption
 import com.gd.rain.sample.access.HelpdeskRoles
+import com.gd.rain.test.ApplicationHttp
 import com.gd.rain.test.RainDatabase
 import com.gd.rain.test.RainPostgres
 import com.gd.rain.web.route.Access
@@ -139,7 +140,7 @@ class EventStreamReader private constructor(
 
     companion object {
         fun open(
-            http: Http,
+            http: ApplicationHttp,
             path: String,
             vararg headers: Pair<String, String>,
         ): EventStreamReader {

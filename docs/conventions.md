@@ -63,10 +63,10 @@ run once — or a lookup pinned to a unique key, reading at most one entry (or o
 and at ten million, so the test needs no large fixture. rain's own: `AuditIT`, `RetentionUsesIndexIT`,
 `DeadLetterKeysetIT`, `ReaperIT`, `CancelBySubjectIT`, `HeldReservationIsKeyedByInvocationIT`, `CursorPagingIT`,
 `CappedCountIT`; `LlmSlotsIT` asserts the indexes its statements read and that neither table is scanned sequentially.
-rain-access's `SessionPagesKeysetIT` and `DirectoryPagesKeysetIT` explain each keyset page with sequential scans, bitmap
-scans and sorts priced out and assert the named index under a `Limit` with no `Filter` and no sort;
-`PermissionCheckBoundedCostIT` and `SessionsRetentionIT` read their plans through `QueryPlans` and assert the indexes used,
-index conditions and no sequential scan ([rain-access](modules/access.md#scale-guarantees)).
+rain-access's `SessionPagesKeysetIT`, `DirectoryPagesKeysetIT` and `WriteAndLookupStatementsBoundedIT` assert
+`QueryPlan.boundedScan` and the named index for every page, batch and lookup; `PermissionCheckBoundedCostIT` (a correlated
+`EXISTS` per asked code, which v3 does not accept) and `SessionsRetentionIT` read their plans through `QueryPlans` and assert
+the indexes used, index conditions and no sequential scan ([rain-access](modules/access.md#scale-guarantees)).
 
 A rain-crud resource is proven as a whole: `CrudPlanProof` explains every statement the store runs for every mounted
 operation — the pages and counts of every declared query shape, and every statement by identifier — under every stated

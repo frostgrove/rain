@@ -83,6 +83,27 @@ public sealed interface ScopeRule {
     public fun interface Rows : ScopeRule {
         public fun of(caller: Caller.Authenticated): Predicate
     }
+
+    /**
+     * Every row for a caller holding every one of [permissions]; for any other caller, the rows [otherwise] answers for
+     * it, with everything [Rows] promises. Decided per caller, on every operation, by one `holdsAll` question about exactly
+     * [permissions] — so one resource serves both, and the same query shapes answer under both scopes.
+     */
+    public class EveryRowWhenHolding(
+        permissions: Set<String>,
+        public val otherwise: Rows,
+    ) : ScopeRule {
+        public val permissions: Set<String> = permissions.toSortedSet()
+
+        init {
+            require(this.permissions.isNotEmpty()) { "a scope that widens for a caller holding permissions names at least one" }
+            require(this.permissions.none { it.isEmpty() || it.any(Char::isWhitespace) }) {
+                "a permission is non-empty and has no whitespace"
+            }
+        }
+
+        override fun toString(): String = "EveryRowWhenHolding(${permissions.joinToString(", ")})"
+    }
 }
 
 /**

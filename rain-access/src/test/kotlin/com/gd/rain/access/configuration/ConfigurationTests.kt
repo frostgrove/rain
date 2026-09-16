@@ -96,6 +96,7 @@ class AccessPropertiesRefusesZeroTest {
             "rain.access.gate.throttle.per-minute=0",
             "rain.access.gate.throttle.callers=-1",
             "rain.access.grants.max-roles-per-subject=0",
+            "rain.access.grants.role-deletion-batch=0",
             "rain.access.web.page.default-size=0",
             "rain.access.web.max-bulk-ids=0",
             "rain.access.catalogue.chunk-size=0",

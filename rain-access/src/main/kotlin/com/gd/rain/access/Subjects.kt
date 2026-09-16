@@ -49,9 +49,16 @@ public data class Profile(
 /**
  * The seam between rain-access and the module that owns one kind of subject.
  *
- * rain-access knows a subject by type and id and asks the directory what it cannot answer itself. Every method may
- * run inside a transaction rain-access opened (sign-in, rotation), so an implementation that reads the database joins
- * it rather than opening its own.
+ * rain-access knows a subject by type and id and asks the directory what it cannot answer itself, sometimes inside a
+ * transaction rain-access opened and sometimes outside any:
+ *
+ * - inside one: [signedIn] and [describe] in the sign-in and sign-up transactions, and [isActive] in the transaction
+ *   that grants a role or a permission;
+ * - outside any: [isActive] on every authenticated request, before a sign-in locks the credential it verified, before a
+ *   rotation's compare-and-set and while looking for a usable holder of a role; [describe] after a rotation, for
+ *   `GET <base>/auth/me` and before an operator sets a password.
+ *
+ * An implementation that reads the database joins the caller's transaction when there is one, and needs none.
  */
 public interface SubjectDirectory {
     public val subjectType: SubjectType

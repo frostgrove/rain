@@ -5,11 +5,10 @@ import com.gd.rain.access.SubjectRef
 import com.gd.rain.access.internal.attempt.AttemptKeys
 import com.gd.rain.access.support.AccessApplication
 import com.gd.rain.access.support.DEFAULT_PASSWORD
-import com.gd.rain.access.support.Http
 import com.gd.rain.access.support.accessProperties
 import com.gd.rain.access.support.directory
-import com.gd.rain.access.support.port
-import com.gd.rain.access.support.startAccessApplication
+import com.gd.rain.test.ApplicationHttp
+import com.gd.rain.test.RainApplication
 import com.gd.rain.test.RainPostgres
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll
@@ -38,20 +37,20 @@ private const val NEW_PASSWORD = "a completely new password"
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AccountSurfaceIT {
     private lateinit var context: ConfigurableApplicationContext
-    private lateinit var http: Http
+    private lateinit var http: ApplicationHttp
     private lateinit var jdbc: JdbcTemplate
 
     @BeforeAll
     fun start() {
         val database = RainPostgres.freshDatabase("access_account_surface")
-        context =
-            startAccessApplication(
-                AccessApplication::class.java,
+        val application =
+            RainApplication.start(
+                listOf(AccessApplication::class.java),
                 WebApplicationType.SERVLET,
-                *accessProperties("server.port=0"),
-                *database.springProperties().toTypedArray(),
+                accessProperties("server.port=0").toList() + database.springProperties(),
             )
-        http = Http(context.port())
+        context = application.context
+        http = application.http
         jdbc = JdbcTemplate(database.dataSource())
     }
 

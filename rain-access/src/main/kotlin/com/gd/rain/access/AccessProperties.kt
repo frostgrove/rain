@@ -2,13 +2,10 @@ package com.gd.rain.access
 
 import com.gd.rain.access.internal.token.SigningKey
 import com.gd.rain.access.internal.token.SigningKeyResolution
-import com.gd.rain.boot.config.BoundSections
 import com.gd.rain.boot.config.ConfigurationContributor
 import com.gd.rain.boot.config.ConfigurationSection
-import com.gd.rain.boot.config.CrossSectionRule
 import com.gd.rain.boot.config.Presence
 import com.gd.rain.boot.config.RequiredFromEnvironment
-import com.gd.rain.boot.config.RuleOutcome
 import com.gd.rain.boot.config.SectionSpec
 import com.gd.rain.boot.config.written
 import com.gd.rain.boot.runtime.DeploymentStage
@@ -16,10 +13,7 @@ import com.gd.rain.core.config.ConfigurationProblem
 import com.gd.rain.core.config.ProblemCode
 import com.gd.rain.core.config.ProblemCollector
 import com.gd.rain.core.config.problems
-import com.gd.rain.web.config.RainWebProperties
 import org.springframework.boot.context.properties.ConfigurationProperties
-import java.net.URI
-import java.net.URISyntaxException
 import java.time.Duration
 
 /** Where the credentials a sign-in answers with are delivered. */
@@ -222,6 +216,8 @@ public data class AccessProperties(
     public data class Grants(
         /** The most roles one subject may hold; it bounds what a permission check reads per role. */
         public val maxRolesPerSubject: Int,
+        /** Holders, then permissions, removed per transaction when an application role is deleted. */
+        public val roleDeletionBatch: Int = 500,
     ) : ConfigurationSection
 
     public data class Provisioning(
@@ -247,6 +243,7 @@ public data class AccessProperties(
             count(gate.throttle.burst, "$PREFIX.gate.throttle.burst")
             count(gate.throttle.callers, "$PREFIX.gate.throttle.callers")
             count(grants.maxRolesPerSubject, "$PREFIX.grants.max-roles-per-subject")
+            count(grants.roleDeletionBatch, "$PREFIX.grants.role-deletion-batch")
             count(provisioning.holderPageSize, "$PREFIX.provisioning.holder-page-size")
             count(provisioning.holderPageBudget, "$PREFIX.provisioning.holder-page-budget")
             count(catalogue.chunkSize, "$PREFIX.catalogue.chunk-size")
@@ -414,7 +411,10 @@ public data class AccessProperties(
     }
 }
 
-/** Declares `rain.access` and its cross-section rules to rain's configuration validation. */
+/**
+ * Declares `rain.access` to rain's configuration validation. Its rules read `rain.access` alone ([AccessProperties.problems]);
+ * it declares no cross-section rule.
+ */
 public class AccessConfigurationContributor : ConfigurationContributor {
     override val sections: List<SectionSpec<*>> =
         listOf(

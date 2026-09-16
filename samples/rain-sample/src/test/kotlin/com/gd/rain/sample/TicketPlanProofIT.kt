@@ -1,5 +1,6 @@
 package com.gd.rain.sample
 
+import com.gd.rain.core.actor.Actor
 import com.gd.rain.crud.Caller
 import com.gd.rain.crud.CallerLookup
 import com.gd.rain.crud.RowScope
@@ -7,11 +8,10 @@ import com.gd.rain.crud.persistence.JooqResourceStore
 import com.gd.rain.crud.persistence.RowReader
 import com.gd.rain.crud.proof.CrudPlanProof
 import com.gd.rain.crud.proof.ProofScope
-import com.gd.rain.crud.query.Predicate
-import com.gd.rain.crud.web.MountedResource
 import com.gd.rain.persistence.id.UuidV7Ids
+import com.gd.rain.sample.access.TicketPermissions
+import com.gd.rain.sample.agent.Agents
 import com.gd.rain.sample.config.TicketProperties
-import com.gd.rain.sample.ticket.Ticket
 import com.gd.rain.sample.ticket.TicketDeclarations
 import com.gd.rain.sample.ticket.TicketFields
 import com.gd.rain.sample.ticket.TicketKey
@@ -50,10 +50,22 @@ private class ProofDatabase(
     }
 }
 
+/** An agent calling the ticket resource, holding `ticket.read` or not. */
+private fun agent(
+    id: UUID,
+    holdsTicketRead: Boolean,
+): Caller.Authenticated =
+    object : Caller.Authenticated {
+        override val actor: Actor = Actor(Agents.TYPE.name, id.toString())
+
+        override fun holdsAll(permissions: Set<String>): Boolean = holdsTicketRead && permissions == setOf(TicketPermissions.READ)
+    }
+
 /**
  * Every statement the ticket resource runs — each declared query shape's pages and counts, and every statement by
- * identifier of every mounted operation — explained against the migrated, empty database, under both scopes the
- * helpdesk serves, and bounded by plan criterion v3.
+ * identifier of every mounted operation — explained against the migrated, empty database under both scopes its policy
+ * gives an agent, taken from the resource itself: every ticket for an agent holding `ticket.read`, the tickets assigned to
+ * it for any other. One resource, one set of shapes, bounded by plan criterion v3 under each.
  */
 @Tag("integration")
 class TicketPlanProofIT {
@@ -61,36 +73,26 @@ class TicketPlanProofIT {
     private val nobody = CallerLookup { Caller.Anonymous }
 
     @Test
-    fun `every ticket, as a supervisor reads them, is bounded by the ticket indexes`() {
-        val proof = ProofDatabase("ticket_proof_every")
+    fun `every ticket statement is bounded for a supervisor reading every ticket and for a responder reading its own`() {
+        val proof = ProofDatabase("ticket_proof")
         val store = JooqResourceStore(TicketFields.SCHEMA, proof.dsl, UuidV7Ids, RowReader.fields(TicketFields.SCHEMA))
-        val mounted =
-            MountedResource(TicketDeclarations.PREFIX, TicketDeclarations.OPERATIONS, TicketDeclarations.every(store, nobody, pages))
-
-        val result = CrudPlanProof.verify(store, mounted, listOf(ProofScope("every ticket", RowScope.Everything)), proof.dataSource)
-
-        result.assertBounded()
-        assertThat(result.statements).isNotEmpty()
-    }
-
-    @Test
-    fun `the tickets assigned to one agent, as a responder reads them, are bounded by the ticket indexes`() {
-        val proof = ProofDatabase("ticket_proof_assigned")
-        val store = JooqResourceStore(TicketFields.SCHEMA, proof.dsl, UuidV7Ids, RowReader.fields(TicketFields.SCHEMA))
-        val mounted =
-            MountedResource(TicketDeclarations.PREFIX, TicketDeclarations.OPERATIONS, TicketDeclarations.assigned(store, nobody, pages))
-        val agent = UUID.fromString("00000000-0000-7000-8000-00000000abcd")
+        val resource = TicketDeclarations.resource(store, nobody, pages)
+        val id = UUID.fromString("00000000-0000-7000-8000-00000000abcd")
+        val supervisor = resource.scopeOf(agent(id, holdsTicketRead = true))
+        val responder = resource.scopeOf(agent(id, holdsTicketRead = false))
 
         val result =
             CrudPlanProof.verify(
                 store,
-                mounted,
-                listOf(ProofScope("assigned to one agent", RowScope.Matching(Predicate.eq(TicketFields.ASSIGNEE, agent)))),
+                TicketDeclarations.mounted(resource),
+                listOf(ProofScope("holding ticket.read", supervisor), ProofScope("assigned to one agent", responder)),
                 proof.dataSource,
             )
 
         result.assertBounded()
-        assertThat(result.statements).isNotEmpty()
+        assertThat(supervisor).isSameAs(RowScope.Everything)
+        assertThat(responder).isInstanceOf(RowScope.Matching::class.java)
+        assertThat(result.statements.map { it.scope }.distinct()).containsExactly("holding ticket.read", "assigned to one agent")
     }
 }
 

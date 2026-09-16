@@ -48,20 +48,27 @@ public interface SessionStore {
         reason: String,
     ): SessionClosure?
 
-    /** Closes up to [batch] of [subject]'s open sessions issued up to [cutoffAt], except [kept]; answers how many. */
+    /**
+     * One batch of closing [subject]'s sessions issued up to [cutoffAt]: reads the next [batch] of its open ones after
+     * [after], in creation-then-id order, and closes every one of them but [kept] that is still open. [RevokedBatch.next] is
+     * the last session the batch read, `null` when it read fewer than [batch] — so the batches move past [kept] and always end.
+     */
     public fun revokeBatch(
         subject: SubjectRef,
         cutoffAt: Instant,
         kept: UUID?,
+        after: SessionCursor?,
         now: Instant,
         reason: String,
         batch: Int,
-    ): Int
+    ): RevokedBatch
 
+    /**
+     * Up to [limit] of [subject]'s open sessions after [after], newest first by creation, then id — expired and idle ones
+     * included: telling them apart is the caller's, on the rows this page read.
+     */
     public fun livePage(
         subject: SubjectRef,
-        now: Instant,
-        idleSince: Instant,
         after: SessionCursor?,
         limit: Int,
     ): List<StoredSession>
@@ -196,44 +203,77 @@ public class JooqSessionStore(
         subject: SubjectRef,
         cutoffAt: Instant,
         kept: UUID?,
+        after: SessionCursor?,
         now: Instant,
         reason: String,
         batch: Int,
-    ): Int {
+    ): RevokedBatch {
+        val locked =
+            dsl.fetch(revokePageQuery(subject, cutoffAt, after, batch)).map {
+                SessionCursor(it[SESSIONS.CREATED_AT].toInstant(), it[SESSIONS.ID])
+            }
+        val closing = locked.map(SessionCursor::id).filterNot { it == kept }
+        val closed = if (closing.isEmpty()) 0 else dsl.execute(closeAllQuery(closing, now, reason))
+        return RevokedBatch(closed, if (locked.size == batch) locked.last() else null)
+    }
+
+    /**
+     * The sessions one batch of [revokeBatch] closes: up to [batch] of [subject]'s open sessions issued up to [cutoffAt],
+     * after [after], a keyset range of `ix_sessions_live` under a `LIMIT`. It takes no row lock: under one, PostgreSQL keeps
+     * the partial index's predicate as a `Filter`, and the close re-checks each row itself. The kept session is no condition
+     * here, which an index could not serve; it is left out of [closeAllQuery] instead.
+     */
+    public fun revokePageQuery(
+        subject: SubjectRef,
+        cutoffAt: Instant,
+        after: SessionCursor?,
+        batch: Int,
+    ): Select<*> {
         require(batch >= 1) { "a revocation batch closes at least one session, got $batch" }
-        val chosen =
-            dsl
-                .select(SESSIONS.ID)
-                .from(SESSIONS)
-                .where(SESSIONS.SUBJECT_TYPE.eq(subject.type.name))
-                .and(SESSIONS.SUBJECT_ID.eq(subject.id))
-                .and(SESSIONS.REVOKED_AT.isNull)
-                .and(SESSIONS.CREATED_AT.le(cutoffAt.utc()))
-                .and(kept?.let(SESSIONS.ID::ne) ?: DSL.noCondition())
-                .orderBy(SESSIONS.CREATED_AT, SESSIONS.ID)
-                .limit(batch)
-                .forUpdate()
+        return dsl
+            .select(SESSIONS.ID, SESSIONS.CREATED_AT)
+            .from(SESSIONS)
+            .where(SESSIONS.SUBJECT_TYPE.eq(subject.type.name))
+            .and(SESSIONS.SUBJECT_ID.eq(subject.id))
+            .and(SESSIONS.REVOKED_AT.isNull)
+            .and(SESSIONS.CREATED_AT.le(cutoffAt.utc()))
+            .and(after?.let { DSL.row(SESSIONS.CREATED_AT, SESSIONS.ID).gt(it.createdAt.utc(), it.id) } ?: DSL.noCondition())
+            .orderBy(SESSIONS.CREATED_AT, SESSIONS.ID)
+            .limit(batch)
+    }
+
+    /**
+     * Closes the still-open sessions among [ids]: a lookup of the primary key per id. An open session is told by its
+     * `revoked_reason`, which `sessions_revocation_complete` keeps null exactly when `revoked_at` is: a condition on
+     * `revoked_at` would let PostgreSQL read `ix_sessions_live`, whose predicate it is, by the ids instead of the key.
+     */
+    public fun closeAllQuery(
+        ids: Collection<UUID>,
+        now: Instant,
+        reason: String,
+    ): org.jooq.Query {
+        require(ids.isNotEmpty()) { "closing sessions names at least one" }
         return dsl
             .update(SESSIONS)
             .set(SESSIONS.REVOKED_AT, now.utc())
             .set(SESSIONS.REVOKED_REASON, reason)
-            .where(SESSIONS.ID.`in`(chosen))
-            .execute()
+            .where(SESSIONS.ID.`in`(ids))
+            .and(SESSIONS.REVOKED_REASON.isNull)
     }
 
     override fun livePage(
         subject: SubjectRef,
-        now: Instant,
-        idleSince: Instant,
         after: SessionCursor?,
         limit: Int,
-    ): List<StoredSession> = dsl.fetch(livePageQuery(subject, now, idleSince, after, limit)).map { sessionOf(it) }
+    ): List<StoredSession> = dsl.fetch(livePageQuery(subject, after, limit)).map { sessionOf(it) }
 
-    /** The live page as one statement, for its plan to be read. */
+    /**
+     * The live page as one statement, for its plan to be read: a keyset range of `ix_sessions_live` under a `LIMIT`. The
+     * expiry and idle bounds are no condition here: on the index's trailing columns they would not end the range, so a
+     * page would read every expired or idle session of the subject that retention has not deleted yet.
+     */
     public fun livePageQuery(
         subject: SubjectRef,
-        now: Instant,
-        idleSince: Instant,
         after: SessionCursor?,
         limit: Int,
     ): Select<*> {
@@ -244,8 +284,6 @@ public class JooqSessionStore(
             .where(SESSIONS.SUBJECT_TYPE.eq(subject.type.name))
             .and(SESSIONS.SUBJECT_ID.eq(subject.id))
             .and(SESSIONS.REVOKED_AT.isNull)
-            .and(SESSIONS.EXPIRES_AT.gt(now.utc()))
-            .and(SESSIONS.LAST_USED_AT.gt(idleSince.utc()))
             .and(after?.let { DSL.row(SESSIONS.CREATED_AT, SESSIONS.ID).lt(it.createdAt.utc(), it.id) } ?: DSL.noCondition())
             .orderBy(SESSIONS.CREATED_AT.desc(), SESSIONS.ID.desc())
             .limit(limit)

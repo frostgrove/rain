@@ -97,6 +97,17 @@ public object AccessFaults {
 
     public fun unusableSubject(field: String): Fault = invalid(field, AccessErrorCodes.UNUSABLE_SUBJECT)
 
+    /**
+     * A query parameter outside what its route reads: `400 bad_query` with a violation of [code] at the parameter, the
+     * family rain-crud's bounds belong to — `out_of_range` for a limit beyond the declared page, `invalid_format` for one
+     * that is not a whole number.
+     */
+    public fun badQuery(
+        parameter: String,
+        code: ErrorCode,
+        message: String,
+    ): Fault = Fault(FaultKind.BAD_REQUEST, RainErrorCodes.BAD_QUERY, violations = listOf(Violation.at(path(parameter), code, message)))
+
     public fun invalid(
         field: String,
         code: ErrorCode,

@@ -1,21 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 Every log line goes to standard error. A process started as a command writes its result to standard output
-(`ticket-report` prints a page there), and a log line in between would be read as part of the result.
-Otherwise this is Spring Boot's own console appender.
+(`ticket-report` prints a page there), and a log line in between would be read as part of the result; rain-boot turns the
+banner off in every command and ships the console appender that keeps logs off standard output. Otherwise this is Spring
+Boot's own console logging.
 -->
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <target>System.err</target>
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>${CONSOLE_LOG_THRESHOLD}</level>
-        </filter>
-        <encoder>
-            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
-            <charset>${CONSOLE_LOG_CHARSET}</charset>
-        </encoder>
-    </appender>
+    <include resource="com/gd/rain/boot/logging/logback/console-stderr-appender.xml"/>
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>

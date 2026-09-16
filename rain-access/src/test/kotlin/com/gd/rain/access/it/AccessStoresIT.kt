@@ -5,7 +5,9 @@ import com.gd.rain.access.PermissionDef
 import com.gd.rain.access.SubjectRef
 import com.gd.rain.access.SystemRoleDeclaration
 import com.gd.rain.access.internal.store.CredentialInsert
+import com.gd.rain.access.internal.store.RevokedBatch
 import com.gd.rain.access.internal.store.SessionClosure
+import com.gd.rain.access.internal.store.SessionCursor
 import com.gd.rain.access.internal.store.SubjectCutoff
 import com.gd.rain.access.internal.token.RefreshCredential
 import com.gd.rain.access.internal.usecase.AccessTransactions
@@ -156,6 +158,22 @@ class SessionStoreIT {
         ).isEqualTo(SessionClosure(START.plusSeconds(1), closedByThisCall = false))
     }
 
+    /** Every batch from the first until one locks fewer than [batch], each continuing after the last session the one before locked. */
+    private fun closeEverywhere(
+        kept: UUID?,
+        batch: Int,
+    ): List<RevokedBatch> {
+        val batches = mutableListOf<RevokedBatch>()
+        var after: SessionCursor? = null
+        do {
+            val done = db.sessions.revokeBatch(subject, START, kept, after, START, RevocationReasons.SIGNED_OUT_EVERYWHERE, batch)
+            batches += done
+            after = done.next
+            check(batches.size <= 10) { "the batches never ended" }
+        } while (after != null)
+        return batches
+    }
+
     @Test
     fun `closing everywhere takes bounded batches of what was issued up to the cutoff and keeps the named session`() {
         val issued = List(5) { db.openSession(subject, START.minusSeconds(10L - it)) }
@@ -163,14 +181,23 @@ class SessionStoreIT {
         val later = db.openSession(subject, START.plusSeconds(1))
         val stranger = db.openSession(SubjectRef(AGENT, UUID.randomUUID()), START.minusSeconds(5))
 
-        val batches =
-            generateSequence { db.sessions.revokeBatch(subject, START, kept, START, RevocationReasons.SIGNED_OUT_EVERYWHERE, 2) }
-                .takeWhile { it > 0 }
-                .toList()
+        val batches = closeEverywhere(kept, 2)
 
-        assertThat(batches).containsExactly(2, 2)
+        assertThat(batches.map { it.closed }).containsExactly(2, 1, 1)
+        assertThat(batches.map { it.next?.id }).containsExactly(issued[1], issued[3], null)
         issued.filter { it != kept }.forEach { assertThat(requireNotNull(db.sessions.findById(it)).revokedAt).isEqualTo(START) }
         listOf(kept, later, stranger).forEach { assertThat(requireNotNull(db.sessions.findById(it)).revokedAt).isNull() }
+    }
+
+    @Test
+    fun `a batch of one moves past the kept session, even the oldest, and the batches end`() {
+        val issued = List(3) { db.openSession(subject, START.minusSeconds(10L - it)) }
+
+        val batches = closeEverywhere(issued[0], 1)
+
+        assertThat(batches.map { it.closed }).containsExactly(0, 1, 1, 0)
+        assertThat(requireNotNull(db.sessions.findById(issued[0])).revokedAt).isNull()
+        issued.drop(1).forEach { assertThat(requireNotNull(db.sessions.findById(it)).revokedAt).isEqualTo(START) }
     }
 
     @Test

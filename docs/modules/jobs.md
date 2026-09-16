@@ -66,7 +66,7 @@ Role `worker`:
 
 | Property | Required or default | Meaning | Validation |
 |---|---|---|---|
-| `rain.jobs.workers.<definition>` | required for every declared definition | how many attempts of the definition one process runs at once; the profile's scheduler has the sum as threads | at least 1; a key naming no declared definition is `unknown_key`; a definition without a key is `required` |
+| `rain.jobs.workers.<definition>` | required for every declared definition, and only for those: an application that declares none states none (YAML `workers: {}` states nothing, too) | how many attempts of the definition one process runs at once; the profile's scheduler has the sum as threads | at least 1; a key naming no declared definition is `unknown_key`; a definition without a key is `required` |
 | `rain.jobs.required-recurring` | required; an empty list is a statement | the application's recurring work this deployment runs | names match `^[a-z][a-z0-9.-]{0,127}$`, none twice; in the worker role it equals the names of the `RecurringWork` beans |
 | `rain.jobs.drain-grace` | required | how long a stopping worker waits for running attempts, all schedulers together | positive |
 | `rain.jobs.reserved-connections` | required | pool connections kept for everything that is not a job scheduler | not negative |

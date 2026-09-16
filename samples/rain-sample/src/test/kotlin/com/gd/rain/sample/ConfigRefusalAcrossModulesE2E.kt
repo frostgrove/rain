@@ -38,8 +38,7 @@ class ConfigRefusalAcrossModulesE2E {
         mapOf(
             "rain.web" to listOf("rain.web.body-limit", "rain.web.request-budget", "rain.web.client-address"),
             "rain.persistence" to listOf("rain.persistence.statement-timeout"),
-            "rain.jobs" to
-                listOf("rain.jobs.workers", "rain.jobs.required-recurring", "rain.jobs.drain-grace", "rain.jobs.reserved-connections"),
+            "rain.jobs" to listOf("rain.jobs.required-recurring", "rain.jobs.drain-grace", "rain.jobs.reserved-connections"),
             "rain.access" to listOf("rain.access.web.base-path", "rain.access.token.signing-key", "rain.access.attempts.store"),
             "sample.tickets" to listOf("sample.tickets.pages.max-limit", "sample.tickets.events.stream-for", "sample.tickets.summary.pool"),
             "sample.seed" to listOf("sample.seed.agents"),

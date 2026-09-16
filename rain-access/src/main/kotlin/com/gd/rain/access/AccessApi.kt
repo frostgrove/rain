@@ -45,7 +45,10 @@ public interface GrantsLookup {
         codes: Set<String>,
     ): Set<String>
 
-    /** Permissions granted to the subject directly, in permission-id order. [limit] is 1..`rain.access.web.page.max-size`. */
+    /**
+     * Permissions granted to the subject directly, in permission-id order. [limit] is 1..`rain.access.web.page.max-size`;
+     * any other is refused as a list route refuses it: `400 bad_query` with `out_of_range` at `/limit`.
+     */
     public fun directPermissionsOf(
         subject: SubjectRef,
         after: UUID?,

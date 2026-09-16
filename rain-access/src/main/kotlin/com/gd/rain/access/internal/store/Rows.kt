@@ -51,10 +51,16 @@ public data class StoredSession(
     public val revokedReason: String?,
 )
 
-/** Where a keyset page of a subject's live sessions continues: newest first by creation, then id. */
+/** A position among a subject's sessions by creation, then id: where a keyset page or a batch of closing them continues. */
 public data class SessionCursor(
     public val createdAt: Instant,
     public val id: UUID,
+)
+
+/** What one batch of closing a subject's sessions did: [closed] of them closed, and where the next batch starts, `null` after the last. */
+public data class RevokedBatch(
+    public val closed: Int,
+    public val next: SessionCursor?,
 )
 
 /** What closing one session found: when it was closed, and whether this call is what closed it. */

@@ -9,20 +9,22 @@ import com.gd.rain.access.internal.revocation.RevocationReplayTask
 import com.gd.rain.access.internal.web.CredentialCookies
 import com.gd.rain.access.support.AccessApplication
 import com.gd.rain.access.support.DEFAULT_PASSWORD
-import com.gd.rain.access.support.Http
-import com.gd.rain.access.support.RedisServers
+import com.gd.rain.access.support.RedisFactories
 import com.gd.rain.access.support.START
 import com.gd.rain.access.support.accessProperties
 import com.gd.rain.access.support.directory
-import com.gd.rain.access.support.port
 import com.gd.rain.core.config.ConfigurationProblemsException
 import com.gd.rain.core.config.ProblemCode
 import com.gd.rain.jobs.RecurringWork
 import com.gd.rain.observability.health.CheckState
 import com.gd.rain.observability.health.HealthRegistry
 import com.gd.rain.test.MutableClock
+import com.gd.rain.test.RainApplication
 import com.gd.rain.test.RainDatabase
 import com.gd.rain.test.RainPostgres
+import com.gd.rain.test.RainRedis
+import com.gd.rain.test.RedisPolicy
+import com.gd.rain.test.RedisServer
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
@@ -31,9 +33,6 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.boot.WebApplicationType
-import org.springframework.boot.builder.SpringApplicationBuilder
-import org.springframework.context.ApplicationContextInitializer
-import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
@@ -42,8 +41,6 @@ import org.springframework.data.redis.connection.RedisStandaloneConfiguration
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.JdbcTemplate
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.net.http.HttpResponse
@@ -59,22 +56,15 @@ private fun HttpResponse<String>.tree(): JsonNode = PARSER.readTree(body())
 private const val REVOCATION_PREFIX = "it:revoked:"
 private const val ATTEMPT_PREFIX = "it:attempts:"
 
-/** A Redis server of this test class's own, keeping every key it is told to. */
-private fun ownRedis(vararg policy: String = arrayOf("--maxmemory-policy", "noeviction")): GenericContainer<*> =
-    GenericContainer(DockerImageName.parse(RedisServers.IMAGE))
-        .withExposedPorts(RedisServers.PORT)
-        .withCommand("redis-server", *policy)
-        .also { it.start() }
-
 /** rain-access with both stores on [redis], both of their health checks required, and every command bounded. */
 private fun redisStoreProperties(
-    redis: GenericContainer<*>,
+    redis: RedisServer,
     vararg overrides: String,
 ): Array<String> =
     accessProperties(
         "server.port=0",
         "spring.data.redis.host=${redis.host}",
-        "spring.data.redis.port=${redis.getMappedPort(RedisServers.PORT)}",
+        "spring.data.redis.port=${redis.port}",
         "spring.data.redis.timeout=1s",
         "spring.data.redis.connect-timeout=1s",
         "rain.access.revocation.store=redis",
@@ -95,24 +85,25 @@ private fun startWithClock(
     database: RainDatabase,
     properties: Array<String>,
     vararg sources: Class<*>,
-): ConfigurableApplicationContext =
-    SpringApplicationBuilder(AccessApplication::class.java, *sources)
-        .web(web)
-        .logStartupInfo(false)
-        .initializers(ApplicationContextInitializer<ConfigurableApplicationContext> { it.beanFactory.registerSingleton("clock", clock) })
-        .properties(*properties, *database.springProperties().toTypedArray())
-        .run()
+): RainApplication =
+    RainApplication.start(
+        listOf(AccessApplication::class.java, *sources),
+        web,
+        properties.toList() + database.springProperties(),
+        singletons = mapOf("clock" to clock),
+    )
 
-private fun templateOf(redis: GenericContainer<*>): Pair<LettuceConnectionFactory, StringRedisTemplate> {
-    val factory = RedisServers.factory(redis)
+private fun templateOf(redis: RedisServer): Pair<LettuceConnectionFactory, StringRedisTemplate> {
+    val factory = RedisFactories.of(redis)
     return factory to StringRedisTemplate(factory)
 }
 
 /** What a started application needs of a test: enrolment, sign-in in either delivery, and requests with a bearer. */
 private class Client(
-    private val context: ConfigurableApplicationContext,
+    application: RainApplication,
 ) {
-    val http = Http(context.port())
+    private val context = application.context
+    val http = application.http
 
     fun enrolled(identifier: String): SubjectRef {
         val subject = context.directory().add(identifier)
@@ -152,10 +143,10 @@ private class Client(
 @Tag("integration")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RedisStoresApplicationIT {
-    private val redis = ownRedis()
+    private val redis = RainRedis.start(RedisPolicy.RETAINING)
     private val clock = MutableClock(START)
     private lateinit var database: RainDatabase
-    private lateinit var context: ConfigurableApplicationContext
+    private lateinit var application: RainApplication
     private lateinit var client: Client
     private lateinit var factory: LettuceConnectionFactory
     private lateinit var keys: StringRedisTemplate
@@ -163,8 +154,8 @@ class RedisStoresApplicationIT {
     @BeforeAll
     fun start() {
         database = RainPostgres.freshDatabase("access_redis_stores")
-        context = startWithClock(clock, WebApplicationType.SERVLET, database, redisStoreProperties(redis))
-        client = Client(context)
+        application = startWithClock(clock, WebApplicationType.SERVLET, database, redisStoreProperties(redis))
+        client = Client(application)
         templateOf(redis).let { (opened, template) ->
             factory = opened
             keys = template
@@ -173,9 +164,9 @@ class RedisStoresApplicationIT {
 
     @AfterAll
     fun stop() {
-        if (::context.isInitialized) context.close()
+        if (::application.isInitialized) application.close()
         if (::factory.isInitialized) factory.destroy()
-        redis.stop()
+        redis.close()
     }
 
     /** Past the instant of every cutoff an earlier test wrote, and past readiness's freshness. */
@@ -200,7 +191,7 @@ class RedisStoresApplicationIT {
         assertThat(keeping.tree()["closed"].asLong()).isEqualTo(1)
         assertThat(client.me(thirdBearer).statusCode()).isEqualTo(401)
         assertThat(client.me(secondBearer).statusCode()).isEqualTo(200)
-        val list = context.getBean(RevocationList::class.java) as RedisRevocationList
+        val list = application.context.getBean(RevocationList::class.java) as RedisRevocationList
         assertThat(
             keys.getExpire(list.sessionKey(UUID.fromString(first)), TimeUnit.MILLISECONDS),
         ).isBetween(1L, Duration.ofMinutes(5).toMillis())
@@ -259,7 +250,7 @@ class RedisStoresApplicationIT {
         assertThat(ready.statusCode()).describedAs(ready.body()).isEqualTo(200)
         assertThat(ready.tree()["status"].asString()).isEqualTo("ready")
         val checks =
-            context
+            application.context
                 .getBean(HealthRegistry::class.java)
                 .inspect()
                 .checks
@@ -295,7 +286,7 @@ class RedisStoresApplicationIT {
             )
         val report =
             worker.use {
-                it
+                it.context
                     .getBeansOfType(RecurringWork::class.java)
                     .values
                     .filterIsInstance<RevocationReplayTask>()
@@ -323,13 +314,13 @@ class RedisStoresApplicationIT {
 @Tag("integration")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RedisOutageIT {
-    private val redis = ownRedis()
+    private val redis = RainRedis.start(RedisPolicy.RETAINING)
     private val clock = MutableClock(START)
-    private lateinit var context: ConfigurableApplicationContext
+    private lateinit var application: RainApplication
 
     @BeforeAll
     fun start() {
-        context =
+        application =
             startWithClock(
                 clock,
                 WebApplicationType.SERVLET,
@@ -340,18 +331,17 @@ class RedisOutageIT {
 
     @AfterAll
     fun stop() {
-        if (::context.isInitialized) context.close()
-        redis.stop()
+        if (::application.isInitialized) application.close()
     }
 
     @Test
     fun `readiness turns not ready naming both stores, a sign-in is 503 unavailable and a signed-in request 503 revocation_unavailable`() {
-        val client = Client(context)
+        val client = Client(application)
         client.enrolled("outage@example.test")
         val (bearer, _) = client.session("outage@example.test")
         assertThat(client.http.send("GET", "/ready").statusCode()).isEqualTo(200)
 
-        redis.stop()
+        redis.close()
         clock.advance(Duration.ofSeconds(2))
 
         val ready = client.http.send("GET", "/ready")
@@ -400,29 +390,29 @@ class DedicatedRevocationRedis {
 @Tag("integration")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DedicatedRevocationRedisIT {
-    private val application = ownRedis()
-    private val revocation = ownRedis("--maxmemory-policy", "noeviction", "--rename-command", "CONFIG", "")
+    private val applicationServer = RainRedis.start(RedisPolicy.RETAINING)
+    private val revocationServer = RainRedis.start(RedisPolicy.SILENT)
 
     @AfterAll
     fun stop() {
-        application.stop()
-        revocation.stop()
+        applicationServer.close()
+        revocationServer.close()
     }
 
     private fun properties(vararg overrides: String): Array<String> =
         redisStoreProperties(
-            application,
-            "test.redis.application.host=${application.host}",
-            "test.redis.application.port=${application.getMappedPort(RedisServers.PORT)}",
-            "test.redis.revocation.host=${revocation.host}",
-            "test.redis.revocation.port=${revocation.getMappedPort(RedisServers.PORT)}",
+            applicationServer,
+            "test.redis.application.host=${applicationServer.host}",
+            "test.redis.application.port=${applicationServer.port}",
+            "test.redis.revocation.host=${revocationServer.host}",
+            "test.redis.revocation.port=${revocationServer.port}",
             *overrides,
         )
 
     @Test
     fun `the revocation list is written to the factory qualified rainRevocation and the attempt counters to the application's`() {
         val clock = MutableClock(START)
-        val context =
+        val started =
             startWithClock(
                 clock,
                 WebApplicationType.SERVLET,
@@ -430,10 +420,10 @@ class DedicatedRevocationRedisIT {
                 properties("rain.access.revocation.redis.eviction-policy-attested=noeviction"),
                 DedicatedRevocationRedis::class.java,
             )
-        val (applicationFactory, applicationKeys) = templateOf(application)
-        val (revocationFactory, revocationKeys) = templateOf(revocation)
+        val (applicationFactory, applicationKeys) = templateOf(applicationServer)
+        val (revocationFactory, revocationKeys) = templateOf(revocationServer)
         try {
-            val client = Client(context)
+            val client = Client(started)
             client.enrolled("dedicated@example.test")
             val (bearer, _) = client.session("dedicated@example.test")
 
@@ -446,7 +436,7 @@ class DedicatedRevocationRedisIT {
             assertThat(applicationKeys.keys("$ATTEMPT_PREFIX*")).isNotEmpty()
             assertThat(applicationKeys.keys("$REVOCATION_PREFIX*")).isEmpty()
         } finally {
-            context.close()
+            started.close()
             applicationFactory.destroy()
             revocationFactory.destroy()
         }

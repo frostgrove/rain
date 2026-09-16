@@ -6,6 +6,7 @@ import com.gd.rain.access.jooq.Tables.CREDENTIALS
 import org.jooq.Condition
 import org.jooq.DSLContext
 import org.jooq.Record
+import org.jooq.Select
 import java.time.Instant
 import java.util.UUID
 
@@ -47,7 +48,7 @@ public interface CredentialStore {
         now: Instant,
     ): Int
 
-    /** Which of [ids] (subjects of [type]) have a password credential; one indexed probe per id. */
+    /** Which of [ids] (subjects of [type]) have a password credential; a read of `uq_credentials_subject_password` limited to the ids. */
     public fun withPassword(
         type: SubjectType,
         ids: Collection<UUID>,
@@ -152,13 +153,26 @@ public class JooqCredentialStore(
         ids: Collection<UUID>,
     ): Set<UUID> {
         if (ids.isEmpty()) return emptySet()
+        return dsl.fetch(withPasswordQuery(type, ids)).map { it[CREDENTIALS.SUBJECT_ID] }.toSet()
+    }
+
+    /**
+     * The statement [withPassword] runs. A subject has at most one password credential (`uq_credentials_subject_password`),
+     * so no more rows than distinct ids can match: the `LIMIT` of that many changes no answer and bounds the read.
+     */
+    public fun withPasswordQuery(
+        type: SubjectType,
+        ids: Collection<UUID>,
+    ): Select<*> {
+        val distinct = ids.toSet()
+        require(distinct.isNotEmpty()) { "a question about passwords names at least one subject" }
         return dsl
             .select(CREDENTIALS.SUBJECT_ID)
             .from(CREDENTIALS)
             .where(CREDENTIALS.SUBJECT_TYPE.eq(type.name))
-            .and(CREDENTIALS.SUBJECT_ID.`in`(ids))
+            .and(CREDENTIALS.SUBJECT_ID.`in`(distinct))
             .and(CREDENTIALS.PROVIDER.eq(PASSWORD))
-            .fetchSet(CREDENTIALS.SUBJECT_ID)
+            .limit(distinct.size)
     }
 
     private fun ofSubject(subject: SubjectRef): Condition =

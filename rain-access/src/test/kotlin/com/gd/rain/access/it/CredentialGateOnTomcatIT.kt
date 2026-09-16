@@ -1,10 +1,9 @@
 package com.gd.rain.access.it
 
 import com.gd.rain.access.support.AccessApplication
-import com.gd.rain.access.support.Http
 import com.gd.rain.access.support.accessProperties
-import com.gd.rain.access.support.port
-import com.gd.rain.access.support.startAccessApplication
+import com.gd.rain.test.ApplicationHttp
+import com.gd.rain.test.RainApplication
 import com.gd.rain.test.RainPostgres
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterAll
@@ -28,20 +27,20 @@ import tools.jackson.databind.json.JsonMapper
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CredentialGateOnTomcatIT {
     private lateinit var context: ConfigurableApplicationContext
-    private lateinit var http: Http
+    private lateinit var http: ApplicationHttp
     private val json = JsonMapper.builder().build()
 
     @BeforeAll
     fun start() {
         val database = RainPostgres.freshDatabase("access_gate_tomcat")
-        context =
-            startAccessApplication(
-                AccessApplication::class.java,
+        val application =
+            RainApplication.start(
+                listOf(AccessApplication::class.java),
                 WebApplicationType.SERVLET,
-                *accessProperties("server.port=0"),
-                *database.springProperties().toTypedArray(),
+                accessProperties("server.port=0").toList() + database.springProperties(),
             )
-        http = Http(context.port())
+        context = application.context
+        http = application.http
     }
 
     @AfterAll

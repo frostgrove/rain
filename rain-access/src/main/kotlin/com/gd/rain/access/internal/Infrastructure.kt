@@ -1,6 +1,8 @@
 package com.gd.rain.access.internal
 
 import com.gd.rain.access.AccessProperties
+import com.gd.rain.access.AttemptStore
+import com.gd.rain.access.RevocationStore
 import com.gd.rain.access.SubjectRef
 import com.gd.rain.access.internal.attempt.Admission
 import com.gd.rain.access.internal.attempt.Attempt
@@ -12,12 +14,15 @@ import com.gd.rain.access.internal.store.RevokedSession
 import com.gd.rain.access.internal.store.SubjectCutoff
 import com.gd.rain.boot.config.ConfigurationCheck
 import com.gd.rain.core.config.ConfigurationProblem
+import com.gd.rain.core.config.ConfigurationProblemsException
 import com.gd.rain.core.config.ProblemCode
 import com.gd.rain.core.config.problems
 import io.github.resilience4j.common.bulkhead.configuration.BulkheadConfigCustomizer
 import io.github.resilience4j.common.bulkhead.configuration.CommonBulkheadConfigurationProperties
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.AutoConfigurationImportFilter
 import org.springframework.boot.autoconfigure.AutoConfigurationMetadata
+import org.springframework.data.redis.connection.RedisConnectionFactory
 import java.time.Instant
 import java.util.UUID
 
@@ -118,6 +123,104 @@ public object UnavailableAttemptLimiter : AttemptLimiter {
 
 private fun unavailable(): Nothing = error("a store is stated as redis and no Redis client is on the classpath; start-up refuses that")
 
+/** A rain-access store stated as `redis`: what it is, where its section is, and the qualifier of a factory of its own. */
+public class RedisStoreClaim(
+    public val purpose: String,
+    public val path: String,
+    public val qualifier: String,
+    /** The `RedisConnectionFactory` beans named or qualified [qualifier]. */
+    public val qualified: ObjectProvider<RedisConnectionFactory>,
+)
+
+/**
+ * Which `RedisConnectionFactory` each Redis store of rain-access uses, decided once for every store stated as `redis`:
+ *
+ * 1. the one bean named or qualified with the store's qualifier (`rainRevocation`, `rainAttempts`);
+ * 2. otherwise the application's one factory: the only `RedisConnectionFactory` bean, or the one marked primary.
+ *
+ * Anything else — two beans with the store's qualifier, no factory at all, several factories with none primary and
+ * none qualified — is a configuration problem naming the qualifiers, and every store's problems refuse the start
+ * together. Nothing is picked by the order beans were found in.
+ */
+public class RedisConnectionChoice(
+    private val claims: List<RedisStoreClaim>,
+    private val application: ObjectProvider<RedisConnectionFactory>,
+    /** The names of every `RedisConnectionFactory` bean, for the problems. */
+    private val names: List<String>,
+) {
+    /** The factory of the store claimed with [qualifier]; a refusal of every store's problem when any store has one. */
+    public fun factoryOf(qualifier: String): RedisConnectionFactory {
+        val chosen = claims.associate { it.qualifier to choose(it) }
+        val problems = chosen.values.mapNotNull { it as? ConfigurationProblem }
+        if (problems.isNotEmpty()) throw ConfigurationProblemsException(problems)
+        return checkNotNull(chosen[qualifier] as? RedisConnectionFactory) { "no store is claimed with the qualifier $qualifier" }
+    }
+
+    public companion object {
+        /** The choice for the stores [properties] state as `redis`, each with the factories named or qualified for it. */
+        public fun forStores(
+            properties: AccessProperties,
+            revocation: ObjectProvider<RedisConnectionFactory>,
+            attempts: ObjectProvider<RedisConnectionFactory>,
+            application: ObjectProvider<RedisConnectionFactory>,
+            names: List<String>,
+        ): RedisConnectionChoice =
+            RedisConnectionChoice(
+                listOfNotNull(
+                    RedisStoreClaim(
+                        "the revocation list",
+                        "${AccessProperties.PREFIX}.revocation.redis",
+                        RedisQualifiers.REVOCATION,
+                        revocation,
+                    ).takeIf { properties.revocation.store == RevocationStore.REDIS },
+                    RedisStoreClaim("the attempt counters", "${AccessProperties.PREFIX}.attempts.redis", RedisQualifiers.ATTEMPTS, attempts)
+                        .takeIf { properties.attempts.store == AttemptStore.REDIS },
+                ),
+                application,
+                names,
+            )
+    }
+
+    private fun choose(claim: RedisStoreClaim): Any {
+        claim.qualified.getIfUnique()?.let { return it }
+        val qualified = claim.qualified.stream().count()
+        if (qualified > 0) {
+            return ConfigurationProblem(
+                claim.path,
+                ProblemCode.CONTRADICTS,
+                "$qualified RedisConnectionFactory beans are named or qualified ${claim.qualifier} and none is primary; " +
+                    "${claim.purpose} uses exactly one",
+            )
+        }
+        application.getIfUnique()?.let { return it }
+        return if (names.isEmpty()) {
+            ConfigurationProblem(
+                claim.path,
+                ProblemCode.REQUIRED,
+                "no RedisConnectionFactory bean exists for ${claim.purpose}; state spring.data.redis.* for Spring Boot's, " +
+                    "or declare one named or qualified ${claim.qualifier}",
+            )
+        } else {
+            ConfigurationProblem(
+                claim.path,
+                ProblemCode.CONTRADICTS,
+                "${claim.purpose} has no RedisConnectionFactory named or qualified ${claim.qualifier}, and the application's " +
+                    "${names.size} (${names.joinToString(", ")}) name none primary; name or qualify the revocation list's " +
+                    "${RedisQualifiers.REVOCATION} and the attempt counters' ${RedisQualifiers.ATTEMPTS}, or mark one primary",
+            )
+        }
+    }
+}
+
+/** The qualifiers of a `RedisConnectionFactory` dedicated to one rain-access store. */
+public object RedisQualifiers {
+    /** The bean name or qualifier of a connection factory dedicated to the revocation list. */
+    public const val REVOCATION: String = "rainRevocation"
+
+    /** The bean name or qualifier of a connection factory dedicated to the attempt counters. */
+    public const val ATTEMPTS: String = "rainAttempts"
+}
+
 /** A store stated as `redis` needs Spring Data Redis on the classpath. */
 public class RedisClientCheck(
     private val properties: AccessProperties,
@@ -125,14 +228,14 @@ public class RedisClientCheck(
     override fun problems(): List<ConfigurationProblem> =
         problems {
             expect(
-                properties.revocation.store != com.gd.rain.access.RevocationStore.REDIS,
+                properties.revocation.store != RevocationStore.REDIS,
                 "${AccessProperties.PREFIX}.revocation.store",
                 ProblemCode.CONTRADICTS,
             ) {
                 "is redis and org.springframework.boot:spring-boot-data-redis is not on the classpath"
             }
             expect(
-                properties.attempts.store != com.gd.rain.access.AttemptStore.REDIS,
+                properties.attempts.store != AttemptStore.REDIS,
                 "${AccessProperties.PREFIX}.attempts.store",
                 ProblemCode.CONTRADICTS,
             ) {

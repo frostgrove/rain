@@ -11,6 +11,7 @@ import com.gd.rain.access.internal.store.GrantStore
 import com.gd.rain.access.internal.store.HeldRole
 import com.gd.rain.access.internal.store.NewSession
 import com.gd.rain.access.internal.store.PermissionRow
+import com.gd.rain.access.internal.store.RevokedBatch
 import com.gd.rain.access.internal.store.RevokedSession
 import com.gd.rain.access.internal.store.RoleRow
 import com.gd.rain.access.internal.store.SessionClosure
@@ -184,30 +185,33 @@ open class MemorySessionStore : SessionStore {
         subject: SubjectRef,
         cutoffAt: Instant,
         kept: UUID?,
+        after: SessionCursor?,
         now: Instant,
         reason: String,
         batch: Int,
-    ): Int =
+    ): RevokedBatch =
         lock.withLock {
-            val chosen =
+            val locked =
                 rows.values
-                    .filter { it.subject == subject && it.revokedAt == null && !it.createdAt.isAfter(cutoffAt) && it.id != kept }
-                    .sortedWith(compareBy<StoredSession> { it.createdAt }.thenBy { it.id })
+                    .filter { it.subject == subject && it.revokedAt == null && !it.createdAt.isAfter(cutoffAt) }
+                    .filter { row ->
+                        after == null || row.createdAt > after.createdAt ||
+                            (row.createdAt == after.createdAt && row.id > after.id)
+                    }.sortedWith(compareBy<StoredSession> { it.createdAt }.thenBy { it.id })
                     .take(batch)
-            chosen.forEach { rows[it.id] = it.copy(revokedAt = now, revokedReason = reason) }
-            chosen.size
+            val closing = locked.filter { it.id != kept }
+            closing.forEach { rows[it.id] = it.copy(revokedAt = now, revokedReason = reason) }
+            RevokedBatch(closing.size, locked.takeIf { it.size == batch }?.last()?.let { SessionCursor(it.createdAt, it.id) })
         }
 
     override fun livePage(
         subject: SubjectRef,
-        now: Instant,
-        idleSince: Instant,
         after: SessionCursor?,
         limit: Int,
     ): List<StoredSession> =
         lock.withLock {
             rows.values
-                .filter { it.subject == subject && it.revokedAt == null && it.expiresAt.isAfter(now) && it.lastUsedAt.isAfter(idleSince) }
+                .filter { it.subject == subject && it.revokedAt == null }
                 .sortedWith(compareByDescending<StoredSession> { it.createdAt }.thenByDescending { it.id })
                 .filter { row ->
                     after == null || row.createdAt < after.createdAt || (row.createdAt == after.createdAt && row.id < after.id)
@@ -318,6 +322,9 @@ class MemoryGrants :
         lock.withLock { rolePermissions.filter { it.first == role }.map { permissions.getValue(it.second).code }.toSet() }
 
     fun holders(role: UUID): Int = lock.withLock { subjectRoles.keys.count { it.second == role } }
+
+    /** The batch size of every removal of a role's holders or permissions, in the order they ran. */
+    val removalBatches: MutableList<Int> = java.util.concurrent.CopyOnWriteArrayList()
 
     override fun heldCodes(
         subject: SubjectRef,
@@ -499,6 +506,7 @@ class MemoryGrants :
         batch: Int,
     ): Int =
         lock.withLock {
+            removalBatches += batch
             val chosen = subjectRoles.keys.filter { it.second == role }.take(batch)
             chosen.forEach(subjectRoles::remove)
             chosen.size
@@ -509,6 +517,7 @@ class MemoryGrants :
         batch: Int,
     ): Int =
         lock.withLock {
+            removalBatches += batch
             val chosen = rolePermissions.filter { it.first == role }.take(batch)
             rolePermissions.removeAll(chosen.toSet())
             chosen.size

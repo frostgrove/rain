@@ -75,7 +75,9 @@ fun ticketReport(tickets: TicketQueries): RainCommand = object : RainCommand {
 
 The properties a declaration lists take precedence over the deployment's: `migrate` sets `spring.flyway.enabled=true`
 for itself, so serving processes can keep migration off. Every command also runs with
-`spring.main.web-application-type=none`.
+`spring.main.web-application-type=none` and `spring.main.banner-mode=off`: its result is its standard output. Its log lines
+go where the application's logging configuration sends them; a `logback-spring.xml` that includes rain-boot's
+`console-stderr-appender.xml` keeps them on standard error ([rain-boot](../modules/boot.md#commands)).
 
 A declared command answered by no bean, or by two, is a startup refusal. A command name that is not declared is
 refused with the list of declared names.
