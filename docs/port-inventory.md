@@ -1,8 +1,11 @@
 # Port inventory
 
-Every file rain was built from, where it went, and its status. Source: `kotlin/tmp/project` at commit `befbcc9` (`backend/` paths are relative to `src/main/kotlin/com/gd/framework` for main, `src/test/kotlin/com/gd/framework` for test, `src/test/kotlin/com/gd/lease/integration` for lease-it).
+Every file rain was built from, where it went, and its status — the closed record of the port. The source was an
+in-app framework in another repository, read at one commit and deleted once no row was `pending`; a source path is
+relative to that framework's package for `main` and `test` rows, and to the product's integration tests for `lease-it`
+rows.
 
-Status: `pending` → `ported` / `dropped` / `split`. `kotlin/tmp` may be deleted only when no row is `pending`.
+Status: `pending` → `ported` / `dropped` / `split`. No row is `pending`: the source was deleted on 2026-09-16.
 
 | Kind | Source | Destination | Status | Note |
 |---|---|---|---|---|
