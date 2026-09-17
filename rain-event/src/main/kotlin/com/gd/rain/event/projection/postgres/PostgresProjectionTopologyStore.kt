@@ -49,9 +49,11 @@ public class PostgresProjectionTopologyStore(
                 INSERT_TOPOLOGY,
                 declaration.projection.text(),
                 declaration.generation.value,
-                declaration.contract.origin.logId.copy(),
+                declaration.contract.origin.logId
+                    .copy(),
                 declaration.contract.revision.value,
-                declaration.cover.hasher.id.text(),
+                declaration.cover.hasher.id
+                    .text(),
                 declaration.contract.topology.copy(),
             )
         if (inserted == 1) {
@@ -67,9 +69,10 @@ public class PostgresProjectionTopologyStore(
                 ) { "projection topology member insert did not create its declared partition" }
             }
         }
-        val topology = checkNotNull(topology(declaration.projection, declaration.generation)) {
-            "projection topology disappeared during registration"
-        }
+        val topology =
+            checkNotNull(topology(declaration.projection, declaration.generation)) {
+                "projection topology disappeared during registration"
+            }
         return if (matches(topology, declaration)) {
             if (inserted == 1) ProjectionTopologyRegistration.Created(topology) else ProjectionTopologyRegistration.Repeated(topology)
         } else {
@@ -83,7 +86,8 @@ public class PostgresProjectionTopologyStore(
     ): ProjectionTopology? {
         val header = dsl.fetchOne(FETCH_TOPOLOGY, projection.text(), generation.value) ?: return null
         val members =
-            dsl.fetch(FETCH_MEMBERS, projection.text(), generation.value)
+            dsl
+                .fetch(FETCH_MEMBERS, projection.text(), generation.value)
                 .map(::member)
         return topology(header, members)
     }
@@ -102,8 +106,9 @@ public class PostgresProjectionTopologyStore(
         if (parentMember.state == ProjectionTopologyMemberState.RETIRED) return ProjectionTopologySplit.ParentRetired
         val nextCover = declaration.cover.split(parent)
         val children = parent.split()
-        val parentCheckpoint = lockCheckpoint(ProjectionLane(declaration.projection, declaration.generation, parent))
-            ?: return ProjectionTopologySplit.ParentMissing
+        val parentCheckpoint =
+            lockCheckpoint(ProjectionLane(declaration.projection, declaration.generation, parent))
+                ?: return ProjectionTopologySplit.ParentMissing
         if (!checkpointMatches(parentCheckpoint, declaration.contract)) return ProjectionTopologySplit.ContractDrift
         val leaseUntil = parentCheckpoint.get("lease_until", Instant::class.java)
         if (parentCheckpoint.get("lease_active", Boolean::class.java) == true) {
@@ -121,7 +126,8 @@ public class PostgresProjectionTopologyStore(
                     declaration.generation.value,
                     child.depth,
                     child.prefix,
-                    declaration.contract.origin.logId.copy(),
+                    declaration.contract.origin.logId
+                        .copy(),
                     declaration.contract.revision.value,
                     nextCover.fingerprint.copy(),
                     inherited.deliveredPosition,
@@ -204,9 +210,10 @@ public class PostgresProjectionTopologyStore(
                 declaration.contract.copy(topology = nextCover.fingerprint),
                 nextCover,
             )
-        val topology = checkNotNull(topology(nextDeclaration.projection, nextDeclaration.generation)) {
-            "projection topology disappeared after split"
-        }
+        val topology =
+            checkNotNull(topology(nextDeclaration.projection, nextDeclaration.generation)) {
+                "projection topology disappeared after split"
+            }
         check(matches(topology, nextDeclaration)) { "projection topology does not match its committed split cover" }
         return ProjectionTopologySplit.Split(topology, retirement)
     }
@@ -241,7 +248,7 @@ public class PostgresProjectionTopologyStore(
             topology.contract == declaration.contract &&
             topology.hasher == declaration.cover.hasher.id &&
             topology.members.filter { it.state == ProjectionTopologyMemberState.LIVE }.map(ProjectionTopologyMember::partition) ==
-                declaration.cover.members
+            declaration.cover.members
 
     private fun checkpointMatches(
         row: Record,

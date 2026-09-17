@@ -44,6 +44,13 @@ checked `ProjectionCover`. A cover proves exact ownership of the full hash space
 one parent partition with its two children. It never remaps a live projection through `% N`. `ProjectionCatalogue`
 validates every owned aggregate fact has an explicit `Handle` or `Ignore(why)` route at startup.
 
+For a registered generation, PostgreSQL persists the checked live cover, its hasher identity, retired-parent lineage
+and each split's exact inherited global cursor. A topology split is a caller-owned transaction: it creates both child
+checkpoints at the parent's settled cursor, retires and removes the parent checkpoint, changes the durable generation
+fingerprint, and records retirement together. A live lease, hold, hole or halt blocks the operation rather than being
+relocated by inference. Checkpoint admission returns `Retired` for an old parent, so a stale runner cannot recreate
+that lane. See the [topology split runbook](../runbooks/projection-topology-split.md).
+
 `AfterApplyProjectionRunner` is deliberately at-least-once: it obtains a durable fenced checkpoint lease, invokes a
 read-only `ProjectionHandler`, then CAS-advances the cursor. A failure or lost lease after application causes delivery
 again, so an external destination must be idempotent by position or stream/version. `PARK_SEQUENCE` and durable staged

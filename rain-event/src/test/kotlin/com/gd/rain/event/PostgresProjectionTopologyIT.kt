@@ -8,8 +8,8 @@ import com.gd.rain.event.projection.ProjectionContractRevision
 import com.gd.rain.event.projection.ProjectionCover
 import com.gd.rain.event.projection.ProjectionDestinationId
 import com.gd.rain.event.projection.ProjectionEffectPolicy
-import com.gd.rain.event.projection.ProjectionFailureCode
 import com.gd.rain.event.projection.ProjectionFact
+import com.gd.rain.event.projection.ProjectionFailureCode
 import com.gd.rain.event.projection.ProjectionGeneration
 import com.gd.rain.event.projection.ProjectionGenerationPlan
 import com.gd.rain.event.projection.ProjectionHoldEnqueue
@@ -96,7 +96,9 @@ class PostgresProjectionTopologyIT {
         val topologies = PostgresProjectionTopologyStore(dsl, transactions)
         val declaration = ProjectionTopologyDeclaration(name, generation, contract, whole)
         TransactionTemplate(transactions).execute {
-            assertThat(generations.register(plan)).isInstanceOf(com.gd.rain.event.projection.ProjectionGenerationRegistration.Created::class.java)
+            assertThat(
+                generations.register(plan),
+            ).isInstanceOf(com.gd.rain.event.projection.ProjectionGenerationRegistration.Created::class.java)
             val claim =
                 checkpoints.claim(lane, contract, events.initialCursor(), Instant.now(), Duration.ofMinutes(1)) as ProjectionClaim.Acquired
             assertThat(checkpoints.advance(claim.lease, page.next, Instant.now()))
@@ -111,16 +113,54 @@ class PostgresProjectionTopologyIT {
         val children = whole.split(ProjectionPartition.WHOLE).members
         assertThat(completed.retirement.inheritedCursor).isEqualTo(page.next)
         assertThat(completed.topology.contract.topology).isEqualTo(whole.split(ProjectionPartition.WHOLE).fingerprint)
-        assertThat(completed.topology.members.filter { it.state == ProjectionTopologyMemberState.LIVE }.map { it.partition })
-            .containsExactlyElementsOf(children)
+        assertThat(
+            completed.topology.members
+                .filter { it.state == ProjectionTopologyMemberState.LIVE }
+                .map { it.partition },
+        ).containsExactlyElementsOf(children)
         assertThat(checkpoints.checkpoint(lane)).isNull()
         children.forEach { child ->
             assertThat(checkpoints.checkpoint(ProjectionLane(name, generation, child))?.cursor).isEqualTo(page.next)
         }
-        assertThat(generations.generation(name, generation)?.plan?.contract?.topology)
-            .isEqualTo(whole.split(ProjectionPartition.WHOLE).fingerprint)
+        assertThat(
+            generations
+                .generation(name, generation)
+                ?.plan
+                ?.contract
+                ?.topology,
+        ).isEqualTo(whole.split(ProjectionPartition.WHOLE).fingerprint)
         assertThat(checkpoints.claim(lane, contract, events.initialCursor(), Instant.now(), Duration.ofMinutes(1)))
             .isEqualTo(ProjectionClaim.Retired)
+
+        val firstCover = whole.split(ProjectionPartition.WHOLE)
+        val firstChild = firstCover.members.first()
+        val secondDeclaration =
+            ProjectionTopologyDeclaration(
+                name,
+                generation,
+                completed.topology.contract,
+                firstCover,
+            )
+        val second = TransactionTemplate(transactions).execute { topologies.split(secondDeclaration, firstChild) }
+
+        assertThat(second).isInstanceOf(ProjectionTopologySplit.Split::class.java)
+        val secondCompleted = second as ProjectionTopologySplit.Split
+        val secondCover = firstCover.split(firstChild)
+        assertThat(secondCompleted.retirement.inheritedCursor).isEqualTo(page.next)
+        assertThat(
+            secondCompleted.topology.members
+                .filter { it.state == ProjectionTopologyMemberState.LIVE }
+                .map { it.partition },
+        ).containsExactlyElementsOf(secondCover.members)
+        assertThat(
+            checkpoints.claim(
+                ProjectionLane(name, generation, firstChild),
+                completed.topology.contract,
+                page.next,
+                Instant.now(),
+                Duration.ofMinutes(1),
+            ),
+        ).isEqualTo(ProjectionClaim.Retired)
 
         var invocations = 0
         val oldRunner =
@@ -197,7 +237,14 @@ class PostgresProjectionTopologyIT {
             generations.register(plan)
             topologies.register(declaration)
         }
-        val active = checkpoints.claim(lane, contract, events.initialCursor(), Instant.now(), Duration.ofMinutes(1)) as ProjectionClaim.Acquired
+        val active =
+            checkpoints.claim(
+                lane,
+                contract,
+                events.initialCursor(),
+                Instant.now(),
+                Duration.ofMinutes(1),
+            ) as ProjectionClaim.Acquired
 
         val busy = TransactionTemplate(transactions).execute { topologies.split(declaration, ProjectionPartition.WHOLE) }
 
@@ -220,9 +267,20 @@ class PostgresProjectionTopologyIT {
 
         val blocked = TransactionTemplate(transactions).execute { topologies.split(declaration, ProjectionPartition.WHOLE) }
 
-        assertThat(blocked).isEqualTo(ProjectionTopologySplit.Blocked(com.gd.rain.event.projection.ProjectionTopologyBlockers(1, 0, 0)))
+        assertThat(blocked).isEqualTo(
+            ProjectionTopologySplit.Blocked(
+                com.gd.rain.event.projection
+                    .ProjectionTopologyBlockers(1, 0, 0),
+            ),
+        )
         assertThat(checkpoints.checkpoint(lane)?.cursor).isEqualTo(page.next)
-        assertThat(topologies.topology(name, generation)?.members?.single()?.state).isEqualTo(ProjectionTopologyMemberState.LIVE)
+        assertThat(
+            topologies
+                .topology(name, generation)
+                ?.members
+                ?.single()
+                ?.state,
+        ).isEqualTo(ProjectionTopologyMemberState.LIVE)
     }
 
     private object ByKeyParity : SequenceKeyHasher {
@@ -231,7 +289,8 @@ class PostgresProjectionTopologyIT {
         override fun hash(event: StoredEvent): Long = event.position and 1
 
         override fun sequence(event: StoredEvent): com.gd.rain.event.projection.ProjectionSequenceId =
-            com.gd.rain.event.projection.ProjectionSequenceId.forStream(id, event.stream)
+            com.gd.rain.event.projection.ProjectionSequenceId
+                .forStream(id, event.stream)
     }
 
     private fun encoded(
