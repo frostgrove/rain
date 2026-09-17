@@ -131,7 +131,9 @@ public class ProjectionLetter(
     /** Exact bounded logical byte accounting for durable queue capacity; it intentionally excludes index overhead. */
     public val retainedBytes: Int =
         sequence.copy().size +
-            event.stream.namespace.copy().size +
+            event.stream.namespace
+                .copy()
+                .size +
             utf8Bytes(event.stream.family) +
             utf8Bytes(event.stream.key) +
             utf8Bytes(event.fact.name) +
@@ -178,7 +180,12 @@ internal fun checksum(
             update(0)
             update(event.metadata.copy())
             update(0)
-            update(event.recordedAt.toEpochMilli().toString().toByteArray(Charsets.UTF_8))
+            update(
+                event.recordedAt
+                    .toEpochMilli()
+                    .toString()
+                    .toByteArray(Charsets.UTF_8),
+            )
             digest()
         },
     )

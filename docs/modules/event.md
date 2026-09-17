@@ -57,6 +57,21 @@ handler runs it proves that the destination and checkpoint adapters expose the s
 transaction. It does not start a transaction or retry a handler. Any exception escapes the unit, so handler writes and
 checkpoint claim roll back together rather than committing attempt bookkeeping after a failed projection.
 
+`PARK_SEQUENCE` is available only through that SAME_UNIT path. It requires a per-envelope handler and destination
+savepoint: a classified permanent failure rolls back only that envelope's destination writes, durably appends its
+opaque causal sequence to `projection_hold`/`projection_letter`, then advances the live checkpoint in the same caller
+transaction. Later envelopes of the held sequence are queued without delivery; other sequences continue. Both queued
+letter count and bytes are bounded. Reaching either bound durably halts the lane rather than discarding an envelope.
+
+`ProjectionRedriveRunner` processes exactly one held queue head per caller-owned SAME_UNIT transaction. It proves the
+destination and hold-store authority match, claims a distinct fenced redrive lease, applies the head behind a
+savepoint, and acknowledges it only after that destination write succeeds. A failed handler rolls back to the
+savepoint and records a bounded stable failure code and attempt count while retaining the head. If more letters remain
+after success, the runner releases the lease so the next bounded pass can claim the next head; a stale lease raises and
+rolls back destination work instead of reporting success. It has no transaction or retry loop. The operational decision
+to skip a sequence writes an immutable `ProjectionHole`, and a separate acknowledgement is required before a generation
+with that omission can become ready or cut over. See the [park/redrive runbook](../runbooks/projection-park-redrive.md).
+
 Rebuild generations are registered immutably with a source cursor, barrier cursor, contract revision and topology
 fingerprint. `PostgresProjectionGenerationStore` derives `READY` from every member of the checked cover reaching that
 barrier with the matching checkpoint contract; it does not accept a boolean readiness claim. Cutover/rollback is a

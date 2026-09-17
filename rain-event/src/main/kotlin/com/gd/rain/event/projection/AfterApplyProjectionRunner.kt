@@ -27,6 +27,9 @@ public sealed interface AfterApplyPass {
         public val halt: ProjectionHalt,
     ) : AfterApplyPass
 
+    /** A durable split retired this parent before this pass could invoke its at-least-once handler. */
+    public data object Retired : AfterApplyPass
+
     public data object ContractDrift : AfterApplyPass
 
     /** The handler may already have applied its idempotent destination effect; the cursor did not advance. */
@@ -66,6 +69,7 @@ public class AfterApplyProjectionRunner(
         return when (val claim = checkpoints.claim(lane, contract, log.initialCursor(), now, leaseFor)) {
             is ProjectionClaim.Busy -> AfterApplyPass.Busy(claim.retryAt)
             is ProjectionClaim.Halted -> AfterApplyPass.Halted(claim.halt)
+            ProjectionClaim.Retired -> AfterApplyPass.Retired
             ProjectionClaim.ContractDrift -> AfterApplyPass.ContractDrift
             is ProjectionClaim.Acquired -> runClaimed(claim, spec)
         }

@@ -145,7 +145,13 @@ class CatalogToolTest {
         assertThat(tool.check(accentSource)).isEqualTo(CatalogToolCheck.Valid)
         val accentDecoded = CatalogSourceCodec().decode(accentSource) as com.gd.rain.i18n.CatalogSourceDecoding.Decoded
         assertThat(accentDecoded.source.localePolicy.supported).contains(LocaleTag.parse("en-XA"))
-        assertThat(accentDecoded.source.messages.single().translations.single().text).isEqualTo("［Ħēľľō ］{${'$'}name :string}")
+        assertThat(
+            accentDecoded.source.messages
+                .single()
+                .translations
+                .single()
+                .text,
+        ).isEqualTo("［Ħēľľō ］{${'$'}name :string}")
 
         val rtl = tool.pseudo(source, PseudoLocaleProfile.RTL)
 
@@ -154,7 +160,13 @@ class CatalogToolTest {
         assertThat(tool.check(rtlSource)).isEqualTo(CatalogToolCheck.Valid)
         val rtlDecoded = CatalogSourceCodec().decode(rtlSource) as com.gd.rain.i18n.CatalogSourceDecoding.Decoded
         assertThat(rtlDecoded.source.localePolicy.supported).contains(LocaleTag.parse("ar-XB"))
-        assertThat(rtlDecoded.source.messages.single().translations.single().text).isEqualTo("［ ōľľēĦ］{${'$'}name :string}")
+        assertThat(
+            rtlDecoded.source.messages
+                .single()
+                .translations
+                .single()
+                .text,
+        ).isEqualTo("［ ōľľēĦ］{${'$'}name :string}")
     }
 
     @Test

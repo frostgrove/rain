@@ -20,6 +20,13 @@ It also implements the optional snapshot and committed-log capabilities. `InMemo
 fenced checkpoint leases for deterministic `AFTER_APPLY` crash/retry tests; it is test infrastructure, not a durable
 worker implementation.
 
+`InMemoryProjectionHoldStore` is the corresponding deterministic parking protocol reference. It models checkpoint and
+redrive fences, checksum-verified immutable letters, bounded capacity refusal, live enqueue behind a held/redriving
+sequence, head-only acknowledgement, attempt diagnostics and explicit operator holes. Its transaction placement has no
+`TransactionAuthority`, deliberately: it certifies parking state-machine tests, not the PostgreSQL SAME_UNIT atomic
+destination protocol. Use `PostgresProjectionHoldStore`, `PostgresSameUnitProjectionDestination`, and an integration
+test to prove a real destination write, queue mutation and transaction commit/rollback are one database unit.
+
 `EventAggregateFixture` accepts an explicit aggregate/catalogue, id, clock and seeded id source. `given` writes only
 declared facts; `whenDecide` invokes the supplied lambda exactly once and returns its exact emitted facts, metadata and
 commit range, or a closed failure. It deliberately has no command annotations, handler discovery, reflection, retries,

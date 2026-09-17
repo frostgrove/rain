@@ -78,7 +78,8 @@ class ProjectionWaiterTest {
         override fun hash(event: com.gd.rain.event.StoredEvent): Long = event.position
 
         override fun sequence(event: com.gd.rain.event.StoredEvent): com.gd.rain.event.projection.ProjectionSequenceId =
-            com.gd.rain.event.projection.ProjectionSequenceId.forStream(id, event.stream)
+            com.gd.rain.event.projection.ProjectionSequenceId
+                .forStream(id, event.stream)
     }
 
     private class ActiveGeneration(

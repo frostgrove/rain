@@ -61,6 +61,11 @@ public class PostgresProjectionCheckpointStore(
         require(contract.origin == origin) { "projection checkpoint contract belongs to another log" }
         require(initialCursor.origin == origin) { "projection initial cursor belongs to another log" }
         require(!leaseFor.isNegative && !leaseFor.isZero) { "projection lease duration is positive" }
+        when (topologyAdmission(lane, contract)) {
+            TopologyAdmission.ALLOWED -> Unit
+            TopologyAdmission.RETIRED -> return ProjectionClaim.Retired
+            TopologyAdmission.CONTRACT_DRIFT -> return ProjectionClaim.ContractDrift
+        }
         halted(lane)?.let { return ProjectionClaim.Halted(it) }
         val leaseMillis = leaseFor.toMillis().also { require(it > 0) { "projection lease duration is below one millisecond" } }
         val createdLease = newLease(lane, 1)
@@ -190,14 +195,15 @@ public class PostgresProjectionCheckpointStore(
         )
 
     private fun halted(lane: ProjectionLane): ProjectionHalt? =
-        dsl.fetchOne(
-            FETCH_HALT,
-            lane.projection.text(),
-            lane.generation.value,
-            lane.partition.depth,
-            lane.partition.prefix,
-            origin.logId.copy(),
-        )?.let(::halt)
+        dsl
+            .fetchOne(
+                FETCH_HALT,
+                lane.projection.text(),
+                lane.generation.value,
+                lane.partition.depth,
+                lane.partition.prefix,
+                origin.logId.copy(),
+            )?.let(::halt)
 
     private fun halt(row: Record): ProjectionHalt =
         ProjectionHalt(
@@ -210,7 +216,8 @@ public class PostgresProjectionCheckpointStore(
                 ),
             ),
             checkNotNull(row.get("position", Long::class.java)),
-            com.gd.rain.event.projection.ProjectionFailureCode.of(checkNotNull(row.get("failure_code", String::class.java))),
+            com.gd.rain.event.projection.ProjectionFailureCode
+                .of(checkNotNull(row.get("failure_code", String::class.java))),
             checkNotNull(row.get("created_at", Instant::class.java)),
         )
 
@@ -250,7 +257,38 @@ public class PostgresProjectionCheckpointStore(
     private fun matchesOrigin(row: Record): Boolean =
         EventLogId.of(checkNotNull(row.get("log_id", ByteArray::class.java)) { "projection checkpoint has no log id" }) == origin.logId
 
+    private fun topologyAdmission(
+        lane: ProjectionLane,
+        contract: ProjectionCheckpointContract,
+    ): TopologyAdmission {
+        val row =
+            dsl.fetchOne(
+                TOPOLOGY_MEMBER,
+                lane.partition.depth,
+                lane.partition.prefix,
+                lane.projection.text(),
+                lane.generation.value,
+            ) ?: return TopologyAdmission.ALLOWED
+        if (row.get("state", String::class.java) == "retired") return TopologyAdmission.RETIRED
+        if (row.get("state", String::class.java) != "live") return TopologyAdmission.CONTRACT_DRIFT
+        return if (
+            EventLogId.of(checkNotNull(row.get("log_id", ByteArray::class.java))) == contract.origin.logId &&
+            row.get("contract_revision", Int::class.java) == contract.revision.value &&
+            ProjectionTopologyFingerprint.of(checkNotNull(row.get("topology_fingerprint", ByteArray::class.java))) == contract.topology
+        ) {
+            TopologyAdmission.ALLOWED
+        } else {
+            TopologyAdmission.CONTRACT_DRIFT
+        }
+    }
+
     private companion object {
+        enum class TopologyAdmission {
+            ALLOWED,
+            RETIRED,
+            CONTRACT_DRIFT,
+        }
+
         const val INSERT_CLAIM: String = """
             INSERT INTO rain_event.projection_checkpoint(
               projection_name, generation, partition_depth, partition_prefix, log_id, contract_revision,
@@ -284,6 +322,17 @@ public class PostgresProjectionCheckpointStore(
                    topology_fingerprint, cursor_position, cursor_bound_xid, cursor_reach, fence, lease_until, updated_at
             FROM rain_event.projection_checkpoint
             WHERE projection_name = ? AND generation = ? AND partition_depth = ? AND partition_prefix = ?
+            """
+
+        const val TOPOLOGY_MEMBER: String = """
+            SELECT topology.log_id, topology.contract_revision, topology.topology_fingerprint, member.state
+            FROM rain_event.projection_topology topology
+            LEFT JOIN rain_event.projection_topology_member member
+              ON member.projection_name = topology.projection_name
+             AND member.generation = topology.generation
+             AND member.partition_depth = ?
+             AND member.partition_prefix = ?
+            WHERE topology.projection_name = ? AND topology.generation = ?
             """
 
         const val ADVANCE: String = """

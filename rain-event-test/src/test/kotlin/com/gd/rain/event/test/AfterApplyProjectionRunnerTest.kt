@@ -158,6 +158,7 @@ class AfterApplyProjectionRunnerTest {
         override fun hash(event: com.gd.rain.event.StoredEvent): Long = if (event.stream.key == "odd") 1 else 0
 
         override fun sequence(event: com.gd.rain.event.StoredEvent): com.gd.rain.event.projection.ProjectionSequenceId =
-            com.gd.rain.event.projection.ProjectionSequenceId.forStream(id, event.stream)
+            com.gd.rain.event.projection.ProjectionSequenceId
+                .forStream(id, event.stream)
     }
 }

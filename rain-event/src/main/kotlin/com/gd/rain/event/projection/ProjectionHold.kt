@@ -101,6 +101,12 @@ public sealed interface ProjectionRedriveAcknowledge {
     public data object LostLease : ProjectionRedriveAcknowledge
 }
 
+/** Result of releasing a fenced redrive after a bounded successful pass leaves queued letters behind. */
+public enum class ProjectionRedriveRelease {
+    RELEASED,
+    LOST_LEASE,
+}
+
 /** Result of recording a redrive failure and returning the sequence to the held state. */
 public enum class ProjectionRedriveFailure {
     RECORDED,
@@ -224,6 +230,9 @@ public interface SameUnitProjectionHoldStore {
         position: Long,
     ): ProjectionRedriveAcknowledge
 
+    /** Releases a current lease after a bounded successful pass with queued letters still remaining. */
+    public fun release(lease: ProjectionRedriveLease): ProjectionRedriveRelease
+
     /** Retains the head, increments its attempt state, and releases the sequence to a later fenced redrive. */
     public fun fail(
         lease: ProjectionRedriveLease,
@@ -250,4 +259,26 @@ public interface SameUnitProjectionHoldStore {
         lane: ProjectionLane,
         limit: Int,
     ): List<ProjectionHold>
+}
+
+/**
+ * Base for durable hold stores.
+ *
+ * It gives each adapter a private redrive-lease namespace while leaving locking, persistence, and transaction
+ * placement to that adapter. Implementations must still validate every mutation against their durable lease state.
+ */
+public abstract class ProjectionHoldStoreSupport : SameUnitProjectionHoldStore {
+    private val storeId: UUID = UUID.randomUUID()
+
+    /** Mints a lease after an adapter atomically advances its durable hold fence. */
+    protected fun newRedriveLease(
+        lane: ProjectionLane,
+        sequence: ProjectionSequenceId,
+        fence: Long,
+        token: UUID = UUID.randomUUID(),
+    ): ProjectionRedriveLease = ProjectionRedriveLease(storeId, token, lane, sequence, fence)
+
+    /** Refuses a token minted by another adapter before it is used in an adapter-specific mutation. */
+    protected fun requireRedriveLease(lease: ProjectionRedriveLease): Unit =
+        check(lease.storeId == storeId) { "projection redrive lease belongs to another hold store" }
 }

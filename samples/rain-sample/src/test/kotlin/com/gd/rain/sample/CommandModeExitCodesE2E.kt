@@ -92,14 +92,19 @@ class CommandModeExitCodesE2E {
         assertThat(migrated.code).describedAs(migrated.err).isZero()
         assertThat(migrated.out.lines().filter(String::isNotEmpty)).containsExactly(
             "migrate: rain_access applied 1, now at 1",
-            "migrate: rain_audit applied 1, now at 1",
-            "migrate: rain_jobs applied 1, now at 1",
+            "migrate: rain_audit applied 2, now at 2",
+            "migrate: rain_jobs applied 2, now at 2",
             "migrate: rain_llm applied 1, now at 1",
-            "migrate: application applied 1, now at 1",
+            "migrate: application applied 2, now at 2",
         )
         assertThat(seeded.code).describedAs(seeded.err).isZero()
         assertThat(seeded.out).isEmpty()
-        assertThat(seeded.err).contains("seeded: helpdesk.roles", "seeded: helpdesk.agents", "seeding complete: ran=2")
+        assertThat(seeded.err).contains(
+            "seeded: helpdesk.roles",
+            "seeded: helpdesk.agents",
+            "seeded: catalogue.products",
+            "seeding complete: ran=3",
+        )
         assertThat(seeded.err).describedAs("log lines, through rain-boot's console appender").contains("access catalogue synchronised")
         assertThat(reported.code).describedAs(reported.err).isZero()
         assertThat(reported.out).isEmpty()

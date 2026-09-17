@@ -12,6 +12,7 @@ import com.gd.rain.event.projection.ProjectionHoldEnqueue
 import com.gd.rain.event.projection.ProjectionHoldEviction
 import com.gd.rain.event.projection.ProjectionHoldLimits
 import com.gd.rain.event.projection.ProjectionHoldState
+import com.gd.rain.event.projection.ProjectionHoldStoreSupport
 import com.gd.rain.event.projection.ProjectionHole
 import com.gd.rain.event.projection.ProjectionHoleAcknowledgement
 import com.gd.rain.event.projection.ProjectionHoleId
@@ -23,6 +24,7 @@ import com.gd.rain.event.projection.ProjectionRedriveClaim
 import com.gd.rain.event.projection.ProjectionRedriveFailure
 import com.gd.rain.event.projection.ProjectionRedriveLease
 import com.gd.rain.event.projection.ProjectionRedriveLetter
+import com.gd.rain.event.projection.ProjectionRedriveRelease
 import com.gd.rain.event.projection.ProjectionSequenceId
 import com.gd.rain.event.projection.ProjectionTransactionPlacement
 import com.gd.rain.event.projection.SameUnitProjectionHoldStore
@@ -45,9 +47,7 @@ public class PostgresProjectionHoldStore(
     private val dsl: DSLContext,
     private val origin: EventLogOrigin,
     private val placement: ProjectionTransactionPlacement? = null,
-) : SameUnitProjectionHoldStore {
-    private val storeId: UUID = UUID.randomUUID()
-
+) : ProjectionHoldStoreSupport() {
     public constructor(
         dsl: DSLContext,
         origin: EventLogOrigin,
@@ -101,7 +101,8 @@ public class PostgresProjectionHoldStore(
             lease.lane.partition.prefix,
             letter.sequence.copy(),
             letter.event.position,
-            letter.event.stream.namespace.copy(),
+            letter.event.stream.namespace
+                .copy(),
             letter.event.stream.family,
             letter.event.stream.key,
             letter.event.streamVersion,
@@ -148,18 +149,19 @@ public class PostgresProjectionHoldStore(
             val hold = hold(claimed)
             return ProjectionRedriveClaim.Acquired(
                 hold,
-                ProjectionRedriveLease(storeId, token, lane, hold.sequence, hold.fence),
+                newRedriveLease(lane, hold.sequence, hold.fence, token),
             )
         }
         val busyAt =
-            dsl.fetchOne(
-                BUSY_REDRIVE,
-                lane.projection.text(),
-                lane.generation.value,
-                lane.partition.depth,
-                lane.partition.prefix,
-                origin.logId.copy(),
-            )?.get("lease_until", Instant::class.java)
+            dsl
+                .fetchOne(
+                    BUSY_REDRIVE,
+                    lane.projection.text(),
+                    lane.generation.value,
+                    lane.partition.depth,
+                    lane.partition.prefix,
+                    origin.logId.copy(),
+                )?.get("lease_until", Instant::class.java)
         return if (busyAt == null) ProjectionRedriveClaim.Idle else ProjectionRedriveClaim.Busy(busyAt)
     }
 
@@ -170,15 +172,16 @@ public class PostgresProjectionHoldStore(
         requireLease(lease)
         require(limit in 1..MAX_REDRIVE_LETTERS) { "projection redrive letter read limit is outside 1..$MAX_REDRIVE_LETTERS" }
         check(currentRedriveLease(lease)) { "projection redrive lease is no longer current" }
-        return dsl.fetch(
-            READ_LETTERS,
-            lease.lane.projection.text(),
-            lease.lane.generation.value,
-            lease.lane.partition.depth,
-            lease.lane.partition.prefix,
-            lease.sequence.copy(),
-            limit,
-        ).map(::redriveLetter)
+        return dsl
+            .fetch(
+                READ_LETTERS,
+                lease.lane.projection.text(),
+                lease.lane.generation.value,
+                lease.lane.partition.depth,
+                lease.lane.partition.prefix,
+                lease.sequence.copy(),
+                limit,
+            ).map(::redriveLetter)
     }
 
     override fun acknowledge(
@@ -276,6 +279,22 @@ public class PostgresProjectionHoldStore(
         return ProjectionRedriveFailure.RECORDED
     }
 
+    override fun release(lease: ProjectionRedriveLease): ProjectionRedriveRelease {
+        requireLease(lease)
+        val released =
+            dsl.execute(
+                RELEASE_REDRIVE,
+                lease.lane.projection.text(),
+                lease.lane.generation.value,
+                lease.lane.partition.depth,
+                lease.lane.partition.prefix,
+                lease.sequence.copy(),
+                lease.token,
+                lease.fence,
+            )
+        return if (released == 1) ProjectionRedriveRelease.RELEASED else ProjectionRedriveRelease.LOST_LEASE
+    }
+
     override fun evict(
         lane: ProjectionLane,
         sequence: ProjectionSequenceId,
@@ -342,15 +361,16 @@ public class PostgresProjectionHoldStore(
         limit: Int,
     ): List<ProjectionHold> {
         require(limit in 1..MAX_HOLD_STATUS) { "projection hold status limit is outside 1..$MAX_HOLD_STATUS" }
-        return dsl.fetch(
-            READ_HOLDS,
-            lane.projection.text(),
-            lane.generation.value,
-            lane.partition.depth,
-            lane.partition.prefix,
-            origin.logId.copy(),
-            limit,
-        ).map(::hold)
+        return dsl
+            .fetch(
+                READ_HOLDS,
+                lane.projection.text(),
+                lane.generation.value,
+                lane.partition.depth,
+                lane.partition.prefix,
+                origin.logId.copy(),
+                limit,
+            ).map(::hold)
     }
 
     private fun currentCheckpointLease(lease: com.gd.rain.event.projection.ProjectionLease): Boolean =
@@ -381,39 +401,42 @@ public class PostgresProjectionHoldStore(
         lane: ProjectionLane,
         sequence: ProjectionSequenceId,
     ): ProjectionHold? =
-        dsl.fetchOne(
-            LOCK_HOLD,
-            lane.projection.text(),
-            lane.generation.value,
-            lane.partition.depth,
-            lane.partition.prefix,
-            sequence.copy(),
-        )?.let(::hold)
+        dsl
+            .fetchOne(
+                LOCK_HOLD,
+                lane.projection.text(),
+                lane.generation.value,
+                lane.partition.depth,
+                lane.partition.prefix,
+                sequence.copy(),
+            )?.let(::hold)
 
     private fun lockHoldNowait(
         lane: ProjectionLane,
         sequence: ProjectionSequenceId,
     ): ProjectionHold? =
-        dsl.fetchOne(
-            LOCK_HOLD_NOWAIT,
-            lane.projection.text(),
-            lane.generation.value,
-            lane.partition.depth,
-            lane.partition.prefix,
-            sequence.copy(),
-        )?.let(::hold)
+        dsl
+            .fetchOne(
+                LOCK_HOLD_NOWAIT,
+                lane.projection.text(),
+                lane.generation.value,
+                lane.partition.depth,
+                lane.partition.prefix,
+                sequence.copy(),
+            )?.let(::hold)
 
     private fun lockRedriveHold(lease: ProjectionRedriveLease): ProjectionHold? =
-        dsl.fetchOne(
-            LOCK_REDRIVE_HOLD,
-            lease.lane.projection.text(),
-            lease.lane.generation.value,
-            lease.lane.partition.depth,
-            lease.lane.partition.prefix,
-            lease.sequence.copy(),
-            lease.token,
-            lease.fence,
-        )?.let(::hold)
+        dsl
+            .fetchOne(
+                LOCK_REDRIVE_HOLD,
+                lease.lane.projection.text(),
+                lease.lane.generation.value,
+                lease.lane.partition.depth,
+                lease.lane.partition.prefix,
+                lease.sequence.copy(),
+                lease.token,
+                lease.fence,
+            )?.let(::hold)
 
     private fun letterRow(
         lane: ProjectionLane,
@@ -434,14 +457,15 @@ public class PostgresProjectionHoldStore(
         lane: ProjectionLane,
         sequence: ProjectionSequenceId,
     ): Long? =
-        dsl.fetchOne(
-            LAST_LETTER_POSITION,
-            lane.projection.text(),
-            lane.generation.value,
-            lane.partition.depth,
-            lane.partition.prefix,
-            sequence.copy(),
-        )?.get("position", Long::class.java)
+        dsl
+            .fetchOne(
+                LAST_LETTER_POSITION,
+                lane.projection.text(),
+                lane.generation.value,
+                lane.partition.depth,
+                lane.partition.prefix,
+                sequence.copy(),
+            )?.get("position", Long::class.java)
 
     private fun hold(row: Record): ProjectionHold =
         ProjectionHold(
@@ -463,8 +487,10 @@ public class PostgresProjectionHoldStore(
 
     private fun lane(row: Record): ProjectionLane =
         ProjectionLane(
-            com.gd.rain.event.projection.ProjectionName.of(checkNotNull(row.get("projection_name", String::class.java))),
-            com.gd.rain.event.projection.ProjectionGeneration(checkNotNull(row.get("generation", Long::class.java))),
+            com.gd.rain.event.projection.ProjectionName
+                .of(checkNotNull(row.get("projection_name", String::class.java))),
+            com.gd.rain.event.projection
+                .ProjectionGeneration(checkNotNull(row.get("generation", Long::class.java))),
             com.gd.rain.event.projection.ProjectionPartition(
                 checkNotNull(row.get("partition_depth", Int::class.java)),
                 checkNotNull(row.get("partition_prefix", Long::class.java)),
@@ -498,7 +524,12 @@ public class PostgresProjectionHoldStore(
             "projection letter checksum does not match its immutable envelope"
         }
         val code = row.get("last_failure_code", String::class.java)?.let(ProjectionFailureCode::of)
-        return ProjectionRedriveLetter(letter, checkNotNull(row.get("attempts", Int::class.java)), code, row.get("last_failed_at", Instant::class.java))
+        return ProjectionRedriveLetter(
+            letter,
+            checkNotNull(row.get("attempts", Int::class.java)),
+            code,
+            row.get("last_failed_at", Instant::class.java),
+        )
     }
 
     private fun hole(row: Record): ProjectionHole =
@@ -535,23 +566,24 @@ public class PostgresProjectionHoldStore(
             ),
         ).retainedBytes
 
-    private fun activeRedrive(hold: ProjectionHold): Boolean = hold.state == ProjectionHoldState.REDRIVING && redriveUntil(hold.lane, hold.sequence)?.isAfter(Instant.now()) == true
+    private fun activeRedrive(hold: ProjectionHold): Boolean =
+        hold.state == ProjectionHoldState.REDRIVING && redriveUntil(hold.lane, hold.sequence)?.isAfter(Instant.now()) == true
 
     private fun redriveUntil(
         lane: ProjectionLane,
         sequence: ProjectionSequenceId,
     ): Instant? =
-        dsl.fetchOne(
-            REDRIVE_UNTIL,
-            lane.projection.text(),
-            lane.generation.value,
-            lane.partition.depth,
-            lane.partition.prefix,
-            sequence.copy(),
-        )?.get("lease_until", Instant::class.java)
+        dsl
+            .fetchOne(
+                REDRIVE_UNTIL,
+                lane.projection.text(),
+                lane.generation.value,
+                lane.partition.depth,
+                lane.partition.prefix,
+                sequence.copy(),
+            )?.get("lease_until", Instant::class.java)
 
-    private fun requireLease(lease: ProjectionRedriveLease): Unit =
-        check(lease.storeId == storeId) { "projection redrive lease belongs to another hold store" }
+    private fun requireLease(lease: ProjectionRedriveLease): Unit = requireRedriveLease(lease)
 
     private fun requireReason(reason: String): Unit =
         require(reason.isNotBlank() && reason.toByteArray(Charsets.UTF_8).size <= ProjectionHole.MAX_REASON_BYTES) {

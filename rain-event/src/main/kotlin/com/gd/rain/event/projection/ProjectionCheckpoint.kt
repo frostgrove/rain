@@ -70,6 +70,9 @@ public sealed interface ProjectionClaim {
         public val halt: ProjectionHalt,
     ) : ProjectionClaim
 
+    /** A durable topology split retired this parent; an old deployment must not recreate or resume its checkpoint. */
+    public data object Retired : ProjectionClaim
+
     public data object ContractDrift : ProjectionClaim
 }
 

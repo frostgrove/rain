@@ -112,14 +112,20 @@ class OneShotRunnerIT {
     }
 
     @Test
-    fun `the seed command runs the helpdesk's seeders in their order`() {
+    fun `the seed command runs the sample's seeders in their order`() {
         val database = RainPostgres.freshDatabase("seed_order").also(Stand::migrate)
 
         val seeded = Stand.command(database, "seed")
 
         assertThat(seeded.code).isZero()
         assertThat(seeded.err.lines().filter { it.startsWith("seed") })
-            .containsExactly("seeding: registered=2", "seeded: helpdesk.roles", "seeded: helpdesk.agents", "seeding complete: ran=2")
+            .containsExactly(
+                "seeding: registered=3",
+                "seeded: helpdesk.roles",
+                "seeded: helpdesk.agents",
+                "seeded: catalogue.products",
+                "seeding complete: ran=3",
+            )
     }
 
     @Test
@@ -247,7 +253,7 @@ class SeedCommandIT {
     }
 
     @Test
-    fun `only the seed command holds the helpdesk's seeders`() {
+    fun `only the seed command holds the sample's seeders`() {
         val database = RainPostgres.freshDatabase("seed_selection").also(Stand::migrate)
         CapturedOutput.current =
             com.gd.rain.boot.command
@@ -269,7 +275,7 @@ class SeedCommandIT {
                 .map { it.name }
         seeding.exit()
 
-        assertThat(seeders).containsExactlyInAnyOrder("helpdesk.roles", "helpdesk.agents")
+        assertThat(seeders).containsExactlyInAnyOrder("helpdesk.roles", "helpdesk.agents", "catalogue.products")
         SampleProcess.api(database).use { api -> assertThat(api.context.getBeansOfType(Seeder::class.java)).isEmpty() }
     }
 

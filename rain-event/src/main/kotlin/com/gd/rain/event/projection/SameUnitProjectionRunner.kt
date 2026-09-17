@@ -119,6 +119,9 @@ public sealed interface SameUnitPass {
         public val halt: ProjectionHalt,
     ) : SameUnitPass
 
+    /** A durable split retired this parent before this pass could invoke its handler. */
+    public data object Retired : SameUnitPass
+
     /** The cursor advanced while at least one sequence was durably queued rather than delivered. */
     public data class Parked(
         public val checkpoint: ProjectionCheckpoint,
@@ -182,6 +185,7 @@ public class SameUnitProjectionRunner(
             when (val claim = checkpoints.claim(lane, contract, sourceCursor, clock.instant(), leaseFor)) {
                 is ProjectionClaim.Busy -> SameUnitPass.Busy(claim.retryAt)
                 is ProjectionClaim.Halted -> SameUnitPass.Halted(claim.halt)
+                ProjectionClaim.Retired -> SameUnitPass.Retired
                 ProjectionClaim.ContractDrift -> SameUnitPass.ContractDrift
                 is ProjectionClaim.Acquired -> runClaimed(claim, spec, sourceCursor, page, scopedDestination)
             }
@@ -228,8 +232,9 @@ public class SameUnitProjectionRunner(
         val park = checkNotNull(definition.park) { "park sequence projection has no park definition" }
         val holdStore = checkNotNull(holds) { "park sequence projection has no hold store" }
         val isolation = destinationSavepoint()
-        val haltStore = checkpoints as? SameUnitProjectionHaltStore
-            ?: error("park sequence projection checkpoint store cannot durably halt a lane")
+        val haltStore =
+            checkpoints as? SameUnitProjectionHaltStore
+                ?: error("park sequence projection checkpoint store cannot durably halt a lane")
         var applied = 0
         var queued = 0
         page.events.forEach { event ->
@@ -244,33 +249,48 @@ public class SameUnitProjectionRunner(
                             applied++
                         } catch (failure: Throwable) {
                             when (val classified = park.classifier.classify(failure)) {
-                                ProjectionFailure.Transient -> throw failure
-                                is ProjectionFailure.Permanent ->
+                                ProjectionFailure.Transient -> {
+                                    throw failure
+                                }
+
+                                is ProjectionFailure.Permanent -> {
                                     when (val parked = holdStore.enqueue(claim.lease, letter, classified.code, park.limits)) {
                                         is ProjectionHoldEnqueue.Queued -> queued++
                                         is ProjectionHoldEnqueue.CapacityExceeded -> return halt(haltStore, claim, event, capacityFailure())
                                         ProjectionHoldEnqueue.LostLease -> throw ProjectionLeaseLostException()
                                         ProjectionHoldEnqueue.NotHeld -> error("permanent failure did not create its projection hold")
                                     }
+                                }
                             }
                         }
                     }
                 }
 
-                is ProjectionHoldEnqueue.Queued -> queued++
-                is ProjectionHoldEnqueue.CapacityExceeded -> return halt(haltStore, claim, event, capacityFailure())
-                ProjectionHoldEnqueue.LostLease -> throw ProjectionLeaseLostException()
+                is ProjectionHoldEnqueue.Queued -> {
+                    queued++
+                }
+
+                is ProjectionHoldEnqueue.CapacityExceeded -> {
+                    return halt(haltStore, claim, event, capacityFailure())
+                }
+
+                ProjectionHoldEnqueue.LostLease -> {
+                    throw ProjectionLeaseLostException()
+                }
             }
         }
         return when (val advanced = checkpoints.advance(claim.lease, page.next, clock.instant())) {
-            is ProjectionAdvance.Advanced ->
+            is ProjectionAdvance.Advanced -> {
                 if (queued == 0) {
                     SameUnitPass.Advanced(advanced.checkpoint, page.events.size, applied, page.hasMore)
                 } else {
                     SameUnitPass.Parked(advanced.checkpoint, page.events.size, applied, queued, page.hasMore)
                 }
+            }
 
-            ProjectionAdvance.LostLease -> throw ProjectionLeaseLostException()
+            ProjectionAdvance.LostLease -> {
+                throw ProjectionLeaseLostException()
+            }
         }
     }
 

@@ -68,6 +68,18 @@ public class InMemoryProjectionCheckpointStore : ProjectionCheckpointStoreSuppor
 
     override fun checkpoint(lane: ProjectionLane): ProjectionCheckpoint? = synchronized(entries) { entries[lane]?.checkpoint }
 
+    /** Reports whether [lease] can still atomically guard a companion in-memory projection mutation at [now]. */
+    public fun isCurrent(
+        lease: ProjectionLease,
+        now: Instant,
+    ): Boolean =
+        synchronized(entries) {
+            owns(lease) &&
+                entries[lease.lane]
+                    ?.active
+                    ?.let { active -> active.lease === lease && active.expiresAt.isAfter(now) } == true
+        }
+
     private data class Entry(
         val checkpoint: ProjectionCheckpoint,
         val active: Active?,

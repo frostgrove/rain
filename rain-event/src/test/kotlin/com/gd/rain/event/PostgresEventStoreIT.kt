@@ -10,6 +10,8 @@ import com.gd.rain.event.projection.ProjectionDestinationId
 import com.gd.rain.event.projection.ProjectionEffectAdmission
 import com.gd.rain.event.projection.ProjectionEffectPolicy
 import com.gd.rain.event.projection.ProjectionFact
+import com.gd.rain.event.projection.ProjectionFailure
+import com.gd.rain.event.projection.ProjectionFailureCode
 import com.gd.rain.event.projection.ProjectionGeneration
 import com.gd.rain.event.projection.ProjectionGenerationPlan
 import com.gd.rain.event.projection.ProjectionGenerationReadiness
@@ -19,8 +21,13 @@ import com.gd.rain.event.projection.ProjectionHoldLimits
 import com.gd.rain.event.projection.ProjectionLane
 import com.gd.rain.event.projection.ProjectionLetter
 import com.gd.rain.event.projection.ProjectionName
+import com.gd.rain.event.projection.ProjectionParkDefinition
 import com.gd.rain.event.projection.ProjectionPartition
 import com.gd.rain.event.projection.ProjectionPermanentFailurePolicy
+import com.gd.rain.event.projection.ProjectionRedriveClaim
+import com.gd.rain.event.projection.ProjectionRedrivePass
+import com.gd.rain.event.projection.ProjectionRedriveRelease
+import com.gd.rain.event.projection.ProjectionRedriveRunner
 import com.gd.rain.event.projection.ProjectionRoute
 import com.gd.rain.event.projection.ProjectionRunBudget
 import com.gd.rain.event.projection.ProjectionSpec
@@ -504,12 +511,20 @@ class PostgresEventStoreIT {
         val sequence = spec.cover.hasher.sequence(first)
 
         TransactionTemplate(transactions).execute {
-            val claim = checkpoints.claim(lane, contract, events.initialCursor(), Instant.now(), java.time.Duration.ofMinutes(1)) as ProjectionClaim.Acquired
+            val claim =
+                checkpoints.claim(
+                    lane,
+                    contract,
+                    events.initialCursor(),
+                    Instant.now(),
+                    java.time.Duration.ofMinutes(1),
+                ) as ProjectionClaim.Acquired
             assertThat(
                 holds.enqueue(
                     claim.lease,
                     ProjectionLetter(sequence, first),
-                    com.gd.rain.event.projection.ProjectionFailureCode.of("destination.invalid"),
+                    com.gd.rain.event.projection.ProjectionFailureCode
+                        .of("destination.invalid"),
                     limits,
                 ),
             ).isInstanceOf(ProjectionHoldEnqueue.Queued::class.java)
@@ -518,7 +533,14 @@ class PostgresEventStoreIT {
         }
 
         TransactionTemplate(transactions).execute {
-            val claim = checkpoints.claim(lane, contract, EventLogCursor.after(events.initialCursor(), first.position), Instant.now(), java.time.Duration.ofMinutes(1)) as ProjectionClaim.Acquired
+            val claim =
+                checkpoints.claim(
+                    lane,
+                    contract,
+                    EventLogCursor.after(events.initialCursor(), first.position),
+                    Instant.now(),
+                    java.time.Duration.ofMinutes(1),
+                ) as ProjectionClaim.Acquired
             assertThat(holds.enqueue(claim.lease, ProjectionLetter(sequence, second), null, limits))
                 .isInstanceOf(ProjectionHoldEnqueue.Queued::class.java)
             assertThat(checkpoints.advance(claim.lease, page.next, Instant.now()))
@@ -527,22 +549,41 @@ class PostgresEventStoreIT {
 
         assertThat(holds.holds(lane, 10).single().letterCount).isEqualTo(2)
         TransactionTemplate(transactions).execute {
-            val claim = holds.claimRedrive(lane, Instant.now(), java.time.Duration.ofMinutes(1)) as com.gd.rain.event.projection.ProjectionRedriveClaim.Acquired
+            val claim =
+                holds.claimRedrive(
+                    lane,
+                    Instant.now(),
+                    java.time.Duration.ofMinutes(1),
+                ) as com.gd.rain.event.projection.ProjectionRedriveClaim.Acquired
             assertThat(holds.letters(claim.lease, 10).map { it.letter.event.position }).containsExactly(first.position, second.position)
             assertThat(holds.acknowledge(claim.lease, first.position))
-                .isEqualTo(com.gd.rain.event.projection.ProjectionRedriveAcknowledge.Advanced(1))
+                .isEqualTo(
+                    com.gd.rain.event.projection.ProjectionRedriveAcknowledge
+                        .Advanced(1),
+                )
             assertThat(holds.acknowledge(claim.lease, second.position))
-                .isEqualTo(com.gd.rain.event.projection.ProjectionRedriveAcknowledge.Advanced(0))
+                .isEqualTo(
+                    com.gd.rain.event.projection.ProjectionRedriveAcknowledge
+                        .Advanced(0),
+                )
         }
         assertThat(holds.holds(lane, 10)).isEmpty()
 
         TransactionTemplate(transactions).execute {
-            val claim = checkpoints.claim(lane, contract, page.next, Instant.now(), java.time.Duration.ofMinutes(1)) as ProjectionClaim.Acquired
+            val claim =
+                checkpoints.claim(
+                    lane,
+                    contract,
+                    page.next,
+                    Instant.now(),
+                    java.time.Duration.ofMinutes(1),
+                ) as ProjectionClaim.Acquired
             assertThat(
                 holds.enqueue(
                     claim.lease,
                     ProjectionLetter(sequence, second),
-                    com.gd.rain.event.projection.ProjectionFailureCode.of("destination.invalid"),
+                    com.gd.rain.event.projection.ProjectionFailureCode
+                        .of("destination.invalid"),
                     limits,
                 ),
             ).isInstanceOf(ProjectionHoldEnqueue.Queued::class.java)
@@ -554,12 +595,19 @@ class PostgresEventStoreIT {
                 holds.evict(
                     lane,
                     sequence,
-                    com.gd.rain.event.projection.ProjectionOperator("operator", "projection-admin"),
+                    com.gd.rain.event.projection
+                        .ProjectionOperator("operator", "projection-admin"),
                     "discard invalid historical envelope",
                 )
             } as com.gd.rain.event.projection.ProjectionHoldEviction.Evicted
-        assertThat(holds.acknowledgeHole(eviction.hole.id, com.gd.rain.event.projection.ProjectionOperator("operator", "projection-admin"), "rebuild policy accepted"))
-            .isInstanceOf(com.gd.rain.event.projection.ProjectionHoleAcknowledgement.Acknowledged::class.java)
+        assertThat(
+            holds.acknowledgeHole(
+                eviction.hole.id,
+                com.gd.rain.event.projection
+                    .ProjectionOperator("operator", "projection-admin"),
+                "rebuild policy accepted",
+            ),
+        ).isInstanceOf(com.gd.rain.event.projection.ProjectionHoleAcknowledgement.Acknowledged::class.java)
     }
 
     @Test
@@ -602,7 +650,8 @@ class PostgresEventStoreIT {
                     },
                     com.gd.rain.event.projection.ProjectionFailureClassifier {
                         com.gd.rain.event.projection.ProjectionFailure.Permanent(
-                            com.gd.rain.event.projection.ProjectionFailureCode.of("destination.invalid"),
+                            com.gd.rain.event.projection.ProjectionFailureCode
+                                .of("destination.invalid"),
                         )
                     },
                     ProjectionHoldLimits(maxLetters = 10, maxBytes = 64 * 1024),
@@ -618,14 +667,171 @@ class PostgresEventStoreIT {
         val pass = TransactionTemplate(transactions).execute { runner.run(lane) }
 
         assertThat(pass).isInstanceOf(com.gd.rain.event.projection.SameUnitPass.Parked::class.java)
-        assertThat(dsl.fetch("SELECT position FROM projection_park_test ORDER BY position").getValues(0, Long::class.java)).containsExactly(2L)
+        assertThat(
+            dsl.fetch("SELECT position FROM projection_park_test ORDER BY position").getValues(0, Long::class.java),
+        ).containsExactly(2L)
         assertThat(holds.holds(lane, 10)).hasSize(1)
         val claimed =
             TransactionTemplate(transactions).execute {
-                holds.claimRedrive(lane, Instant.now(), java.time.Duration.ofMinutes(1)) as com.gd.rain.event.projection.ProjectionRedriveClaim.Acquired
+                holds.claimRedrive(
+                    lane,
+                    Instant.now(),
+                    java.time.Duration.ofMinutes(1),
+                ) as com.gd.rain.event.projection.ProjectionRedriveClaim.Acquired
             }
         assertThat(holds.letters(claimed.lease, 10).map { it.letter.event.position })
             .containsExactly(1L, 3L)
+    }
+
+    @Test
+    fun `same-unit redrive rolls back a failed head, records its attempt, and releases bounded successful work`() {
+        val database = RainPostgres.freshDatabase("projection_redrive")
+        val dataSource = database.dataSource()
+        val transactions = DataSourceTransactionManager(dataSource)
+        val dsl = DSL.using(TransactionAwareDataSourceProxy(dataSource), SQLDialect.POSTGRES)
+        RainSchemaMigrationStrategy(SchemaDescriptor.load().descriptors)
+            .migrate(
+                Flyway
+                    .configure()
+                    .dataSource(dataSource)
+                    .locations("classpath:db/none")
+                    .failOnMissingLocations(false)
+                    .load(),
+            )
+        dsl.execute("CREATE TABLE projection_redrive_test (position bigint PRIMARY KEY)")
+        val events = PostgresEventStore(dsl, transactions)
+        val stream = StreamRef(EventNamespace.of(ByteArray(EventNamespace.SIZE_BYTES) { 10 }), "counter", "parked")
+        TransactionTemplate(transactions).execute {
+            events.inCallerTransaction { transaction ->
+                events.append(transaction, 0, encoded(stream, "one"), EventMetadata(OperationKey.of("redrive-one")))
+                events.append(transaction, 1, encoded(stream, "two"), EventMetadata(OperationKey.of("redrive-two")))
+            }
+        }
+        val spec = parkSpec()
+        val lane = ProjectionLane(spec.name, ProjectionGeneration(1), ProjectionPartition.WHOLE)
+        val contract = ProjectionCheckpointContract(events.origin, spec.revision, spec.cover.fingerprint)
+        val checkpoints = PostgresProjectionCheckpointStore(dsl, events.origin, transactions)
+        val holds = PostgresProjectionHoldStore(dsl, events.origin, transactions)
+        val page = events.readCommitted(events.initialCursor(), 10)
+        val first = page.events[0]
+        val second = page.events[1]
+        val sequence = spec.cover.hasher.sequence(first)
+        val failureCode = ProjectionFailureCode.of("destination.invalid")
+        TransactionTemplate(transactions).execute {
+            val claim =
+                checkpoints.claim(lane, contract, events.initialCursor(), Instant.now(), java.time.Duration.ofMinutes(1))
+                    as ProjectionClaim.Acquired
+            holds.enqueue(claim.lease, ProjectionLetter(sequence, first), failureCode, ProjectionHoldLimits(10, 64 * 1024))
+            holds.enqueue(claim.lease, ProjectionLetter(sequence, second), null, ProjectionHoldLimits(10, 64 * 1024))
+            checkpoints.advance(claim.lease, page.next, Instant.now())
+        }
+        val retrying =
+            ProjectionRedriveRunner(
+                ProjectionParkDefinition(
+                    { event, _ ->
+                        dsl.execute("INSERT INTO projection_redrive_test(position) VALUES (?)", event.position)
+                        error("declared redrive destination refusal")
+                    },
+                    { ProjectionFailure.Permanent(failureCode) },
+                    ProjectionHoldLimits(10, 64 * 1024),
+                ),
+                holds,
+                PostgresSameUnitProjectionDestination(dsl, transactions),
+                java.time.Clock.systemUTC(),
+                java.time.Duration.ofMinutes(1),
+            )
+
+        val failed = TransactionTemplate(transactions).execute { retrying.run(lane) }
+
+        assertThat(failed).isEqualTo(ProjectionRedrivePass.Failed(first.position, failureCode))
+        assertThat(dsl.fetchCount(DSL.table("projection_redrive_test"))).isZero()
+        val inspected =
+            TransactionTemplate(transactions).execute {
+                val claim = holds.claimRedrive(lane, Instant.now(), java.time.Duration.ofMinutes(1)) as ProjectionRedriveClaim.Acquired
+                val letter = holds.letters(claim.lease, 1).single()
+                assertThat(holds.release(claim.lease)).isEqualTo(ProjectionRedriveRelease.RELEASED)
+                letter
+            }
+        assertThat(inspected.attempts).isEqualTo(1)
+        assertThat(inspected.lastFailureCode).isEqualTo(failureCode)
+
+        val recovered =
+            ProjectionRedriveRunner(
+                ProjectionParkDefinition(
+                    { event, _ -> dsl.execute("INSERT INTO projection_redrive_test(position) VALUES (?)", event.position) },
+                    { ProjectionFailure.Permanent(failureCode) },
+                    ProjectionHoldLimits(10, 64 * 1024),
+                ),
+                holds,
+                PostgresSameUnitProjectionDestination(dsl, transactions),
+                java.time.Clock.systemUTC(),
+                java.time.Duration.ofMinutes(1),
+            )
+
+        assertThat(TransactionTemplate(transactions).execute { recovered.run(lane) })
+            .isEqualTo(ProjectionRedrivePass.Advanced(first.position, 1))
+        assertThat(holds.holds(lane, 10).single()).matches {
+            it.state == com.gd.rain.event.projection.ProjectionHoldState.HELD &&
+                it.letterCount == 1
+        }
+        assertThat(TransactionTemplate(transactions).execute { recovered.run(lane) })
+            .isEqualTo(ProjectionRedrivePass.Advanced(second.position, 0))
+        assertThat(dsl.fetch("SELECT position FROM projection_redrive_test ORDER BY position").getValues(0, Long::class.java))
+            .containsExactly(first.position, second.position)
+        assertThat(holds.holds(lane, 10)).isEmpty()
+    }
+
+    @Test
+    fun `park queue capacity durably halts its same-unit lane without dropping the causal head`() {
+        val database = RainPostgres.freshDatabase("projection_park_capacity")
+        val dataSource = database.dataSource()
+        val transactions = DataSourceTransactionManager(dataSource)
+        val dsl = DSL.using(TransactionAwareDataSourceProxy(dataSource), SQLDialect.POSTGRES)
+        RainSchemaMigrationStrategy(SchemaDescriptor.load().descriptors)
+            .migrate(
+                Flyway
+                    .configure()
+                    .dataSource(dataSource)
+                    .locations("classpath:db/none")
+                    .failOnMissingLocations(false)
+                    .load(),
+            )
+        val events = PostgresEventStore(dsl, transactions)
+        val stream = StreamRef(EventNamespace.of(ByteArray(EventNamespace.SIZE_BYTES) { 11 }), "counter", "capacity")
+        TransactionTemplate(transactions).execute {
+            events.inCallerTransaction { transaction ->
+                events.append(transaction, 0, encoded(stream, "one"), EventMetadata(OperationKey.of("capacity-one")))
+                events.append(transaction, 1, encoded(stream, "two"), EventMetadata(OperationKey.of("capacity-two")))
+            }
+        }
+        val spec = parkSpec()
+        val lane = ProjectionLane(spec.name, ProjectionGeneration(1), ProjectionPartition.WHOLE)
+        val contract = ProjectionCheckpointContract(events.origin, spec.revision, spec.cover.fingerprint)
+        val checkpoints = PostgresProjectionCheckpointStore(dsl, events.origin, transactions)
+        val holds = PostgresProjectionHoldStore(dsl, events.origin, transactions)
+        val runner =
+            SameUnitProjectionRunner(
+                SameUnitProjectionDefinition.parked(
+                    spec,
+                    { _, _ -> error("declared permanent destination refusal") },
+                    { ProjectionFailure.Permanent(ProjectionFailureCode.of("destination.invalid")) },
+                    ProjectionHoldLimits(maxLetters = 1, maxBytes = 64 * 1024),
+                ),
+                events,
+                checkpoints,
+                PostgresSameUnitProjectionDestination(dsl, transactions),
+                java.time.Clock.systemUTC(),
+                java.time.Duration.ofMinutes(1),
+                holds,
+            )
+
+        val pass = TransactionTemplate(transactions).execute { runner.run(lane) }
+
+        assertThat(pass).isInstanceOf(com.gd.rain.event.projection.SameUnitPass.Halted::class.java)
+        assertThat(holds.holds(lane, 10).single().letterCount).isEqualTo(1)
+        assertThat(
+            checkpoints.claim(lane, contract, events.initialCursor(), Instant.now(), java.time.Duration.ofMinutes(1)),
+        ).isInstanceOf(ProjectionClaim.Halted::class.java)
     }
 
     @Test
@@ -730,7 +936,8 @@ class PostgresEventStoreIT {
                 .toLong()
 
         override fun sequence(event: StoredEvent): com.gd.rain.event.projection.ProjectionSequenceId =
-            com.gd.rain.event.projection.ProjectionSequenceId.forStream(id, event.stream)
+            com.gd.rain.event.projection.ProjectionSequenceId
+                .forStream(id, event.stream)
     }
 
     private fun encoded(

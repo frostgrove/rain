@@ -64,7 +64,10 @@ class I18nDeliveryViewsTest {
         val observed = mutableListOf<I18nObservation>()
         val views = I18nDeliveryViews(MemoryRepository(snapshot, mapOf(snapshot.reference to snapshot)), I18nObserver(observed::add))
 
-        val resolved = views.resolve(intent(bind(snapshot), I18nDeliverySelection.PinnedSnapshot(snapshot.reference))) as I18nDeliveryView.Resolved
+        val resolved =
+            views.resolve(
+                intent(bind(snapshot), I18nDeliverySelection.PinnedSnapshot(snapshot.reference)),
+            ) as I18nDeliveryView.Resolved
         assertThat(resolved.view.render(bind(snapshot)).text).isEqualTo("one")
 
         assertThat(observed.map { event -> event.operation to event.outcome }).containsExactly(

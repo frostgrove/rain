@@ -1,6 +1,6 @@
 # Handoff: tenancy-and-eventsource-2
 
-Статус на 2026-09-17: работа остановлена по запросу пользователя. Основной план находится в
+Статус на 2026-09-17: ParkSequence/redrive slice продолжен и проверен; основной план находится в
 `tenancy-and-eventsource-2`; этот файл — только точка продолжения и не заменяет план.
 
 ## Уже сделано в этой сессии
@@ -26,33 +26,47 @@
     на capacity. Потеря checkpoint lease после destination write теперь бросает exception, чтобы
     caller transaction откатилась, а не закоммитила partial SAME_UNIT work.
 
+## Продолжение ParkSequence/redrive в этой сессии
+
+- `same-unit park rolls back only the failed envelope, queues its sequence, and advances unrelated work` теперь
+  подтверждён green.
+- Добавлен `ProjectionRedriveRunner`. Он берёт строго один queue head в caller-owned SAME_UNIT transaction,
+  проверяет hold/destination authority, откатывает failed handler к savepoint, acknowledge делает только после
+  destination write, записывает stable attempt code при failure и releases lease после bounded successful pass с
+  remaining letters. Потеря redrive lease бросает exception до commit, а не возвращает misleading success.
+- Добавлен `ProjectionRedriveRelease` и его PostgreSQL implementation: без explicit release single-head runner
+  оставлял бы remaining queue в `REDRIVING` до TTL.
+- `ProjectionHoldStoreSupport` теперь mint'ит redrive leases так же, как checkpoint support mint'ит checkpoint
+  leases; это делает тестовый adapter настоящим fenced reference без раскрытия internal lease constructor.
+- Добавлены `InMemoryProjectionHoldStore` и deterministic protocol tests: checksum collision, capacity refusal,
+  stale lease fencing, live queue behind redrive и two-step operator hole acknowledgement.
+- Добавлены PostgreSQL proofs для redrive savepoint/attempt/release и durable same-unit capacity halt.
+- Обновлены `docs/modules/event.md`, `docs/modules/event-test.md` и новый
+  `docs/runbooks/projection-park-redrive.md`.
+
 ## Проверки
 
-- После базовых контрактов проходила компиляция:
-  `./gradlew :rain-event:compileKotlin :rain-event-test:compileKotlin :rain-event:compileTestKotlin :rain-event-test:compileTestKotlin`.
-- Проходил focused PostgreSQL integration test low-level hold/redrive/hole:
-  `./gradlew :rain-event:integrationTest --tests '*projection parking queues one causal sequence*'`.
-- Добавлен integration test `same-unit park rolls back only the failed envelope, queues its sequence,
-  and advances unrelated work`. Его финальный запуск был прерван пользовательским `stop`, поэтому
-  его результат **не считать подтверждённым**. Перед любой следующей работой выполнить:
+- Passed: `./gradlew :rain-event:integrationTest --tests '*same-unit park rolls back*'`.
+- Passed: `./gradlew :rain-event:integrationTest --tests '*same-unit redrive rolls back*'`.
+- Passed: `./gradlew :rain-event:integrationTest --tests '*PostgresEventStoreIT'`.
+- Passed: `./gradlew :rain-event:integrationTest --tests '*park queue capacity*' :rain-event-test:test`.
+- Passed final scope gate:
 
   ```bash
-  ./gradlew :rain-event:integrationTest --tests '*same-unit park rolls back*'
+  ./gradlew :rain-event:check :rain-event-test:check verifyModuleGraph verifyDocsCoverage
   ```
 
 ## Текущая точка и порядок продолжения
 
-1. Получить явный результат последнего SAME_UNIT parking test; исправить только подтверждённые
-   ошибки. Затем прогнать весь `PostgresEventStoreIT` и обычные `:rain-event:check` / `:rain-event-test:check`.
-2. Добавить dedicated `ProjectionRedriveRunner`: он должен применять head letter в caller-owned
-   SAME_UNIT transaction, ack only after destination write, и при failure записывать attempts/code
-   без нарушения order. Не начинать новый transaction внутри adapter.
-3. Добавить in-memory hold/redrive reference в `rain-event-test` и conformance tests (including
-   lease race, checksum collision, capacity halt, redrive/live queue race, hole acknowledgement).
-4. Обновить `docs/modules/event.md`, `docs/modules/event-test.md` и runbook park/redrive.
-5. Продолжить оставшиеся части Phase 6: durable live topology/split, rebuild read pacing/jobs
-   integration, realtime hint, projection conformance/defect suite. Не делать cross-product
-   модулей: event/jobs/i18n/tenancy composition остаётся отдельными линейными пакетами.
+1. Реализовать durable live topology/split полностью: immutable exact-cover members, parent retirement,
+   children with inherited cursor in one transaction, old parent refusal и runner admission only for live member.
+   Учесть contract/generation topology fingerprint без ослабления existing drift/cutover invariants.
+2. Добавить worker scheduling through `rain-jobs`, rebuild read pacing и optional realtime hint. Никаких
+   private transaction/retry loops в projection adapters; polling остаётся correctness source.
+3. Построить настоящий reusable projection conformance launcher и defect implementations; текущие memory tests
+   являются reference protocol tests, не сертификатом PostgreSQL SAME_UNIT authority.
+4. Продолжить Phase 6 generation/rebuild crash-window tests и затем Phase 7 tenancy-event composition. Не делать
+   cross-product модулей: event/jobs/i18n/tenancy composition остаётся отдельными линейными пакетами.
 
 ## Важные границы
 
