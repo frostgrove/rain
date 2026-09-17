@@ -7,8 +7,9 @@ only. Its integration tests start it for real; this page runs it by hand.
 |---|---|
 | rain-boot | roles `api` and `worker`, the commands `migrate`, `seed`, `config-check`, `ticket-report`, `smoke-llm`; its own `sample.tickets` and `sample.seed` sections, one rule reading `rain.web` |
 | rain-web, rain-observability | problem+json refusals, transport filters, `/live` and `/ready` from checks whose importance `application.yml` states |
-| rain-access | agents sign in (`/v1/auth/agent/login`); permissions `ticket.read`, `ticket.write`, `ticket.delete`; roles `administrator` (system), `supervisor`, `responder` |
+| rain-access | agents sign in (`/v1/auth/agent/login`); permissions `ticket.read`, `ticket.write`, `ticket.delete`, `product.read`; roles `administrator` (system), `supervisor`, `responder` |
 | rain-crud | `/v1/tickets` with declared query shapes, cursor pages, a capped count, and one scope decided per request: every ticket for an agent holding `ticket.read`, only the tickets assigned to it for any other (`ScopeRule.EveryRowWhenHolding`) |
+| catalogue demo | `/v1/products`, a read-only Rain CRUD catalogue seeded with products for `rain-web`'s admin demonstration; its sortable/filterable options are declared query shapes rather than ad-hoc SQL |
 | rain-audit | every create, change, close and delete of a ticket, in its transaction |
 | rain-jobs | `ticket.summarize` (a bounded drafting step, then a fenced write under the ticket's advisory lock), cancelled when its ticket is deleted; the recurring `ticket.escalation-sweep` |
 | rain-llm, rain-resilience | the summary asked of an in-sample deterministic `ChatModel` through `LlmGateway`, behind the breaker `summarizer` |
@@ -105,6 +106,19 @@ A query the resource does not declare is `400 not_offered`:
 ```sh
 curl -s -G -H "$AUTH" http://127.0.0.1:18080/v1/tickets --data-urlencode 'sort=title'
 ```
+
+### Browse seeded products
+
+The seed command also inserts a small, idempotent product catalogue. The administrator system role receives
+`product.read`; listing it uses the same exact query dialect as the frontend's `rainTableFactory` adapter:
+
+```sh
+curl -s -G -H "$AUTH" http://127.0.0.1:18080/v1/products \
+  --data-urlencode 'filter%5Bcategory%5D%5Beq%5D=Lighting' \
+  --data-urlencode 'limit=25' --data-urlencode 'offset=0' --data-urlencode 'count=capped'
+```
+
+Point `rain-web` at `http://127.0.0.1:18080/v1` through `NEXT_PUBLIC_RAIN_API_BASE` to use this transport surface.
 
 ### Watch a ticket, change it, summarize it
 

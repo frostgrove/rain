@@ -9,6 +9,7 @@ import com.gd.rain.core.actor.Actor
 import com.gd.rain.crud.Caller
 import com.gd.rain.crud.CallerLookup
 import com.gd.rain.sample.agent.Agents
+import com.gd.rain.sample.catalog.ProductPermissions
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -58,6 +59,10 @@ class AccessCallers(
 class HelpdeskAccessConfiguration {
     @Bean
     fun helpdeskGrants(): ModuleGrants = ModuleGrants("helpdesk", TicketPermissions.DECLARED)
+
+    @Bean
+    fun catalogueGrants(): ModuleGrants =
+        ModuleGrants("catalogue", listOf(PermissionDef(ProductPermissions.READ, "Read the product catalogue")))
 
     @Bean
     fun administratorRole(): SystemRoleDeclaration =
