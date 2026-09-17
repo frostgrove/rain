@@ -1,5 +1,7 @@
 package com.gd.rain.audit
 
+import com.gd.rain.audit.scope.AuditScope
+import com.gd.rain.audit.scope.AuditScopeContributor
 import com.gd.rain.core.actor.Actor
 import com.gd.rain.core.actor.CurrentActor
 import com.gd.rain.core.id.IdGenerator
@@ -32,6 +34,7 @@ class AuditIT {
         prefix: String,
         types: List<AuditEventType>,
         actor: Actor? = null,
+        scopes: List<AuditScopeContributor> = emptyList(),
     ) {
         val database = RainPostgres.freshDatabase(prefix)
         val dataSource = database.dataSource()
@@ -48,6 +51,7 @@ class AuditIT {
                     CurrentActor { fixed }
                 },
                 types,
+                scopes,
             )
         val jdbc = JdbcTemplate(dataSource)
 
@@ -163,6 +167,76 @@ class AuditIT {
         assertThatThrownBy {
             fixture.recorder.ofResource("ticket", "t1", null, limit = AuditRecorder.MAX_PAGE + 1)
         }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `current scoped audit records and reads are narrowed by opaque epoch-fenced scope`() {
+        val current = ThreadLocal<AuditScope?>()
+        val contributor = AuditScopeContributor { current.get() }
+        val fixture = Fixture("audit_scope", listOf(closed), scopes = listOf(contributor))
+        val first = AuditScope.of("tenant", ByteArray(32) { 1 }, 1)
+        val second = AuditScope.of("tenant", ByteArray(32) { 2 }, 1)
+
+        current.set(first)
+        fixture.inTransaction { fixture.recorder.record(AuditEvent(closed, AuditOutcome.OK, "t1")) }
+        current.set(second)
+        fixture.inTransaction { fixture.recorder.record(AuditEvent(closed, AuditOutcome.OK, "t1")) }
+        current.set(first)
+
+        val page = fixture.recorder.ofResource("ticket", "t1", null, 10)
+
+        assertThat(page.entries).hasSize(1)
+        assertThat(page.entries.single().scope).isEqualTo(first)
+        current.remove()
+    }
+
+    @Test
+    fun `a configured scope source keeps central evidence separate from scoped evidence`() {
+        val current = ThreadLocal<AuditScope?>()
+        val fixture = Fixture("audit_central_scope", listOf(closed), scopes = listOf(AuditScopeContributor { current.get() }))
+        val scope = AuditScope.of("tenant", ByteArray(32) { 1 }, 1)
+
+        fixture.inTransaction { fixture.recorder.record(AuditEvent(closed, AuditOutcome.OK, "t1")) }
+        current.set(scope)
+        fixture.inTransaction { fixture.recorder.record(AuditEvent(closed, AuditOutcome.OK, "t1")) }
+
+        assertThat(
+            fixture.recorder
+                .ofResource("ticket", "t1", null, 10)
+                .entries
+                .map(AuditEntry::scope),
+        ).containsExactly(scope)
+        current.remove()
+        assertThat(
+            fixture.recorder
+                .ofResource("ticket", "t1", null, 10)
+                .entries
+                .map(AuditEntry::scope),
+        ).containsExactly(null)
+    }
+
+    @Test
+    fun `equal scope contributors cohere while conflicting contributors refuse the operation`() {
+        val first = ThreadLocal<AuditScope?>()
+        val second = ThreadLocal<AuditScope?>()
+        val fixture =
+            Fixture(
+                "audit_scope_conflict",
+                listOf(closed),
+                scopes = listOf(AuditScopeContributor { first.get() }, AuditScopeContributor { second.get() }),
+            )
+        val scope = AuditScope.of("tenant", ByteArray(32) { 1 }, 1)
+        first.set(scope)
+        second.set(AuditScope.of("tenant", ByteArray(32) { 1 }, 1))
+
+        fixture.inTransaction { fixture.recorder.record(AuditEvent(closed, AuditOutcome.OK, "t1")) }
+        second.set(AuditScope.of("tenant", ByteArray(32) { 2 }, 1))
+
+        assertThatThrownBy { fixture.recorder.ofResource("ticket", "t1", null, 10) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("more than one audit scope is active")
+        first.remove()
+        second.remove()
     }
 
     @Test

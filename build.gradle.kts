@@ -18,12 +18,23 @@ val mainScopes = listOf("api", "implementation", "compileOnly", "runtimeOnly")
 val declaredGraph: Map<String, Set<String>> =
     mapOf(
         "rain-core" to setOf(),
+        "rain-i18n" to setOf("rain-core"),
+        "rain-i18n-test" to setOf("rain-i18n", "rain-test", "rain-core"),
+        "rain-i18n-observability" to setOf("rain-i18n", "rain-observability", "rain-boot", "rain-core"),
+        "rain-i18n-web" to setOf("rain-i18n", "rain-web", "rain-boot", "rain-core"),
+        "rain-i18n-jobs" to setOf("rain-i18n", "rain-i18n-persistence", "rain-jobs", "rain-boot", "rain-core"),
+        "rain-i18n-persistence" to setOf("rain-i18n", "rain-persistence", "rain-boot", "rain-core"),
+        "rain-i18n-integration" to setOf("rain-i18n", "rain-core"),
+        "rain-i18n-tool" to setOf("rain-i18n", "rain-core"),
+        "rain-tenancy-i18n" to setOf("rain-i18n", "rain-tenancy", "rain-persistence", "rain-boot", "rain-core"),
         // Checks every module in its test scope only; it has no production code.
         "rain-architecture" to setOf(),
         "rain-boot" to setOf("rain-core"),
         "rain-test" to setOf("rain-boot", "rain-core"),
         "rain-observability" to setOf("rain-boot", "rain-core"),
         "rain-persistence" to setOf("rain-boot", "rain-core"),
+        "rain-event" to setOf("rain-jobs", "rain-realtime", "rain-persistence", "rain-observability", "rain-boot", "rain-core"),
+        "rain-event-test" to setOf("rain-event", "rain-test", "rain-core"),
         "rain-data-jdbc" to setOf("rain-persistence", "rain-boot", "rain-core"),
         "rain-web" to setOf("rain-observability", "rain-boot", "rain-core"),
         "rain-crud" to setOf("rain-web", "rain-persistence", "rain-observability", "rain-boot", "rain-core"),
@@ -33,6 +44,17 @@ val declaredGraph: Map<String, Set<String>> =
             setOf("rain-web", "rain-audit", "rain-jobs", "rain-resilience", "rain-persistence", "rain-observability", "rain-boot", "rain-core"),
         "rain-realtime" to setOf("rain-persistence", "rain-observability", "rain-boot", "rain-core"),
         "rain-jobs" to setOf("rain-persistence", "rain-observability", "rain-boot", "rain-core"),
+        "rain-tenancy" to
+            setOf(
+                "rain-web",
+                "rain-audit",
+                "rain-jobs",
+                "rain-persistence",
+                "rain-observability",
+                "rain-boot",
+                "rain-core",
+            ),
+        "rain-tenancy-event" to setOf("rain-tenancy", "rain-event", "rain-core"),
         "rain-llm" to setOf("rain-resilience", "rain-persistence", "rain-observability", "rain-boot", "rain-core"),
     )
 
@@ -67,6 +89,13 @@ val verifyModuleGraph =
     outputs.file(report)
     doLast {
         val problems = mutableListOf<String>()
+        val composableContexts = setOf("jobs", "i18n", "event", "tenancy")
+        modules.keys
+            .filter { module -> module.removePrefix("rain-").split('-').count { it in composableContexts } > 2 }
+            .sorted()
+            .forEach { module ->
+                problems += "$module composes more than two bounded contexts; publish pairwise bridges instead"
+            }
         (modules.keys - declared.keys).sorted().forEach { problems += "$it is a module the graph does not declare" }
         (declared.keys - modules.keys).sorted().forEach { problems += "$it is declared in the graph but is not a module" }
         modules.toSortedMap().forEach { (module, dependencies) ->

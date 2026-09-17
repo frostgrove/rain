@@ -31,6 +31,7 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.jooq.DSLContext
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpStatus
@@ -57,7 +58,7 @@ import java.time.Duration
 @RequestMapping(TicketDeclarations.PREFIX)
 @ConditionalOnRainRole(RuntimeRole.API)
 class TicketResourceController(
-    private val tickets: CrudResource<Ticket>,
+    @Qualifier("ticketResource") private val tickets: CrudResource<Ticket>,
     private val writes: TicketWrites,
 ) : DeclaresItsOwnAccess {
     private val mounted = TicketDeclarations.mounted(tickets)
@@ -228,7 +229,7 @@ class TicketConfiguration {
     /** One resource for every agent: the policy's scope gives each caller its rows. */
     @Bean
     fun ticketResource(
-        store: JooqResourceStore<Ticket>,
+        @Qualifier("ticketStore") store: JooqResourceStore<Ticket>,
         callers: CallerLookup,
         properties: TicketProperties,
     ): CrudResource<Ticket> = TicketDeclarations.resource(store, callers, properties.pages)
@@ -244,7 +245,7 @@ class TicketConfiguration {
 
     @Bean
     fun ticketWrites(
-        tickets: CrudResource<Ticket>,
+        @Qualifier("ticketResource") tickets: CrudResource<Ticket>,
         rows: TicketRows,
         audit: AuditRecorder,
         events: TicketEvents,
@@ -260,7 +261,7 @@ class TicketConfiguration {
     class Streaming {
         @Bean
         fun ticketEventStream(
-            tickets: CrudResource<Ticket>,
+            @Qualifier("ticketResource") tickets: CrudResource<Ticket>,
             listener: RealtimeListener,
             properties: TicketProperties,
             json: JsonMapper,

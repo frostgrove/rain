@@ -14,6 +14,7 @@ only. Its integration tests start it for real; this page runs it by hand.
 | rain-jobs | `ticket.summarize` (a bounded drafting step, then a fenced write under the ticket's advisory lock), cancelled when its ticket is deleted; the recurring `ticket.escalation-sweep` |
 | rain-llm, rain-resilience | the summary asked of an in-sample deterministic `ChatModel` through `LlmGateway`, behind the breaker `summarizer` |
 | rain-realtime | `GET /v1/tickets/{id}/events`: a ticket's committed changes as server-sent events |
+| rain-i18n, rain-i18n-web | `GET /v1/i18n/preview`: a static explicit catalog provider plus the request-scoped magic `I18nRuntime`; `Accept-Language` selects reviewed en/ru/kk rich output, keeps bidi isolates structural and writes the actual `Content-Language` |
 | rain-persistence, rain-data-jdbc | the application's Flyway migration in `public`, jOOQ statements, and one Spring Data JDBC repository (agent profiles) |
 
 ## The stand
@@ -119,6 +120,24 @@ curl -s -G -H "$AUTH" http://127.0.0.1:18080/v1/products \
 ```
 
 Point `rain-web` at `http://127.0.0.1:18080/v1` through `NEXT_PUBLIC_RAIN_API_BASE` to use this transport surface.
+
+### Preview localization
+
+The preview uses the servlet magic path, not a JVM default: the filter resolves the request locale
+once, the request-scoped runtime renders a typed deferred message against that view, and the response
+reports the actual template locale. The static `CatalogSnapshotProvider` in the sample is deliberately
+the visible low-level bootstrap seam; a product can replace it with the durable release provider
+without changing the controller or message contract.
+
+```sh
+curl -s -H "$AUTH" -H 'Accept-Language: ru, en;q=0.5' http://127.0.0.1:18080/v1/i18n/preview
+curl -s -H "$AUTH" -H 'Accept-Language: kk' http://127.0.0.1:18080/v1/i18n/preview
+```
+
+The body contains `text`, `templateLocale` and safe `parts`; the Russian request answers
+`Content-Language: ru`. `parts` retains the strong markup boundary and automatic bidi isolate around
+the count. Jobs, tenancy and events remain separate product-level compositions: this endpoint adds no
+three-way integration package.
 
 ### Watch a ticket, change it, summarize it
 

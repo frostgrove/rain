@@ -20,10 +20,12 @@ mockk = "1.14.11"
 kover = "0.9.9"
 spotless = "8.10.2"
 ktlint = "1.8.0"
+icu4j = "78.3"
 
 [libraries]
 # --- build-logic classpath --------------------------------------------------
 kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
 kotlin-allopen = { module = "org.jetbrains.kotlin:kotlin-allopen", version.ref = "kotlin" }
 spotless-gradle-plugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }
 kover-gradle-plugin = { module = "org.jetbrains.kotlinx:kover-gradle-plugin", version.ref = "kover" }
@@ -49,6 +51,7 @@ jooq = { module = "org.jooq:jooq", version.ref = "jooq" }
 otel-logback-appender = { module = "io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0", version.ref = "otelInstrumentation" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+icu4j = { module = "com.ibm.icu:icu4j", version.ref = "icu4j" }
 
 # --- managed by the Boot BOM -------------------------------------------------------
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }

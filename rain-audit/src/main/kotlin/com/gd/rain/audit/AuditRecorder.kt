@@ -1,6 +1,8 @@
 package com.gd.rain.audit
 
 import com.gd.rain.audit.jooq.Tables.AUDIT_LOG
+import com.gd.rain.audit.scope.AuditScope
+import com.gd.rain.audit.scope.AuditScopeContributor
 import com.gd.rain.boot.config.ConfigurationCheck
 import com.gd.rain.core.actor.Actor
 import com.gd.rain.core.actor.CurrentActor
@@ -39,6 +41,8 @@ public data class AuditEntry(
     public val resourceId: String?,
     public val outcome: AuditOutcome,
     public val detailJson: String,
+    /** Null for legacy and central evidence. */
+    public val scope: AuditScope? = null,
 )
 
 public data class AuditPage(
@@ -79,6 +83,7 @@ public class JooqAuditRecorder(
     private val clock: Clock,
     private val currentActor: CurrentActor?,
     types: List<AuditEventType>,
+    private val scopeContributors: List<AuditScopeContributor> = emptyList(),
 ) : AuditRecorder {
     private val declared: Set<String> = types.map { it.id }.toSet()
 
@@ -103,18 +108,19 @@ public class JooqAuditRecorder(
         limit: Int,
     ): AuditPage {
         val sameResource = if (resourceId == null) AUDIT_LOG.RESOURCE_ID.isNull else AUDIT_LOG.RESOURCE_ID.eq(resourceId)
-        return page(AUDIT_LOG.RESOURCE_KIND.eq(resourceKind).and(sameResource), after, limit)
+        return page(currentScopeCondition().and(AUDIT_LOG.RESOURCE_KIND.eq(resourceKind)).and(sameResource), after, limit)
     }
 
     override fun ofActor(
         actor: Actor,
         after: AuditCursor?,
         limit: Int,
-    ): AuditPage = page(AUDIT_LOG.ACTOR_TYPE.eq(actor.type).and(AUDIT_LOG.ACTOR_ID.eq(actor.id)), after, limit)
+    ): AuditPage = page(currentScopeCondition().and(AUDIT_LOG.ACTOR_TYPE.eq(actor.type)).and(AUDIT_LOG.ACTOR_ID.eq(actor.id)), after, limit)
 
     private fun insert(event: AuditEvent) {
         require(event.type.id in declared) { "audit event type ${event.type.id} is not declared as a bean" }
         val actor = event.actor ?: currentActor?.actor()
+        val scope = currentScope()
         dsl
             .insertInto(AUDIT_LOG)
             .set(AUDIT_LOG.ID, ids.next())
@@ -128,6 +134,9 @@ public class JooqAuditRecorder(
             .set(AUDIT_LOG.RESOURCE_ID, event.resourceId)
             .set(AUDIT_LOG.OUTCOME, event.outcome.wire)
             .set(AUDIT_LOG.DETAIL, JSONB.valueOf(event.detail.json()))
+            .set(AUDIT_LOG.SCOPE_KIND, scope?.kind)
+            .set(AUDIT_LOG.SCOPE_DIGEST, scope?.digest())
+            .set(AUDIT_LOG.SCOPE_EPOCH, scope?.epoch)
             .execute()
     }
 
@@ -168,11 +177,29 @@ public class JooqAuditRecorder(
                     resourceId = row.resourceId,
                     outcome = AuditOutcome.entries.single { it.wire == row.outcome },
                     detailJson = row.detail.data(),
+                    scope =
+                        row.scopeKind?.let {
+                            AuditScope.of(it, requireNotNull(row.scopeDigest), requireNotNull(row.scopeEpoch))
+                        },
                 )
             }
         val next = if (rows.size > limit) entries.last().let { AuditCursor(it.occurredAt, it.id) } else null
         return AuditPage(entries, next)
     }
+
+    private fun currentScope(): AuditScope? {
+        val scopes = scopeContributors.mapNotNull(AuditScopeContributor::current).distinct()
+        require(scopes.size <= 1) { "more than one audit scope is active" }
+        return scopes.singleOrNull()
+    }
+
+    private fun currentScopeCondition(): Condition =
+        currentScope()?.let { scope ->
+            AUDIT_LOG.SCOPE_KIND
+                .eq(scope.kind)
+                .and(AUDIT_LOG.SCOPE_DIGEST.eq(scope.digest()))
+                .and(AUDIT_LOG.SCOPE_EPOCH.eq(scope.epoch))
+        } ?: AUDIT_LOG.SCOPE_KIND.isNull
 }
 
 /** Audit event types are declared once each. */

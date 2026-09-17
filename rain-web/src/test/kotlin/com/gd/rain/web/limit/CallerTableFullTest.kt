@@ -56,6 +56,18 @@ class CallerTableFullTest {
         assertThat(runCatching { table.admit("a", 1.0, now) }.exceptionOrNull()).isInstanceOf(IllegalArgumentException::class.java)
     }
 
+    @Test
+    fun `rescheduling the heap root later lets the next full bucket make room`() {
+        val table = CallerTable(3)
+        val first = checkNotNull(table.admit("first", 1.0, now))
+        table.admit("second", 1.0, now)
+        table.admit("third", 1.0, now)
+
+        table.reschedule(first, now + 1)
+
+        assertThat(checkNotNull(table.admit("replacement", 1.0, now)).caller).isEqualTo("replacement")
+    }
+
     private fun examinedToRefuse(
         seats: Int,
         strangers: Int,

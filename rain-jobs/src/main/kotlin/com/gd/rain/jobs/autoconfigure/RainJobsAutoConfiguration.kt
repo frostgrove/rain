@@ -22,9 +22,12 @@ import com.gd.rain.jobs.JobsProperties
 import com.gd.rain.jobs.RecurringWork
 import com.gd.rain.jobs.WorkQueue
 import com.gd.rain.jobs.admin.JobAdministration
+import com.gd.rain.jobs.context.DurableJobContextProvider
+import com.gd.rain.jobs.context.PartitionPermit
 import com.gd.rain.jobs.internal.Jackson3TaskSerializer
 import com.gd.rain.jobs.internal.JobCatalog
 import com.gd.rain.jobs.internal.admin.LedgerJobAdministration
+import com.gd.rain.jobs.internal.context.DurableJobContexts
 import com.gd.rain.jobs.internal.execution.AttemptStatementTimeout
 import com.gd.rain.jobs.internal.execution.VirtualAttemptThreads
 import com.gd.rain.jobs.internal.housekeeping.JobReaper
@@ -107,10 +110,20 @@ public class RainJobsAutoConfiguration {
         dataSource: DataSource,
         transactions: PlatformTransactionManager,
         codec: JobPayloadCodec,
+        contextProviders: ObjectProvider<DurableJobContextProvider>,
         ids: IdGenerator,
         clock: Clock,
     ): WorkQueue =
-        SchedulerWorkQueue(catalog, JooqIntentLedger(dsl, ids), client(dataSource), codec, TransactionTemplate(transactions), ids, clock)
+        SchedulerWorkQueue(
+            catalog,
+            JooqIntentLedger(dsl, ids),
+            client(dataSource),
+            codec,
+            DurableJobContexts(contextProviders.orderedStream().toList()),
+            TransactionTemplate(transactions),
+            ids,
+            clock,
+        )
 
     @Bean
     @ConditionalOnMissingBean
@@ -182,6 +195,8 @@ public class RainJobsAutoConfiguration {
             locks: AdvisoryLocks,
             statements: AdvisoryLockStore,
             codec: JobPayloadCodec,
+            contextProviders: ObjectProvider<DurableJobContextProvider>,
+            partitionPermit: ObjectProvider<PartitionPermit>,
             ids: IdGenerator,
             clock: Clock,
             meters: ObjectProvider<MeterRegistry>,
@@ -219,6 +234,8 @@ public class RainJobsAutoConfiguration {
                             statements = statements,
                             threads = VirtualAttemptThreads,
                             codec = codec,
+                            contexts = DurableJobContexts(contextProviders.orderedStream().toList()),
+                            partitionPermit = partitionPermit.ifAvailable ?: PartitionPermit.NONE,
                             jitter = jitter,
                             ids = ids,
                             clock = clock,

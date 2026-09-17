@@ -45,6 +45,7 @@ import org.springframework.ai.chat.model.ChatResponse
 import org.springframework.ai.chat.model.Generation
 import org.springframework.ai.chat.prompt.Prompt
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.transaction.PlatformTransactionManager
@@ -363,7 +364,7 @@ class SummaryConfiguration {
 
     @Bean
     fun summaryOrders(
-        tickets: CrudResource<Ticket>,
+        @Qualifier("ticketResource") tickets: CrudResource<Ticket>,
         queue: WorkQueue,
         definition: JobDefinition<SummarizeTicket>,
         retry: TransactionRetry,

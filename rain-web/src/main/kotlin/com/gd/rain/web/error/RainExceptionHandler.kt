@@ -53,20 +53,20 @@ public class RainExceptionHandler(
     public fun handleFault(
         fault: Fault,
         request: WebRequest,
-    ): ResponseEntity<Any> = respond(transportRefusal(request) ?: fault)
+    ): ResponseEntity<Any> = respond(transportRefusal(request) ?: fault, request = request)
 
     @ExceptionHandler(Exception::class)
     public fun handleUnmapped(
         failure: Exception,
         request: WebRequest,
-    ): ResponseEntity<Any> = respond(transportRefusal(request) ?: translate(failure))
+    ): ResponseEntity<Any> = respond(transportRefusal(request) ?: translate(failure), request = request)
 
     override fun handleMethodArgumentNotValid(
         ex: MethodArgumentNotValidException,
         headers: HttpHeaders,
         status: HttpStatusCode,
         request: WebRequest,
-    ): ResponseEntity<Any>? = respond(transportRefusal(request) ?: FieldViolations.faultOf(ex.bindingResult, ex))
+    ): ResponseEntity<Any>? = respond(transportRefusal(request) ?: FieldViolations.faultOf(ex.bindingResult, ex), request = request)
 
     override fun handleExceptionInternal(
         ex: Exception,
@@ -76,7 +76,7 @@ public class RainExceptionHandler(
         request: WebRequest,
     ): ResponseEntity<Any>? {
         if ((request as? ServletWebRequest)?.response?.isCommitted == true) return null
-        return respond(transportRefusal(request) ?: statuses.faultFor(statusCode.value(), ex), headers)
+        return respond(transportRefusal(request) ?: statuses.faultFor(statusCode.value(), ex), headers, request)
     }
 
     private fun translate(failure: Exception): Fault {
@@ -91,7 +91,12 @@ public class RainExceptionHandler(
     private fun respond(
         fault: Fault,
         frameworkHeaders: HttpHeaders? = null,
-    ): ResponseEntity<Any> = ProblemWriter.entity(renderer.render(fault), frameworkHeaders)
+        request: WebRequest? = null,
+    ): ResponseEntity<Any> =
+        ProblemWriter.entity(
+            renderer.render(fault, (request as? ServletWebRequest)?.request),
+            frameworkHeaders,
+        )
 }
 
 /**
@@ -109,7 +114,7 @@ public class RainErrorController(
         val escaped = request.getAttribute(RequestDispatcher.ERROR_EXCEPTION) as? Throwable
         val status = request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE) as? Int ?: FaultKind.INTERNAL.status
         val fault = TransportRefusal.of(request) ?: escaped as? Fault ?: statuses.faultFor(status, escaped)
-        return ProblemWriter.entity(renderer.render(fault))
+        return ProblemWriter.entity(renderer.render(fault, request))
     }
 }
 

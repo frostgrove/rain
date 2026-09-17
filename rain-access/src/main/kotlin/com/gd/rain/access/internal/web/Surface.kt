@@ -11,6 +11,8 @@ import com.gd.rain.core.error.RainErrorCodes
 import com.gd.rain.web.route.Access
 import com.gd.rain.web.route.DeclaresItsOwnAccess
 import com.gd.rain.web.route.EndpointDeclaration
+import com.gd.rain.web.route.FunctionalRoute
+import com.gd.rain.web.route.FunctionalRoutes
 import com.gd.rain.web.route.MountsItsOwnSurface
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse

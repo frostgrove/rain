@@ -6,6 +6,10 @@ import com.gd.rain.jobs.JacksonJobPayloadCodec
 import com.gd.rain.jobs.JobHandler
 import com.gd.rain.jobs.JobProfile
 import com.gd.rain.jobs.JobState
+import com.gd.rain.jobs.context.DurableJobContextProvider
+import com.gd.rain.jobs.context.PartitionPermit
+import com.gd.rain.jobs.internal.context.DurableJobContexts
+import com.gd.rain.jobs.internal.context.StoredJobContext
 import com.gd.rain.jobs.internal.execution.AttemptControl
 import com.gd.rain.jobs.internal.execution.AttemptThreads
 import com.gd.rain.jobs.internal.execution.DefinitionGate
@@ -32,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger
 internal class ScriptedLedger(
     private val retrySpent: Int = 0,
     private val retryLimit: Int = 4,
+    private val context: StoredJobContext = StoredJobContext(null, null, null, null),
 ) : AttemptLedger {
     val writes = CopyOnWriteArrayList<String>()
     val claims = AtomicInteger()
@@ -39,7 +44,21 @@ internal class ScriptedLedger(
     override fun claim(request: ClaimRequest): ClaimResult {
         claims.incrementAndGet()
         return ClaimResult.Claimed(
-            ClaimedInvocation(request.invocation, DEFINITION, PROFILE, "{\"text\":\"t\"}", 1, retrySpent, retryLimit, 0, null),
+            ClaimedInvocation(
+                request.invocation,
+                DEFINITION,
+                PROFILE,
+                "{\"text\":\"t\"}",
+                1,
+                retrySpent,
+                retryLimit,
+                0,
+                null,
+                context.version,
+                context.bytes,
+                context.producerPartition,
+                context.payloadDigest,
+            ),
         )
     }
 
@@ -96,6 +115,8 @@ internal class ScriptedExecution(
     threads: AttemptThreads,
     profile: JobProfile = Fixtures.profile(),
     val ledger: ScriptedLedger = ScriptedLedger(),
+    contextProviders: List<DurableJobContextProvider> = emptyList(),
+    partitionPermit: PartitionPermit = PartitionPermit.NONE,
     body: (Note, Attempt) -> Unit,
 ) {
     val clock = MutableClock(Fixtures.START)
@@ -127,6 +148,8 @@ internal class ScriptedExecution(
                 },
             threads = threads,
             codec = JacksonJobPayloadCodec(),
+            contexts = DurableJobContexts(contextProviders),
+            partitionPermit = partitionPermit,
             settings = ExecutionSettings(Duration.ofSeconds(30), Duration.ofSeconds(2), Duration.ofSeconds(15), "scripted#standard"),
             wedged = wedged,
             jitter = { 0 },

@@ -17,8 +17,9 @@ public class ProblemWriter(
     public fun write(
         response: HttpServletResponse,
         fault: Fault,
+        request: jakarta.servlet.http.HttpServletRequest? = null,
     ) {
-        val rendered = renderer.render(fault)
+        val rendered = renderer.render(fault, request)
         if (response.isCommitted) {
             log
                 .atWarn()

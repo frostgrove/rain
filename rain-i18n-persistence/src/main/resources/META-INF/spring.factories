@@ -1,0 +1,7 @@
+com.gd.rain.boot.config.ConfigurationContributor=\
+com.gd.rain.i18n.persistence.I18nPersistenceConfigurationContributor
+com.gd.rain.boot.runtime.CommandDeclaration=\
+com.gd.rain.i18n.persistence.command.I18nStatusCommandDeclaration,\
+com.gd.rain.i18n.persistence.command.I18nActivateCommandDeclaration,\
+com.gd.rain.i18n.persistence.command.I18nRollbackCommandDeclaration,\
+com.gd.rain.i18n.persistence.command.I18nPruneCommandDeclaration

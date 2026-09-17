@@ -14,7 +14,15 @@ import com.gd.rain.jobs.JobProfile
 import com.gd.rain.jobs.JobState
 import com.gd.rain.jobs.LeaseLostException
 import com.gd.rain.jobs.SubjectKey
+import com.gd.rain.jobs.context.DurableJobContextPermanentException
+import com.gd.rain.jobs.context.DurableJobContextUnavailableException
+import com.gd.rain.jobs.context.JobProducerPartition
+import com.gd.rain.jobs.context.PartitionPermit
+import com.gd.rain.jobs.context.PartitionPermitRequest
+import com.gd.rain.jobs.context.PartitionPermitResult
 import com.gd.rain.jobs.internal.JobTaskData
+import com.gd.rain.jobs.internal.context.DurableJobContexts
+import com.gd.rain.jobs.internal.context.StoredJobContext
 import com.gd.rain.jobs.internal.ledger.AttemptLedger
 import com.gd.rain.jobs.internal.ledger.ClaimRequest
 import com.gd.rain.jobs.internal.ledger.ClaimResult
@@ -26,6 +34,8 @@ import com.github.kagkarlsson.scheduler.task.ExecutionContext
 import com.github.kagkarlsson.scheduler.task.ExecutionHandler
 import com.github.kagkarlsson.scheduler.task.TaskInstance
 import org.slf4j.LoggerFactory
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -77,6 +87,8 @@ internal class JobExecution(
     private val fences: EffectFence,
     private val threads: AttemptThreads,
     private val codec: JobPayloadCodec,
+    private val contexts: DurableJobContexts = DurableJobContexts(emptyList()),
+    private val partitionPermit: PartitionPermit = PartitionPermit.NONE,
     private val settings: ExecutionSettings,
     private val wedged: AtomicInteger,
     private val jitter: Jitter,
@@ -167,14 +179,44 @@ internal class JobExecution(
         control.bind(Thread.currentThread())
         try {
             control.checkRunnable(clock)
-            val payload =
-                try {
-                    codec.decode(claimed.payloadJson, definition.payloadType)
-                } catch (failure: RuntimeException) {
-                    control.finish(BodyResult.PayloadUnreadable(failure))
-                    return
+            val binding =
+                contexts.restore(
+                    definition.name,
+                    claimed.id,
+                    definition.tenantBinding,
+                    StoredJobContext(
+                        claimed.contextVersion,
+                        claimed.contextBytes,
+                        claimed.producerPartition,
+                        claimed.payloadDigest,
+                    ),
+                )
+            binding.use {
+                val permit =
+                    when (
+                        val result =
+                            partitionPermit.acquire(
+                                PartitionPermitRequest(
+                                    definition.name,
+                                    claimed.id,
+                                    claimed.producerPartition?.let(JobProducerPartition::of),
+                                ),
+                            )
+                    ) {
+                        is PartitionPermitResult.Granted -> result.lease
+                        is PartitionPermitResult.Deferred -> throw JobDeferredException(result.after, "producer partition is at capacity")
+                    }
+                permit.use {
+                    val payload =
+                        try {
+                            codec.decode(claimed.payloadJson, definition.payloadType)
+                        } catch (failure: RuntimeException) {
+                            control.finish(BodyResult.PayloadUnreadable(failure))
+                            return
+                        }
+                    AttemptScope.within(control) { handle(payload, attempt) }
                 }
-            AttemptScope.within(control) { handle(payload, attempt) }
+            }
             control.finish(BodyResult.Returned)
         } catch (failure: Throwable) {
             control.finish(BodyResult.Threw(failure))
@@ -219,6 +261,8 @@ internal class JobExecution(
             is LeaseLostException -> AttemptOutcome.LeaseLost
             is AttemptInterruptedException -> AttemptOutcome.Interrupted
             is AttemptTimeoutException -> AttemptOutcome.Charged(FailureCode.ATTEMPT_TIMEOUT, describe(failure))
+            is DurableJobContextPermanentException -> AttemptOutcome.Permanent(FailureCode.CONTEXT_INVALID, describe(failure))
+            is DurableJobContextUnavailableException -> AttemptOutcome.Charged(FailureCode.CONTEXT_UNAVAILABLE, describe(failure))
             else -> AttemptOutcome.Charged(FailureCode.FAILED, describe(failure))
         }
 
@@ -233,13 +277,25 @@ internal class JobExecution(
         fun refused(write: WriteResult): Completion? =
             (write as? WriteResult.NotOwner)?.let { Completion.afterRefusal(it.current, generation, now, settings.reaperInterval) }
 
+        fun finish(
+            state: JobState,
+            code: String?,
+            message: String?,
+        ): Completion? {
+            val written = ledger.finish(lease, state, code, message, now)
+            if (written is WriteResult.Written) {
+                terminalContext(claimed, state)
+            }
+            return refused(written)
+        }
+
         return when (outcome) {
             AttemptOutcome.Succeeded -> {
-                refused(ledger.finish(lease, JobState.SUCCEEDED, null, null, now)) ?: Completion.Remove
+                finish(JobState.SUCCEEDED, null, null) ?: Completion.Remove
             }
 
             is AttemptOutcome.Permanent -> {
-                refused(ledger.finish(lease, JobState.FAILED, outcome.code, outcome.message, now)) ?: Completion.Remove
+                finish(JobState.FAILED, outcome.code, outcome.message) ?: Completion.Remove
             }
 
             is AttemptOutcome.Charged -> {
@@ -251,7 +307,7 @@ internal class JobExecution(
                         claimed.attempts,
                         outcome.message,
                     )
-                    refused(ledger.finish(lease, JobState.DEAD, outcome.code, outcome.message, now)) ?: Completion.Remove
+                    finish(JobState.DEAD, outcome.code, outcome.message) ?: Completion.Remove
                 } else {
                     val eligibleAt = now.plus(profile.backoff.delay(claimed.retrySpent, jitter))
                     refused(ledger.retry(lease, outcome.code, outcome.message, eligibleAt)) ?: Completion.Reschedule(eligibleAt)
@@ -261,7 +317,7 @@ internal class JobExecution(
             is AttemptOutcome.Deferred -> {
                 if (claimed.deferrals >= profile.deferrals) {
                     val message = "deferred ${claimed.deferrals} times, the profile's budget"
-                    refused(ledger.finish(lease, JobState.DEAD, FailureCode.DEFERRALS_EXHAUSTED, message, now)) ?: Completion.Remove
+                    finish(JobState.DEAD, FailureCode.DEFERRALS_EXHAUSTED, message) ?: Completion.Remove
                 } else {
                     val eligibleAt = now.plus(outcome.after)
                     refused(ledger.defer(lease, eligibleAt)) ?: Completion.Reschedule(eligibleAt)
@@ -279,6 +335,42 @@ internal class JobExecution(
     }
 
     private fun describe(failure: Throwable): String = failure.message?.let { "${failure.javaClass.name}: $it" } ?: failure.javaClass.name
+
+    /** Runs external durable-context cleanup after an enclosing transaction commits, never before its terminal receipt. */
+    private fun terminalContext(
+        claimed: ClaimedInvocation,
+        state: JobState,
+    ) {
+        val cleanup = {
+            try {
+                contexts.terminal(
+                    definition.name,
+                    claimed.id,
+                    definition.tenantBinding,
+                    StoredJobContext(
+                        claimed.contextVersion,
+                        claimed.contextBytes,
+                        claimed.producerPartition,
+                        claimed.payloadDigest,
+                    ),
+                    state,
+                )
+            } catch (failure: Throwable) {
+                log.error("{} invocation {} terminal durable-context cleanup failed", definition.name, claimed.id, failure)
+            }
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive() && TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        cleanup()
+                    }
+                },
+            )
+        } else {
+            cleanup()
+        }
+    }
 
     private companion object {
         val log = LoggerFactory.getLogger(JobExecution::class.java)

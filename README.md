@@ -13,14 +13,28 @@ Version `0.1.0-SNAPSHOT`; Kotlin 2.4.20, Spring Boot 4.1.1, Java 25.
 | Module | What it is |
 |---|---|
 | [rain-core](docs/modules/core.md) | Spring-free types: faults and error codes, configuration problems, identifiers, lock names, actors |
+| [rain-i18n](docs/modules/i18n.md) | optional typed internationalization: immutable catalogs, explicit locale views and deterministic formatting |
+| [rain-i18n-test](docs/modules/i18n-test.md) | deterministic i18n fixture catalogs, views and conformance inputs for tests |
+| [rain-i18n-observability](docs/modules/i18n-observability.md) | optional low-cardinality i18n metrics bridge for Rain observability |
+| [rain-i18n-web](docs/modules/i18n-web.md) | optional magic-first servlet/MVC request bridge over explicit i18n snapshots |
+| [rain-i18n-jobs](docs/modules/i18n-jobs.md) | durable current-or-pinned i18n intent for jobs and outbox delivery |
+| [rain-i18n-persistence](docs/modules/i18n-persistence.md) | optional durable i18n artifacts, release heads, pins and change feed |
+| [rain-tenancy-i18n](docs/modules/tenancy-i18n.md) | the sole scoped tenant locale/default/overlay bridge |
+| [rain-i18n-integration](docs/modules/i18n-integration.md) | vendor-neutral catalog release and translation-management SPI |
+| [rain-i18n-tool](docs/modules/i18n-tool.md) | deterministic catalog authoring/check/compile toolchain |
+| [rain-tenancy-i18n](docs/modules/tenancy-i18n.md) | the isolated adapter from tenant scopes to explicit i18n views and overlays |
 | [rain-boot](docs/modules/boot.md) | runtime roles and commands, the deployment stage, whole-configuration validation, seeding, `runRain` |
 | [rain-observability](docs/modules/observability.md) | the health registry behind `/live` and `/ready`, draining, the Actuator bridge, the OpenTelemetry log bridge |
 | [rain-web](docs/modules/web.md) | problem+json for every refusal, transport filters, probes, role gating of the web surface, a bounded throttle |
 | [rain-persistence](docs/modules/persistence.md) | UUIDv7 ids, one statement timeout, SQLSTATE classification, transaction retry, advisory locks, schema-per-module migrations, `migrate` |
+| [rain-event](docs/modules/event.md) | optional explicit aggregate/fact event kernel with bounded streams, opaque append tokens and caller-owned transaction affinity |
+| [rain-event-test](docs/modules/event-test.md) | deterministic virtual event-store fixtures and conformance support |
 | [rain-data-jdbc](docs/modules/data-jdbc.md) | id assignment and column conversions for an application's own Spring Data JDBC repositories |
 | [rain-crud](docs/modules/crud.md) | declarative resources over PostgreSQL: query dialect v1 over declared query shapes, row-level policy, keyset-first pagination, capped counts, a plan proof for every shape |
 | [rain-audit](docs/modules/audit.md) | the append-only audit trail, written in the transaction that made the change |
 | [rain-jobs](docs/modules/jobs.md) | the durable job queue: leases, fenced effects, deduplication, retries into dead letters, redrive, retention |
+| [rain-tenancy](docs/modules/tenancy.md) | optional tenant authority, lifecycle admission, scope pinning and scoped runtime contracts |
+| [rain-tenancy-event](docs/modules/tenancy-event.md) | tenant-scope to event-namespace composition, isolated from both core modules |
 | [rain-realtime](docs/modules/realtime.md) | PostgreSQL `LISTEN`/`NOTIFY` as a bus with transactional publishing and bounded subscriptions |
 | [rain-resilience](docs/modules/resilience.md) | circuit breakers on Resilience4j with atomic admission and one probe per cooldown |
 | [rain-llm](docs/modules/llm.md) | a gateway over a Spring AI `ChatModel` with cluster-wide slots, breaker accounting and token budgets |
@@ -72,7 +86,8 @@ rain builds with its Gradle wrapper; the Java 25 toolchain is provisioned by Gra
   [schema ownership](docs/concepts/schema-ownership.md), [transport and health](docs/concepts/transport-and-health.md)
 - Decisions: [ADR 0001 — schema per module](docs/adr/0001-schema-per-module.md),
   [ADR 0002 — no Spring Data inside rain](docs/adr/0002-no-spring-data-inside-rain.md),
-  [ADR 0003 — roles, not profiles](docs/adr/0003-roles-not-profiles.md)
+  [ADR 0003 — roles, not profiles](docs/adr/0003-roles-not-profiles.md),
+  [ADR 0004 — i18n catalog and explicit view](docs/adr/0004-i18n-full-catalog-and-explicit-view.md)
 - [Dependency notes](docs/dependency-notes.md)
 - [`samples/rain-sample`](samples/rain-sample/README.md) — the complete example: a helpdesk that uses every module
   through public API only — roles and commands from one image, access on Redis, a CRUD resource with its plan proof,

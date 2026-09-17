@@ -7,9 +7,11 @@ import com.gd.rain.jobs.JobPayloadCodec
 import com.gd.rain.jobs.JobsProperties
 import com.gd.rain.jobs.RecurringWork
 import com.gd.rain.jobs.SchedulerHealth
+import com.gd.rain.jobs.context.PartitionPermit
 import com.gd.rain.jobs.internal.JobCatalog
 import com.gd.rain.jobs.internal.JobTaskData
 import com.gd.rain.jobs.internal.JobTopology
+import com.gd.rain.jobs.internal.context.DurableJobContexts
 import com.gd.rain.jobs.internal.execution.AttemptThreads
 import com.gd.rain.jobs.internal.execution.DefinitionGate
 import com.gd.rain.jobs.internal.execution.ExecutionSettings
@@ -40,6 +42,8 @@ internal class WorkerParts(
     val statements: AdvisoryLockStore,
     val threads: AttemptThreads,
     val codec: JobPayloadCodec,
+    val contexts: DurableJobContexts = DurableJobContexts(emptyList()),
+    val partitionPermit: PartitionPermit = PartitionPermit.NONE,
     val jitter: Jitter,
     val ids: IdGenerator,
     val clock: Clock,
@@ -84,6 +88,8 @@ internal object WorkerAssembly {
                                     fences = fences,
                                     threads = parts.threads,
                                     codec = parts.codec,
+                                    contexts = parts.contexts,
+                                    partitionPermit = parts.partitionPermit,
                                     settings = settings,
                                     wedged = counter,
                                     jitter = parts.jitter,

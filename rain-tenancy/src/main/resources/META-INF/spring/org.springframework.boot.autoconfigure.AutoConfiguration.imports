@@ -1,0 +1,3 @@
+com.gd.rain.tenancy.autoconfigure.RainTenantResolutionAutoConfiguration
+com.gd.rain.tenancy.autoconfigure.RainTenancyAutoConfiguration
+com.gd.rain.tenancy.autoconfigure.RainTenancyWebAutoConfiguration

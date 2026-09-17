@@ -8,8 +8,10 @@ import com.gd.rain.jobs.JacksonJobPayloadCodec
 import com.gd.rain.jobs.JobDefinition
 import com.gd.rain.jobs.JobPriority
 import com.gd.rain.jobs.JobProfile
+import com.gd.rain.jobs.context.DurableJobContextProvider
 import com.gd.rain.jobs.internal.Jackson3TaskSerializer
 import com.gd.rain.jobs.internal.JobCatalog
+import com.gd.rain.jobs.internal.context.DurableJobContexts
 import com.gd.rain.jobs.internal.ledger.IntentLedger
 import com.gd.rain.jobs.internal.ledger.JooqIntentLedger
 import com.gd.rain.jobs.internal.queue.SchedulerWorkQueue
@@ -68,6 +70,7 @@ internal class QueueFixture(
     prefix: String,
     val profiles: List<JobProfile> = listOf(Fixtures.profile()),
     val definitions: List<JobDefinition<*>> = listOf(Fixtures.definition()),
+    contextProviders: List<DurableJobContextProvider> = emptyList(),
     decorate: (IntentLedger) -> IntentLedger = { it },
 ) {
     val database: JobsDatabase = JobsDatabase.fresh(prefix)
@@ -76,13 +79,14 @@ internal class QueueFixture(
     val intents: IntentLedger = decorate(JooqIntentLedger(database.dsl, Fixtures.ids))
     val queue: SchedulerWorkQueue =
         SchedulerWorkQueue(
-            catalog,
-            intents,
-            Fixtures.client(database),
-            JacksonJobPayloadCodec(),
-            TransactionTemplate(database.transactions),
-            Fixtures.ids,
-            clock,
+            catalog = catalog,
+            intents = intents,
+            client = Fixtures.client(database),
+            codec = JacksonJobPayloadCodec(),
+            contexts = DurableJobContexts(contextProviders),
+            transactions = TransactionTemplate(database.transactions),
+            ids = Fixtures.ids,
+            clock = clock,
         )
 
     fun invocations(): Long = database.count("SELECT count(*) FROM rain_jobs.job_invocation")

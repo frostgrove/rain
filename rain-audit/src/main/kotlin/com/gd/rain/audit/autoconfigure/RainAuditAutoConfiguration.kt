@@ -4,6 +4,7 @@ import com.gd.rain.audit.AuditEventType
 import com.gd.rain.audit.AuditEventTypesCheck
 import com.gd.rain.audit.AuditRecorder
 import com.gd.rain.audit.JooqAuditRecorder
+import com.gd.rain.audit.scope.AuditScopeContributor
 import com.gd.rain.boot.config.ConfigurationCheck
 import com.gd.rain.core.actor.CurrentActor
 import com.gd.rain.core.id.IdGenerator
@@ -30,7 +31,17 @@ public class RainAuditAutoConfiguration {
         clock: Clock,
         currentActor: ObjectProvider<CurrentActor>,
         types: ObjectProvider<AuditEventType>,
-    ): AuditRecorder = JooqAuditRecorder(dsl, transactions, ids, clock, currentActor.ifAvailable, types.orderedStream().toList())
+        scopeContributors: ObjectProvider<AuditScopeContributor>,
+    ): AuditRecorder =
+        JooqAuditRecorder(
+            dsl,
+            transactions,
+            ids,
+            clock,
+            currentActor.ifAvailable,
+            types.orderedStream().toList(),
+            scopeContributors.orderedStream().toList(),
+        )
 
     @Bean
     public fun auditEventTypesCheck(types: ObjectProvider<AuditEventType>): ConfigurationCheck =

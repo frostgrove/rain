@@ -27,6 +27,7 @@ import com.gd.rain.web.filter.WebFilterOrder
 import com.gd.rain.web.probe.ProbeController
 import com.gd.rain.web.probe.ProbeSurface
 import com.gd.rain.web.problem.ErrorCodeRegistrar
+import com.gd.rain.web.problem.ProblemLocalizer
 import com.gd.rain.web.problem.ProblemRenderer
 import com.gd.rain.web.problem.ProblemWriter
 import com.gd.rain.web.problem.RainWebErrorCodes
@@ -81,7 +82,10 @@ public class RainWebErrorAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public fun problemRenderer(registry: ErrorCodeRegistry): ProblemRenderer = ProblemRenderer(registry)
+    public fun problemRenderer(
+        registry: ErrorCodeRegistry,
+        localizers: ObjectProvider<ProblemLocalizer>,
+    ): ProblemRenderer = ProblemRenderer(registry) { localizers.orderedStream().toList() }
 
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)

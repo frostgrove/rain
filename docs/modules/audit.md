@@ -50,6 +50,7 @@ Bean-time problem:
 | `AuditRecorder.ofResource(resourceKind, resourceId, after, limit)` | one page of a resource's trail, newest first |
 | `AuditRecorder.ofActor(actor, after, limit)` | one page of an actor's trail, newest first |
 | `AuditPage(entries, next)`, `AuditCursor(occurredAt, id)`, `AuditEntry` | a page, where the next one continues (null on the last page), and one row |
+| `AuditScopeContributor` | optional source of one opaque current scope; a scoped read is narrowed to its kind/digest/epoch automatically |
 
 Declaring a detail schema per event type, instead of a list of words that must not appear, means that what reaches the
 trail is exactly what the declaration allows. Recording an event whose type is not a declared bean is an
@@ -111,6 +112,7 @@ val second = first.next?.let { audit.ofResource("ticket", id.toString(), after =
 | `resource_id` | `TEXT` | |
 | `outcome` | `TEXT NOT NULL` | `ok`, `refused` or `failed` |
 | `detail` | `JSONB NOT NULL` | |
+| `scope_kind`, `scope_digest`, `scope_epoch` | nullable `TEXT`, `BYTEA`, `BIGINT` | all null for central/legacy evidence, otherwise one opaque epoch-fenced scope |
 
 The table has no update path and no version column: a row that can be rewritten states nothing. The actor is a
 typed reference with no foreign key, so a person and a service account are both actors, and deleting a subject never
@@ -122,6 +124,7 @@ deletes its evidence ([ADR 0001](../adr/0001-schema-per-module.md)).
 |---|---|---|
 | `ofResource` | `ix_audit_log_resource (resource_kind, resource_id, occurred_at DESC, id DESC)` | keyset seek past the cursor on `(occurred_at, id)`, `LIMIT limit + 1` |
 | `ofActor` | `ix_audit_log_actor (actor_type, actor_id, occurred_at DESC, id DESC)` | the same |
+| scoped `ofResource` / `ofActor` | `ix_audit_log_scope_resource` / `ix_audit_log_scope_actor` | same keyset page inside kind/digest/epoch |
 
 `limit` is 1 to 500 (`AuditRecorder.MAX_PAGE`). No read counts rows. `AuditIT` asserts that the resource page's
 plan reads `ix_audit_log_resource` and is bounded under plan criterion v3 (`QueryPlan.boundedScan`). An insert is one

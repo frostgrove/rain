@@ -1,5 +1,7 @@
 package com.gd.rain.jobs
 
+import com.gd.rain.jobs.context.TenantBindingMode
+
 /**
  * One kind of work, declared by the application as a bean.
  *
@@ -11,6 +13,8 @@ public data class JobDefinition<P : Any>(
     public val name: String,
     public val profile: String,
     public val payloadType: Class<P>,
+    /** Durable tenant-context policy, declared with the job rather than inferred from queue names or annotations. */
+    public val tenantBinding: TenantBindingMode = TenantBindingMode.INHERIT,
 ) {
     init {
         require(NAME.matches(name)) { "a job definition name matches ${NAME.pattern}, got \"$name\"" }
@@ -23,7 +27,8 @@ public data class JobDefinition<P : Any>(
         public inline fun <reified P : Any> of(
             name: String,
             profile: String,
-        ): JobDefinition<P> = JobDefinition(name, profile, P::class.java)
+            tenantBinding: TenantBindingMode = TenantBindingMode.INHERIT,
+        ): JobDefinition<P> = JobDefinition(name, profile, P::class.java, tenantBinding)
     }
 }
 
@@ -84,6 +89,8 @@ public object FailureCode {
     public const val LEASE_EXPIRED: String = "lease_expired"
     public const val UNKNOWN_DEFINITION: String = "unknown_definition"
     public const val STATEMENT_BOUND_FAILED: String = "statement_bound_failed"
+    public const val CONTEXT_INVALID: String = "context_invalid"
+    public const val CONTEXT_UNAVAILABLE: String = "context_unavailable"
 
     /** The stored payload cannot be read as the definition's payload type; retrying cannot change that. */
     public const val PAYLOAD_UNREADABLE: String = "payload_unreadable"

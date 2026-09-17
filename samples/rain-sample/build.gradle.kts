@@ -24,6 +24,8 @@ dependencies {
     implementation(project(":rain-jobs"))
     implementation(project(":rain-llm"))
     implementation(project(":rain-realtime"))
+    implementation(project(":rain-i18n"))
+    implementation(project(":rain-i18n-web"))
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     // rain-access keeps its revocation list and attempt counters on the application's Redis.

@@ -25,7 +25,7 @@ rain-jobs itself generates its jOOQ code from its migration.
 | Declared by the application as a bean | What it is |
 |---|---|
 | `JobProfile` | a service class: attempt timeout, step timeout, backoff, retries, deferrals, retention; one db-scheduler scheduler per profile |
-| `JobDefinition<P>` | one kind of work: a unique name, its profile and its payload type |
+| `JobDefinition<P>` | one kind of work: a unique name, its profile, payload type and durable binding mode |
 | `JobHandler<P>` | the implementation of exactly one definition |
 | `RecurringWork` | work owned by the cluster, run by exactly one worker per interval |
 
@@ -218,6 +218,18 @@ queue.enqueue(
 
 A definition that is not the declared bean with that name is refused with `UnknownJobDefinitionException`. The payload is
 stored as JSON in `job_invocation.payload`, through `JobPayloadCodec`.
+
+### Durable context and partition bulkheads
+
+`JobDefinition` chooses `TenantBindingMode.INHERIT` (capture an admitted provider context when one exists, otherwise
+central), `REQUIRED` (refuse enqueue/delivery without an authoritative binding), or `CENTRAL` (never capture or
+restore one). `DurableJobContextProvider` contributions are independently versioned fragments inside one bounded jobs
+envelope, keyed by stable provider id. This permits tenancy, i18n, and future event contributors to evolve as separate
+packages rather than combinatorial integration modules. Retries preserve the original bytes, producer partition and
+payload digest; worker bindings always close before completion.
+
+`PartitionPermit` is an optional opaque producer-partition bulkhead. Its no-op default preserves existing jobs. A
+capacity refusal becomes an uncharged `JobDeferredException` before payload decode or application handler execution.
 
 **Deduplication.** A `Unique` reservation is held until the invocation reaches a terminal state: an order made while the
 first is queued or running is absorbed into it. A `Collapse` reservation is released when a worker claims the

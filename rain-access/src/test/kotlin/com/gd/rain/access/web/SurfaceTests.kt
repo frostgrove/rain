@@ -11,8 +11,6 @@ import com.gd.rain.access.internal.web.AccessDeclarations
 import com.gd.rain.access.internal.web.AccessEnforcementInterceptor
 import com.gd.rain.access.internal.web.AccessSurfaceVerifier
 import com.gd.rain.access.internal.web.DeclarationLookup
-import com.gd.rain.access.internal.web.FunctionalRoute
-import com.gd.rain.access.internal.web.FunctionalRoutes
 import com.gd.rain.access.internal.web.PageRequest
 import com.gd.rain.access.internal.web.declarationFor
 import com.gd.rain.access.support.AGENT
@@ -31,8 +29,6 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import org.springframework.http.HttpMethod
-import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.thirdparty.VendorConsoleController
@@ -53,7 +49,6 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 import org.springframework.web.util.ServletRequestPathUtils
 import org.springframework.web.util.pattern.PathPatternParser
 import java.util.UUID
-import java.util.function.Consumer
 
 private const val THING_READ = "thing.read"
 private const val THING_WRITE = "thing.write"
@@ -420,49 +415,6 @@ class HeadHeldToGetDeclarationTest {
         assertThat(
             declarationFor(mapOf("PUT /x" to EndpointDeclaration("PUT", "/x", authenticated = true, why = "w")), "HEAD", "/x"),
         ).isNull()
-    }
-}
-
-/** Functional routes are read from their predicates; a predicate that does not reduce to methods and a path is unreadable. */
-class FunctionalRoutesTest {
-    @Test
-    fun `method and path routes, nested paths and narrowing predicates are read`() {
-        val routes =
-            RouterFunctions
-                .route()
-                .GET("/a", OK)
-                .POST("/b", RequestPredicates.accept(MediaType.APPLICATION_JSON), OK)
-                .nest(RequestPredicates.path("/api"), Consumer<RouterFunctions.Builder> { it.GET("/x", OK) })
-                .build()
-
-        assertThat(FunctionalRoutes.read(routes)).containsExactly(
-            FunctionalRoute.Readable("GET", "/a"),
-            FunctionalRoute.Readable("POST", "/b"),
-            FunctionalRoute.Readable("GET", "/api/x"),
-        )
-    }
-
-    @Test
-    fun `a route with no method predicate answers every method`() {
-        val methods =
-            FunctionalRoutes.read(RouterFunctions.route(RequestPredicates.path("/any"), OK)).map {
-                (it as FunctionalRoute.Readable).method
-            }
-
-        assertThat(methods).containsExactly("DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE")
-    }
-
-    @Test
-    fun `a disjunction, a negation and a route with no path are unreadable`() {
-        listOf(
-            RouterFunctions.route(RequestPredicates.GET("/a").or(RequestPredicates.GET("/b")), OK),
-            RouterFunctions.route(RequestPredicates.GET("/a").negate(), OK),
-            RouterFunctions.route(RequestPredicates.method(HttpMethod.GET), OK),
-        ).forEach { routes ->
-            assertThat(
-                FunctionalRoutes.read(routes),
-            ).describedAs(routes.toString()).singleElement().isInstanceOf(FunctionalRoute.Unreadable::class.java)
-        }
     }
 }
 

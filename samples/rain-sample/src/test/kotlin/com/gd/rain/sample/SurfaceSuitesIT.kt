@@ -80,6 +80,25 @@ class AnonymousSurfaceIT {
     }
 }
 
+/** The reference app's magic servlet path: protocol locale input selects one immutable i18n view. */
+@Tag("integration")
+class I18nPreviewIT {
+    private val api get() = SharedApi.process
+
+    @Test
+    fun `the localized rich preview reports the actual Russian template locale`() {
+        val bearer = Staff.bearer(api, SharedApi.ADMINISTRATOR)
+
+        val answer = api.http.get("/v1/i18n/preview", bearer, "Accept-Language" to "ru, en;q=0.5")
+
+        assertThat(answer.statusCode()).isEqualTo(200)
+        assertThat(answer.headers().firstValue("Content-Language")).contains("ru")
+        assertThat(answer.json()["text"].asString()).isEqualTo("Открытые заявки: \u206812\u2069")
+        assertThat(answer.json()["templateLocale"].asString()).isEqualTo("ru")
+        assertThat(answer.body()).contains("MARKUP_OPEN", "MARKUP_CLOSE", "BIDI_ISOLATE")
+    }
+}
+
 /**
  * What a caller who is signed in and holds the wrong permission gets, and the refusals the directory owes an
  * administrator. Ported from the Lease `AuthorizationIT` onto the helpdesk's tickets and rain-access's own routes.

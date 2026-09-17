@@ -10,6 +10,7 @@ import com.gd.rain.jobs.UnknownJobDefinitionException
 import com.gd.rain.jobs.WorkQueue
 import com.gd.rain.jobs.internal.JobCatalog
 import com.gd.rain.jobs.internal.JobTaskData
+import com.gd.rain.jobs.internal.context.DurableJobContexts
 import com.gd.rain.jobs.internal.ledger.DedupeMode
 import com.gd.rain.jobs.internal.ledger.IntentLedger
 import com.gd.rain.jobs.internal.ledger.NewInvocation
@@ -34,6 +35,7 @@ internal class SchedulerWorkQueue(
     private val intents: IntentLedger,
     private val client: SchedulerClient,
     private val codec: JobPayloadCodec,
+    private val contexts: DurableJobContexts = DurableJobContexts(emptyList()),
     private val transactions: TransactionOperations,
     private val ids: IdGenerator,
     private val clock: Clock,
@@ -60,6 +62,7 @@ internal class SchedulerWorkQueue(
                 if (absorbedBy != null) {
                     EnqueueOutcome.Deduplicated(absorbedBy)
                 } else {
+                    val context = contexts.capture(definition.name, id, payloadJson, definition.tenantBinding)
                     val eligibleAt = now.plus(options.after)
                     intents.insert(
                         NewInvocation(
@@ -68,6 +71,10 @@ internal class SchedulerWorkQueue(
                             profile = profile.id,
                             priority = options.priority,
                             payloadJson = payloadJson,
+                            contextVersion = context.version,
+                            contextBytes = context.bytes,
+                            producerPartition = context.producerPartition,
+                            payloadDigest = context.payloadDigest,
                             dedupeMode = mode,
                             dedupeKey = key,
                             subjectKey = options.subjectKey,

@@ -31,6 +31,7 @@ import com.gd.rain.web.route.DeclaresItsOwnAccess
 import com.gd.rain.web.route.EndpointDeclaration
 import jakarta.servlet.http.HttpServletRequest
 import org.jooq.DSLContext
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.bind.annotation.GetMapping
@@ -57,41 +58,61 @@ object ProductFields {
     val NOTES = SchemaField("notes", "notes", FieldKind.TEXT, nullable = true)
     val UPDATED_AT = SchemaField("updatedAt", "updated_at", FieldKind.TIMESTAMP, nullable = false)
 
-    val SCHEMA = ResourceSchema(
-        name = "products",
-        table = TableName("public", "products"),
-        id = ID,
-        fields = listOf(NAME, SKU, CATEGORY, PRICE, STOCK, STATUS, SUPPLIER, NOTES, UPDATED_AT),
-        version = null,
-    )
+    val SCHEMA =
+        ResourceSchema(
+            name = "products",
+            table = TableName("public", "products"),
+            id = ID,
+            fields = listOf(NAME, SKU, CATEGORY, PRICE, STOCK, STATUS, SUPPLIER, NOTES, UPDATED_AT),
+            version = null,
+        )
 }
 
 object ProductDeclarations {
     const val PREFIX = "/v1/products"
     private const val READ_WHY = "catalogue records are visible to product operators"
 
-    /* Every option the demo table sends has an explicit, index-backed shape. */
-    val SHAPES = listOf(
-        QueryShape.of(SortKey.NONE),
-        QueryShape.of(SortKey.parse("name")), QueryShape.of(SortKey.parse("-name")),
-        QueryShape.of(SortKey.parse("category")), QueryShape.of(SortKey.parse("-category")),
-        QueryShape.of(SortKey.parse("price")), QueryShape.of(SortKey.parse("-price")),
-        QueryShape.of(SortKey.parse("stock")), QueryShape.of(SortKey.parse("-stock")),
-        QueryShape.of(SortKey.parse("status")), QueryShape.of(SortKey.parse("-status")),
-        QueryShape.of(SortKey.NONE, "name" to Operator.EQ),
-        QueryShape.of(SortKey.NONE, "category" to Operator.EQ),
-        QueryShape.of(SortKey.NONE, "status" to Operator.EQ),
-        QueryShape.of(SortKey.NONE, "category" to Operator.EQ, "status" to Operator.EQ),
-        QueryShape.of(SortKey.NONE, "stock" to Operator.GTE),
-        QueryShape.of(SortKey.NONE, "stock" to Operator.LTE),
-        QueryShape.of(SortKey.NONE, "stock" to Operator.GTE, "stock" to Operator.LTE),
-    )
+    // Every option the demo table sends has an explicit, index-backed shape.
+    val SHAPES =
+        listOf(
+            QueryShape.of(SortKey.NONE),
+            QueryShape.of(SortKey.parse("name")),
+            QueryShape.of(SortKey.parse("-name")),
+            QueryShape.of(SortKey.parse("category")),
+            QueryShape.of(SortKey.parse("-category")),
+            QueryShape.of(SortKey.parse("price")),
+            QueryShape.of(SortKey.parse("-price")),
+            QueryShape.of(SortKey.parse("stock")),
+            QueryShape.of(SortKey.parse("-stock")),
+            QueryShape.of(SortKey.parse("status")),
+            QueryShape.of(SortKey.parse("-status")),
+            QueryShape.of(SortKey.NONE, "name" to Operator.EQ),
+            QueryShape.of(SortKey.NONE, "category" to Operator.EQ),
+            QueryShape.of(SortKey.NONE, "status" to Operator.EQ),
+            QueryShape.of(SortKey.NONE, "category" to Operator.EQ, "status" to Operator.EQ),
+            QueryShape.of(SortKey.NONE, "stock" to Operator.GTE),
+            QueryShape.of(SortKey.NONE, "stock" to Operator.LTE),
+            QueryShape.of(SortKey.NONE, "stock" to Operator.GTE, "stock" to Operator.LTE),
+        )
     val OPERATIONS = setOf(CrudOperation.LIST, CrudOperation.COUNT, CrudOperation.GET)
 
-    fun resource(store: JooqResourceStore<Product>, callers: CallerLookup, pages: TicketProperties.Pages): CrudResource<Product> =
+    fun resource(
+        store: JooqResourceStore<Product>,
+        callers: CallerLookup,
+        pages: TicketProperties.Pages,
+    ): CrudResource<Product> =
         CrudResource(
-            QueryRules(SHAPES, FieldGrant.All, FieldGrant.None, Pagination(pages.defaultLimit, pages.maxLimit, pages.maxOffset, pages.countCap)),
-            ResourcePolicy(mapOf(Action.READ to ActionAccess.permissions(ProductPermissions.READ)), ScopeRule.Unrestricted, FieldGrant.None),
+            QueryRules(
+                SHAPES,
+                FieldGrant.All,
+                FieldGrant.None,
+                Pagination(pages.defaultLimit, pages.maxLimit, pages.maxOffset, pages.countCap),
+            ),
+            ResourcePolicy(
+                mapOf(Action.READ to ActionAccess.permissions(ProductPermissions.READ)),
+                ScopeRule.Unrestricted,
+                FieldGrant.None,
+            ),
             store,
             callers,
             emptyList(),
@@ -103,22 +124,37 @@ object ProductDeclarations {
 @RestController
 @RequestMapping(ProductDeclarations.PREFIX)
 @ConditionalOnRainRole(RuntimeRole.API)
-class ProductController(private val products: CrudResource<Product>) : DeclaresItsOwnAccess {
+class ProductController(
+    @Qualifier("productResource") private val products: CrudResource<Product>,
+) : DeclaresItsOwnAccess {
     private val mounted = ProductDeclarations.mounted(products)
 
     @GetMapping fun list(request: HttpServletRequest): PageBody<Product> = CrudMvc.list(products, request)
-    @GetMapping("/count") fun count(request: HttpServletRequest): CountBody = CrudMvc.count(products, request)
-    @GetMapping("/{id}") fun get(@PathVariable id: String, request: HttpServletRequest): Product = CrudMvc.get(products, id, request)
+
+    @GetMapping("/count")
+    fun count(request: HttpServletRequest): CountBody = CrudMvc.count(products, request)
+
+    @GetMapping("/{id}")
+    fun get(
+        @PathVariable id: String,
+        request: HttpServletRequest,
+    ): Product = CrudMvc.get(products, id, request)
+
     override fun accessDeclarations(): List<EndpointDeclaration> = mounted.declarations()
 }
 
 @Configuration(proxyBeanMethods = false)
 class ProductConfiguration {
     @Bean
-    fun productStore(dsl: DSLContext, ids: IdGenerator): JooqResourceStore<Product> =
-        JooqResourceStore(ProductFields.SCHEMA, dsl, ids, RowReader.fields(ProductFields.SCHEMA))
+    fun productStore(
+        dsl: DSLContext,
+        ids: IdGenerator,
+    ): JooqResourceStore<Product> = JooqResourceStore(ProductFields.SCHEMA, dsl, ids, RowReader.fields(ProductFields.SCHEMA))
 
     @Bean
-    fun productResource(store: JooqResourceStore<Product>, callers: CallerLookup, properties: TicketProperties): CrudResource<Product> =
-        ProductDeclarations.resource(store, callers, properties.pages)
+    fun productResource(
+        @Qualifier("productStore") store: JooqResourceStore<Product>,
+        callers: CallerLookup,
+        properties: TicketProperties,
+    ): CrudResource<Product> = ProductDeclarations.resource(store, callers, properties.pages)
 }

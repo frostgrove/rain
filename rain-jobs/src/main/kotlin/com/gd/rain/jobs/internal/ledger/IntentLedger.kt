@@ -61,6 +61,10 @@ internal data class NewInvocation(
     val profile: String,
     val priority: JobPriority,
     val payloadJson: String,
+    val contextVersion: Short?,
+    val contextBytes: ByteArray?,
+    val producerPartition: ByteArray?,
+    val payloadDigest: ByteArray?,
     val dedupeMode: DedupeMode,
     val dedupeKey: String?,
     val subjectKey: SubjectKey?,
@@ -150,6 +154,10 @@ internal class JooqIntentLedger(
             .set(JOB_INVOCATION.STATE, JobState.QUEUED.wire)
             .set(JOB_INVOCATION.PRIORITY, order.priority.value.toShort())
             .set(JOB_INVOCATION.PAYLOAD, JSONB.valueOf(order.payloadJson))
+            .set(JOB_INVOCATION.CONTEXT_VERSION, order.contextVersion)
+            .set(JOB_INVOCATION.CONTEXT_BYTES, order.contextBytes)
+            .set(JOB_INVOCATION.PRODUCER_PARTITION, order.producerPartition)
+            .set(JOB_INVOCATION.PAYLOAD_DIGEST, order.payloadDigest)
             .set(JOB_INVOCATION.DEDUPE_MODE, order.dedupeMode.wire)
             .set(JOB_INVOCATION.DEDUPE_KEY, order.dedupeKey)
             .set(JOB_INVOCATION.SUBJECT_KEY, order.subjectKey?.value)

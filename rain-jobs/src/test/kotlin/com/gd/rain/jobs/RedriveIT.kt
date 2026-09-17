@@ -75,7 +75,7 @@ class RedriveIT {
 
         assertThat(fixture.administration.redrive(id)).isEqualTo(RedriveOutcome.Deduplicated(holder))
 
-        assertThat(fixture.row(id)).isEqualTo(before)
+        assertThat(fixture.row(id)).usingRecursiveComparison().isEqualTo(before)
         assertThat(fixture.queue.executions()).isEqualTo(executions)
     }
 
@@ -92,7 +92,7 @@ class RedriveIT {
 
         assertThat(fixture.administration.redrive(id)).isEqualTo(RedriveOutcome.UnknownDefinition("notes.retired"))
 
-        assertThat(fixture.row(id)).isEqualTo(before)
+        assertThat(fixture.row(id)).usingRecursiveComparison().isEqualTo(before)
         assertThat(fixture.queue.executions()).isZero()
         assertThat(fixture.database.count("SELECT count(*) FROM rain_jobs.job_intent WHERE released_at IS NULL")).isZero()
     }

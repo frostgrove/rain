@@ -11,6 +11,7 @@ import com.gd.rain.core.error.Fault
 import com.gd.rain.core.error.FaultKind
 import com.gd.rain.core.error.RainErrorCodes
 import com.gd.rain.core.error.Violation
+import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -73,14 +74,31 @@ public class RenderedProblem(
 )
 
 /**
+ * An optional presentation-only adapter for a rendered problem. Implementations may replace human
+ * text but must return a complete replacement RenderedProblem or null to keep the base result.
+ * rain-web owns this SPI so a transport does not depend on any localization module.
+ */
+public fun interface ProblemLocalizer {
+    public fun localize(
+        fault: Fault,
+        rendered: RenderedProblem,
+        request: HttpServletRequest,
+    ): RenderedProblem?
+}
+
+/**
  * Turns a [Fault] into problem format v1. Every refusal — the exception handler, the error
  * controller, the filters through [ProblemWriter] — renders through one renderer, so a refusal made
  * before MVC and one made by a controller are the same bytes.
  */
 public class ProblemRenderer(
     private val registry: ErrorCodeRegistry,
+    private val localizers: () -> List<ProblemLocalizer> = { emptyList() },
 ) {
-    public fun render(fault: Fault): RenderedProblem {
+    public fun render(
+        fault: Fault,
+        request: HttpServletRequest? = null,
+    ): RenderedProblem {
         val unregistered = (listOf(fault.code) + fault.violations.map(Violation::code)).filterNot(registry::contains).distinct()
         if (unregistered.isNotEmpty()) {
             log
@@ -119,7 +137,32 @@ public class ProblemRenderer(
         if (fault.partial || kept.size < sorted.size) problem.setProperty(ProblemFormat.PARTIAL, true)
 
         val headers = fault.retryAfter?.let { mapOf(HttpHeaders.RETRY_AFTER to wholeSecondsUp(it).toString()) } ?: emptyMap()
-        return RenderedProblem(fault.kind.status, headers, problem, serialize(problem))
+        val rendered = RenderedProblem(fault.kind.status, headers, problem, serialize(problem))
+        return if (request == null) {
+            rendered
+        } else {
+            localize(fault, rendered, request)
+        }
+    }
+
+    private fun localize(
+        fault: Fault,
+        rendered: RenderedProblem,
+        request: HttpServletRequest,
+    ): RenderedProblem {
+        for (localizer in localizers()) {
+            try {
+                localizer.localize(fault, rendered, request)?.let { return it }
+            } catch (failure: RuntimeException) {
+                log
+                    .atWarn()
+                    .setMessage("a problem localizer failed; the safe base problem is used")
+                    .addKeyValue("code", fault.code.value)
+                    .setCause(failure)
+                    .log()
+            }
+        }
+        return rendered
     }
 
     private fun internal(code: ErrorCode): RenderedProblem {

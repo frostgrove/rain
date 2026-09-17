@@ -37,6 +37,10 @@ internal data class ClaimedInvocation(
     val retryLimit: Int,
     val deferrals: Int,
     val subjectKey: String?,
+    val contextVersion: Short? = null,
+    val contextBytes: ByteArray? = null,
+    val producerPartition: ByteArray? = null,
+    val payloadDigest: ByteArray? = null,
 )
 
 /** Where an invocation is, read when a write or a claim was refused. */
@@ -149,6 +153,10 @@ internal class JooqAttemptLedger(
                         J.DEFINITION,
                         J.PROFILE,
                         J.PAYLOAD,
+                        J.CONTEXT_VERSION,
+                        J.CONTEXT_BYTES,
+                        J.PRODUCER_PARTITION,
+                        J.PAYLOAD_DIGEST,
                         J.ATTEMPTS,
                         J.RETRY_SPENT,
                         J.RETRY_LIMIT,
@@ -167,25 +175,55 @@ internal class JooqAttemptLedger(
                     .and(JOB_INTENT.MODE.eq(DedupeMode.COLLAPSE.wire))
                     .returningResult(JOB_INTENT.ID),
             )
+        val claimedIdField = cteField(claimed, J.ID)
+        val claimedDefinition = cteField(claimed, J.DEFINITION)
+        val claimedProfile = cteField(claimed, J.PROFILE)
+        val claimedPayload = cteField(claimed, J.PAYLOAD)
+        val claimedContextVersion = cteField(claimed, J.CONTEXT_VERSION)
+        val claimedContextBytes = cteField(claimed, J.CONTEXT_BYTES)
+        val claimedProducerPartition = cteField(claimed, J.PRODUCER_PARTITION)
+        val claimedPayloadDigest = cteField(claimed, J.PAYLOAD_DIGEST)
+        val claimedAttempts = cteField(claimed, J.ATTEMPTS)
+        val claimedRetrySpent = cteField(claimed, J.RETRY_SPENT)
+        val claimedRetryLimit = cteField(claimed, J.RETRY_LIMIT)
+        val claimedDeferrals = cteField(claimed, J.DEFERRALS)
+        val claimedSubjectKey = cteField(claimed, J.SUBJECT_KEY)
         val row =
             dsl
                 .with(claimed)
                 .with(released)
-                .select(claimed.fields().toList())
-                .from(claimed)
+                .select(
+                    claimedIdField,
+                    claimedDefinition,
+                    claimedProfile,
+                    claimedPayload,
+                    claimedContextVersion,
+                    claimedContextBytes,
+                    claimedProducerPartition,
+                    claimedPayloadDigest,
+                    claimedAttempts,
+                    claimedRetrySpent,
+                    claimedRetryLimit,
+                    claimedDeferrals,
+                    claimedSubjectKey,
+                ).from(claimed)
                 .fetchOne()
                 ?: return ClaimResult.NotClaimed(snapshot(request.invocation))
         return ClaimResult.Claimed(
             ClaimedInvocation(
-                id = row.get(J.ID.name, UUID::class.java),
-                definition = row.get(J.DEFINITION.name, String::class.java),
-                profile = row.get(J.PROFILE.name, String::class.java),
-                payloadJson = row.get(J.PAYLOAD.name, org.jooq.JSONB::class.java).data(),
-                attempts = row.get(J.ATTEMPTS.name, Int::class.java),
-                retrySpent = row.get(J.RETRY_SPENT.name, Int::class.java),
-                retryLimit = row.get(J.RETRY_LIMIT.name, Int::class.java),
-                deferrals = row.get(J.DEFERRALS.name, Int::class.java),
-                subjectKey = row.get(J.SUBJECT_KEY.name, String::class.java),
+                id = row[claimedIdField],
+                definition = row[claimedDefinition],
+                profile = row[claimedProfile],
+                payloadJson = row[claimedPayload].data(),
+                attempts = row[claimedAttempts],
+                retrySpent = row[claimedRetrySpent],
+                retryLimit = row[claimedRetryLimit],
+                deferrals = row[claimedDeferrals],
+                subjectKey = row[claimedSubjectKey],
+                contextVersion = row[claimedContextVersion],
+                contextBytes = row[claimedContextBytes],
+                producerPartition = row[claimedProducerPartition],
+                payloadDigest = row[claimedPayloadDigest],
             ),
         )
     }

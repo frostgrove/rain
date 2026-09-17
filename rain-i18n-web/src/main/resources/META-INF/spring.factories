@@ -1,0 +1,3 @@
+com.gd.rain.boot.config.ConfigurationContributor=\
+com.gd.rain.i18n.web.I18nArtifactConfigurationContributor,\
+com.gd.rain.i18n.web.I18nWebConfigurationContributor
