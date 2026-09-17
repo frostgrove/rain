@@ -17,6 +17,7 @@
 Основные архитектурные решения:
 
 - Функции выключены по умолчанию и не меняют поведение существующего приложения, пока явно не включены.
+- После `rain.tenancy.enabled=true` tenant DX является magic-first: declared route, service annotation, job mode и enabled runtime tasks делают common path tenant-aware без ручного `TenantDataPlane` boilerplate. Любая magic operation имеет эквивалентный explicit low-level API; override не ослабляет authority, admission, transaction pin или RLS.
 - Основной Spring DataSource остается control-plane/database инфраструктуры Rain. Database-per-tenant не подменяет его глобальным AbstractRoutingDataSource. Tenant data доступна только внутри явного TenantDataPlane.read/write блока.
 - TenantScope нельзя создать из tenant id. Его выпускает TenantAuthority после разрешения tenant, проверки lifecycle, epoch и operation class.
 - Смена tenant внутри уже привязанной транзакции запрещена, включая сценарии bind → unbind → bind и REQUIRES_NEW.
@@ -25,11 +26,13 @@
 - Все чтения ограничены страницей; глобальный log cursor учитывает незавершенные PostgreSQL-транзакции и не пропускает поздно закоммиченные позиции.
 - Idempotency receipt заявляет операцию до append в той же транзакции, различает повтор и collision, возвращает исходный commit range и не трактует неизвестный исход как rollback.
 - Projection дает exactly-once только для checkpoint и записей через тот же transaction authority. Для внешнего эффекта контракт всегда at-least-once.
+- Partitioned projection объявляет проверяемый exact cover ключевого пространства; topology меняется только durable, fenced split, поэтому ни одна sequence не теряется и не обрабатывается двумя runner'ами.
 - Rebuild выполняется в новой generation с barrier, проверкой holes и атомарным cutover. Живая таблица никогда не очищается и не заполняется на глазах читателей.
+- Effect barrier generation хранится durably и не может быть понижен конфигурацией или rollback release; effect staging берет блокирующее право active generation в той же transaction.
 - LISTEN/NOTIFY используется только как ускоряющий сигнал. Потеря уведомления не влияет на корректность.
 - События по умолчанию не удаляются и не архивируются разрушающим способом. Hot/cold storage появится только после отдельной прозрачной реализации, прошедшей store conformance.
 
-Такой дизайн берет у Photon полезные use cases и эксплуатационные идеи, но не переносит его скрытую маршрутизацию, небезопасные retry, ложное exactly-once и разрушающий archive. Из Go-реализации берутся проверяемые capability contracts, non-forgeable scope/token, bounded log walk, receipts, projection generations, transaction-authority verification и conformance suites.
+Такой дизайн берет у Photon полезные use cases и эксплуатационные идеи, но не переносит его скрытую маршрутизацию, небезопасные retry, ложное exactly-once и разрушающий archive. Из Go-реализации берутся проверяемые capability contracts, non-forgeable scope/token, bounded log walk, exact projection cover/split, receipts, projection generations, transaction-authority verification и conformance suites. От Axon берется удобный aggregate test fixture и операционный vocabulary, но не reflection command bus, implicit replay side effects, Saga magic или annotation scanning.
 
 ## 2. Границы исследования
 
@@ -104,6 +107,7 @@
 ### 3.3 Осознанно не включается в первый GA
 
 - schema-per-tenant как третий storage mode: он сочетает сложность fleet migration и search_path risk без изоляции отдельной database;
+- mixed shared-row/database fleet в одном deployment: в первом GA `rain.tenancy.mode` выбирается для всего deployment, а не для отдельного tenant. `placement_kind` хранит параметры backing выбранного mode и не включает per-tenant routing. Перенос tenant между modes и tiered routing требуют отдельного будущего design/migration plan;
 - multi-region active-active append к одному stream;
 - distributed transaction между control plane, tenant database и внешним broker;
 - обещание exactly-once для HTTP, Kafka, email, search index или другой внешней системы;
@@ -113,6 +117,7 @@
 - WebFlux request binding, пока сам Rain остается servlet-first;
 - доверие к обычному X-Tenant-ID только по boolean-настройке;
 - бесконечные cross-tenant scans или открытие pool на каждый tenant одновременно.
+- generic Organization/UserGroup hierarchy, CMS/admin panel или domain membership model: они принадлежат application и `rain-access`; tenancy предоставляет authority, grant и session integration ports, но не навязывает business hierarchy.
 
 Эти exclusions должны быть явно перечислены в документации, чтобы отсутствие ложного обещания не воспринималось как недостающая реализация.
 
@@ -213,6 +218,14 @@
 - generic complexity, не дающую Kotlin consumer заметного выигрыша;
 - любые возможности, которым нет PostgreSQL integration proof в Rain.
 
+### 5.1 DX lessons from Laravel и Strapi
+
+Из Stancl Tenancy берется magic-first experience: request resolution, tenant/central/universal surface и optional runtime capabilities. Его global switching default database/config/cache manager не переносится: Spring beans shared between concurrent requests, поэтому Rain использует scoped `TenantRuntime` and explicit adapters instead.
+
+Из Spatie Multitenancy берутся composable finder/task model, paired enter/revert cleanup, tenant-aware versus central job declaration и explicit execution block. Rain strengthens them with minted scope, HMAC durable context, epoch fencing, `TenantGrant` и bounded fleet runner.
+
+Strapi не поставляет production-grade tenancy kernel; его organization/user-group/policy pattern остается domain-level concern. Rain не добавляет generic CMS hierarchy, но оставляет `rain-access` membership/session integration port и application-defined resolver.
+
 ## 6. Инварианты верхнего уровня
 
 Любая реализация и review должны проверять следующие инварианты.
@@ -254,6 +267,20 @@ E15. Snapshot можно удалить без изменения результ
 E16. Receipt repeat возвращает результат первой операции; collision ничего не пишет.  
 E17. Realtime notification можно потерять без потери события.  
 E18. Source events immutable; административная операция не делает UPDATE/DELETE.
+E19. `ProjectionCover` покрывает sequence-key space ровно один раз: gaps и overlaps являются startup/command refusal, а не healthy состоянием двух checkpoint rows.
+E20. Изменение topology возможно только one-way `Split`: children получают exact parent cursor в одной transaction, parent получает durable retirement mark и больше не может resume; merge не входит в GA.
+E21. Один `SAME_UNIT` pass вызывает handler ровно один раз. Transaction retry происходит только снаружи всего pass после rollback и повторной доставки page, никогда внутри `Unit`.
+E22. Projector получает read-only log/batch capability и не может append facts. Иммутабельный `effect_after_position` и locking read active-generation pointer в той же Unit не допускают effect от retired generation или исторического replay.
+E23. `ProjectionWaiter` ждет только durable projection mark до declared deadline и возвращает typed reached/timed-out/halted outcome; wake-up уведомление сокращает ожидание, но не является его источником истины.
+
+### 6.3 Magic runtime invariants
+
+M1. Magic layer работает только с уже minted `TenantScope`; никакой annotation, task или customizer не принимает raw tenant reference как authority.
+M2. Tenant runtime не меняет singleton `DataSource`, `DSLContext`, Spring `Environment`, `CacheManager` или другой process-global mutable state; его capabilities scoped к request/job/manual block и безопасны при одновременных разных tenants.
+M3. Runtime tasks имеют stable id и deterministic dependency order; если enter падает, handler не запускается, а все успешно entered tasks закрываются строго в обратном порядке.
+M4. Custom task не может повысить operation class, подменить origin/epoch, открыть raw connection или bypass RLS. Replacement встроенной task возможен только по тому же declared id и проходит startup validation.
+M5. Magic cache, settings и object-storage namespace включают tenant digest и epoch; глобальный counterpart всегда отдельный explicit API.
+M6. Каждый magic path имеет low-level counterpart и contract test: service advice → `TenantDataPlane`, job mode → signed `DurableJobContextProvider`, fleet helper → `TenantGrant` + bounded `TenantDataPlane.admin`.
 
 ## 7. Модульная структура
 
@@ -281,6 +308,7 @@ Package root: com.gd.rain.tenancy
 - TenantDataPlane с shared-row и database implementations;
 - pool directory, source fence и secret resolver SPI;
 - tenant migration/provisioning/fleet administration;
+- magic runtime, ordered runtime tasks, route/service advice, cache/settings/storage adapters и low-level runners;
 - audit scope contributor и durable-job context provider;
 - configuration, faults, metrics, health и autoconfiguration.
 
@@ -303,7 +331,8 @@ Package root: com.gd.rain.event
 - store/log/checkpoint/receipt capability contracts;
 - PostgreSQL implementation и schema rain_event;
 - snapshots;
-- projections, park/redrive, generations и effects;
+- projections, checked topology/one-way split, park/redrive, generations и effects;
+- `ProjectionMark`/`ProjectionWaiter` для bounded read-your-writes ожидания async view;
 - worker integration, configuration, faults, metrics, health и autoconfiguration.
 
 Название rain-event выбрано вместо rain-eventsource: EventSource в JVM/web обычно означает SSE API, а модуль представляет event log, aggregate repository и projections, не HTTP EventSource.
@@ -324,6 +353,7 @@ Package root: com.gd.rain.event.test
 - store/projection/receipt conformance launcher;
 - deliberately broken stores/checkpoints/ledgers;
 - aggregate/codec golden fixture helpers;
+- typed `EventAggregateFixture`: given stored facts → when typed decision → then exact emitted facts/metadata or closed failure, с deterministic clock/id/random и без reflection command bus;
 - Await utilities на latch/condition, без Thread.sleep.
 
 #### rain-tenancy-event
@@ -381,6 +411,8 @@ TenantResolver имеет два метода:
 - resolveCurrent(request context) для request/auth boundary;
 - lookup(ref) для durable restore/admin.
 
+`resolveCurrent` собирается из ordered `TenantResolutionSource` registry: built-in principal, canonical-host и trusted-header sources плюс application sources с stable id. Source может вернуть только absent, normalized candidate или malformed outcome — не `TenantScope`. Authority сохраняет provenance, сравнивает все candidates и применяет admission; замена/переупорядочивание source меняет UX resolution, но не authority semantics. Header source отсутствует по default и не может быть включен одним boolean property.
+
 TenantAuthority:
 
 - verify(resolution, operation) выпускает scope только после validation/admission;
@@ -423,14 +455,15 @@ TenantContext использует обычный ThreadLocal только ка�
 - async capture переносит только already-minted scope и не умеет создать новый;
 - coroutine TenantContextElement восстанавливает/очищает binding на каждом resume;
 - task decorator очищает scope в finally и проверяется на thread reuse;
-- raw Executor propagation не делается автоматически: application использует предоставленный TenantTaskDecorator.
+- при enabled magic auto-configuration подключает `TenantTaskDecorator` к явно выбранным application `TaskExecutor` beans; raw `Executor`, foreign scheduler и unregistered coroutine dispatcher остаются explicit и используют предоставленный decorator/context element.
 
 ### 8.5 Servlet surface
 
 Добавить:
 
 - TenantRoute.READ/WRITE declaration;
-- TenantFree с обязательным why;
+- CentralRoute с обязательным why: handler гарантированно исполняется без tenant и не получает tenant data-plane;
+- UniversalRoute.READ/WRITE: без tenant candidate исполняется central, с одним valid candidate — tenant-aware; malformed или conflicting candidate не дает central fallback;
 - TenantSurfaceExemption для infrastructure endpoints;
 - DeclaresItsOwnTenancy для generated/functional routes.
 
@@ -448,6 +481,22 @@ Resolution pipeline:
 
 Host normalization использует parsed Host/Forwarded host policy из rain-web, lower-case ASCII/IDNA, проверяет port, bracketed IPv6, trailing dot и exact canonical domain. Нельзя независимо доверять X-Forwarded-Host, если rain.web configured direct.
 
+Для stateful `rain-access` session tenant adapter сохраняет только digest связки subject/tenant-selection и проверяет его against resolved principal/host на каждом tenant route. Cookie не содержит `TenantScope`, secret или authority. Application с multi-tenant membership объявляет membership resolver; отсутствие membership или switch к tenant, не разрешенному этим resolver, дает closed forbidden. Stateless bearer flow сохраняет то же principal/host agreement без session storage.
+
+### 8.6 Magic runtime и low-level escape hatch
+
+`rain-tenancy` предоставляет magic-first Spring surface, но она является тонким orchestration layer над теми же authority и data-plane contracts:
+
+- `@TenantRoute(READ|WRITE)` resolve/bind'ит scope на servlet boundary; он не открывает transaction на весь HTTP request;
+- `@TenantRead` и `@TenantWrite` на public proxied service method являются default DX. Advice берет current scope, вызывает соответствующий `TenantDataPlane` method, открывает ровно один `TenantUnit` и закрывает его в finally. Existing `@TenantTransactional` допускается как synonym, но docs и samples используют read/write annotations;
+- `TenantRuntime.current()` предоставляет scoped immutable capabilities текущего scope: tenant cache, declared tenant settings, diagnostic baggage и task-provided capabilities; `TenantUnit` появляется в runtime только внутри `@TenantRead`, `@TenantWrite` или explicit data-plane block;
+- для нестандартной transaction boundary, callback или integration application использует полный API `TenantDataPlane.read/write/durable(scope)`; нет `@TenantManual`, снимающей security checks;
+- `TenantRuntime.with(scope)` принимает только minted scope и создает тот же scoped runtime без implicit tenant lookup. Cross-tenant code использует только `TenantFleet.run(grant, cohort, spec)`: fixed cohort, page/budget/concurrency/lease обязательны, callback получает один `TenantUnit`, результат — resumable partial outcomes.
+
+`TenantRuntimeTask` — публичный extension point с stable `id`, explicit `before/after` dependencies и paired `enter(runtime): TenantRuntimeLease`. Leases закрываются в reverse order при normal return, exception, cancellation и nested runtime. Startup отказывается при duplicate id, unknown dependency, cycle или попытке заменить built-in task другим id. Built-ins: context diagnostics, tenant cache namespace, typed settings snapshot и job-context bridge; application может add/disable/replace task per id через configuration/bean registration.
+
+Task не получает mutable Spring singleton и не меняет default data source, `DSLContext`, `Environment` или global cache manager. Она не видит raw credential и не может mint/rebind foreign scope, widen admission или issue SQL вне `TenantUnit`. Failure task — closed failure текущего request/job; subsequent handler/task не запускаются.
+
 ## 9. Tenant control plane
 
 ### 9.1 Schema rain_tenancy
@@ -461,6 +510,8 @@ V1 должен создать:
 - tenant_provision_step: workflow id, tenant digest, step, state, fence, attempts, last closed failure code;
 - tenant_delivery_receipt: stable local-outbox id для database-mode relay, bounded retention и completion state;
 - tenant_schema_state: tenant digest, epoch, catalogue fingerprint, target/current version, state.
+- tenant_runtime_state: tenant digest PK, current epoch, cache_generation, settings_version, row_version, updated_at;
+- tenant_runtime_setting: tenant digest, declared setting key, canonical bounded value или secret reference, value version, updated_at; primary key tenant digest+key.
 
 Constraints проверяют positive epoch/version, known enum wires, bounded byte lengths и legal transitions там, где это возможно. Tables не хранят application DB password или provisioning credential.
 
@@ -483,8 +534,12 @@ V2 при необходимости добавляет audit/job integration co
 - restoreAsNewEpoch;
 - rotatePlacement;
 - bindDomain/unbindDomain.
+- updateRuntimeSettings;
+- invalidateTenantCache.
 
 Каждый command принимает ExpectedControlVersion и OperationId, выполняет conditional UPDATE, пишет tenant_transition и rain-audit record в одной control-plane transaction. Duplicate OperationId возвращает первый result; другой fingerprint дает collision.
+
+`updateRuntimeSettings` additionally требует expected `settings_version`; `invalidateTenantCache` conditionally increments `cache_generation`. Оба command'а проверяют active epoch, используют OperationId/receipt и пишут audit record в той же control-plane transaction; они не могут менять undeclared key или runtime security settings.
 
 Transition graph объявлен один раз, тестируется table-driven и отражается в docs. DELETED нельзя reanimate: restore создает новый epoch через отдельный command и сохраняет lineage.
 
@@ -504,6 +559,10 @@ Provisioning реализуется как rain-jobs state machine:
 10. audit итог.
 
 Каждый step имеет durable state и может resume. Compensation не делает DROP автоматически. Failed resource помечается quarantined и требует explicit admin cleanup command. Provisioning credentials никогда не попадают в TenantDatabaseDirectory.
+
+Application может расширить workflow через `TenantProvisioningStep`: stable id, explicit before/after dependencies, declared retry classification и idempotent `run(fenced workflow)` contract. Каждый custom step записывает state/fence/closed failure в `tenant_provision_step`; duplicate id, dependency cycle и missing required step являются startup problem. `ACTIVE` допускается только после всех mandatory built-in и declared custom steps. Custom step не получает control-plane raw credential, не меняет lifecycle row напрямую и не делает automatic destructive compensation.
+
+После commit transition framework публикует bounded lifecycle notification через existing durable job/outbox conventions (`TenantActivated`, `TenantSuspended`, `TenantDeleted` и т.п.). Listener не участвует в decision/CAS transaction, поэтому application notifications, bucket provisioning или cache warming не могут создать partial control-plane transition; blocking prerequisite реализуется именно `TenantProvisioningStep`.
 
 ## 10. Tenant data-plane modes
 
@@ -526,7 +585,7 @@ TenantUnit содержит:
 
 DataSource и Connection не являются public API. Блок открывает/joins ровно одну transaction, применяет statement timeout Rain, проверяет pin до первого SQL и очищает resources в finally.
 
-Primary Spring DataSource остается control plane. Обычный @Transactional не превращается неявно в tenant transaction. Для DX добавить @TenantTransactional только как thin AOP wrapper над тем же TenantDataPlane; annotation обязана указывать READ/WRITE и отказывается на private/final/non-proxied method через startup check. Документация предпочитает явный block в domain service.
+Primary Spring DataSource остается control plane. Обычный @Transactional не превращается неявно в tenant transaction. Default DX — `@TenantRead` / `@TenantWrite`: thin AOP wrappers над тем же `TenantDataPlane`; они отказываются на private/final/non-proxied method через startup check. `@TenantTransactional(READ|WRITE)` остается synonym для migration/readability. Explicit block — не fallback второго сорта, а полный API для custom transaction boundary, integration и tests.
 
 ### 10.2 Shared-row
 
@@ -628,6 +687,14 @@ Control-plane rain-jobs и tenant database не образуют одну transa
 - restore проверяет bytes до handler и возвращает scope binding;
 - default provider сохраняет текущее single-tenant поведение и не меняет wire.
 
+`JobDefinition` declaratively выбирает `TenantBindingMode`:
+
+- `INHERIT` — magic default: если enqueue происходит внутри current tenant runtime, provider захватывает signed scope; вне него job остается central;
+- `REQUIRED` — enqueue вне current tenant runtime отказывается, а worker отказывается выполнить отсутствующий, stale или invalid tenant context;
+- `CENTRAL` — job никогда не захватывает ambient tenant context и запускается без tenant data-plane. Его нельзя использовать как обход tenant transaction/outbox rules.
+
+Definition-level mode виден в startup catalogue и не зависит от queue name или handler annotation scanning. Retry/requeue сохраняет original versioned context bytes; worker restore очищает prior thread context в finally. Так common jobs получают magic propagation и явный central escape hatch без превращения raw tenant id в payload в authority.
+
 Migration добавляет nullable context_version, context_bytes, producer_partition и payload_digest. Старые rows остаются валидными как unscoped.
 
 Tenancy provider подписывает:
@@ -665,6 +732,16 @@ Migration добавляет nullable scope_kind/scope_digest/scope_epoch и cov
 - coalesces notifications;
 - при overflow только увеличивает metric и оставляет polling;
 - существует лишь в соответствующей runtime role.
+
+### 11.5 Magic cache, settings и object storage
+
+`TenantCache` — scoped cache API поверх application-selected cache provider. Его namespace содержит deployment HMAC digest, tenant epoch и monotonic cache generation; raw tenant ref не попадает в external cache key. `invalidateTenantCache` не scan'ит arbitrary keys: он conditional increment'ит generation в control plane, audit'ится и делает предыдущий namespace unreachable. `GlobalCache` — отдельный injected API; tenant code не получает его через `TenantRuntime`.
+
+Magic layer дает `@TenantCached` / `TenantCacheResolver` для selected methods and cache names. Она не заменяет global Spring `CacheManager`: only annotated methods or explicitly injected `TenantCache` are tenant-aware, while standard `@Cacheable` stays application-global unless it explicitly chooses the resolver. Cache provider failures follow declared cache policy and never fall back to another tenant/global keyspace.
+
+`TenantSettingsSpec<T>` declares stable key, canonical bounded codec, default, validation and whether a value is secret reference. `TenantSettings<T>` returns an immutable versioned snapshot from current `TenantRuntime`; magic consumers do not parse arbitrary maps. Control-plane command `updateRuntimeSettings` performs expected-version CAS and audit. Settings may tune declared product behavior and runtime tasks, but may not change origin, lifecycle/admission matrix, RLS/GUC, data-plane mode, JDBC endpoint/credential or security verifier. Secret values remain secret references resolved only by the owning integration.
+
+For object/blob storage, `TenantObjectStore` and `GlobalObjectStore` are separate optional ports. A tenant object key is derived beneath an opaque digest+epoch namespace; path traversal, caller-supplied prefix escape and static public URL by default are refused. Adapter may generate a bounded signed URL only after tenant authorization. The first GA ships the port and test kit, not a mandatory local-disk/S3 implementation or a global filesystem-path rewrite.
 
 ## 12. Public event API
 
@@ -935,7 +1012,20 @@ Flyway остается единственным migration mechanism Rain, basel
 
 Не использовать configurable raw table names. Schema следует Rain convention rain_event.
 
-### 13.5 Partitioning и storage
+### 13.5 PostgreSQL compatibility и runtime privileges
+
+Поддерживаемый production server — PostgreSQL 14 или новее. Алгоритм committed walk требует встроенные `xid8`, `pg_current_xact_id()`, `pg_current_snapshot()` и `pg_snapshot_xmin()`; PostgreSQL 13 и ниже не поддерживаются. Основной codegen и обычные integration tests продолжают использовать pinned repository image `postgres:18`, но PostgreSQL adapters обязаны проходить отдельную compatibility suite и на PostgreSQL 14.
+
+Расширения PostgreSQL для первого GA не требуются. Schema verifier перед serving проверяет minimum server version, обязательные built-in functions, schema fingerprint и grants; несоответствие отказывается запускать event или enabled tenancy mode, а не включает fallback algorithm.
+
+Credentials разделены:
+
+- migrator/provisioner имеет ровно те DDL privileges, которые нужны для schema, migrations, triggers, policies и grants;
+- application runtime role не является owner shared-row tables, не имеет `BYPASSRLS`, superuser или provisioning credentials и получает только нужные schema/table/sequence grants;
+- application role не получает `UPDATE`, `DELETE` или `TRUNCATE` на `rain_event.event_record`;
+- database-mode source fence и RLS policies проверяются теми же runtime credentials, которыми реально пользуется application.
+
+### 13.6 Partitioning и storage
 
 Первый GA использует непартиционированную event_record с двумя доказанными индексами:
 
@@ -974,10 +1064,11 @@ Snapshot включается per aggregate только после measured rep
 ProjectionSpec требует:
 
 - globally stable name;
-- topology fingerprint;
+- explicit `ProjectionContractRevision`: application поднимает ее при semantic change handler/route/sequence/destination schema/effect policy; произвольный code hash не используется;
+- topology fingerprint и stable `SequenceKeyHasher` id;
+- checked `ProjectionCover` из immutable partition members (default — Whole), а не только integer count;
 - owned event families;
 - explicit route каждого fact: handle или ignore с why;
-- stable partition count power-of-two;
 - page size;
 - advancement mode SAME_UNIT или AFTER_APPLY;
 - destination identity;
@@ -989,11 +1080,21 @@ ProjectionSpec требует:
 
 Неизвестный fact в owned family — halt, а не ignore. Fact другой family может быть outside projection cover.
 
+`ProjectionContractRevision` вместе с catalogue/topology fingerprint сохраняется рядом с checkpoint. Drift не продолжает старый checkpoint молча: startup/pass закрыто отказывается с `projection_contract_drift`; application либо сохраняет совместимую revision, либо явно начинает новую generation/rebuild. Revision является intent application, поэтому обычный refactor без semantic change не требует rebuild.
+
+### 15.1a Exact cover и изменение topology
+
+`ProjectionCover` — immutable проверенный набор `Partition` для одного projection generation. Каждый partition задается published stable key-hash algorithm и mask/id, а `Cover` доказывает арифметически: набор непустой, каждый sequence key попадает ровно в один member, нет hole и overlap. Нельзя вручную собрать несколько runners с произвольными masks или считать, что одинаковый power-of-two count уже доказывает cover.
+
+Bootstrap topology — `Whole`. Масштабирование — только command `projection-split`: он в одной checkpoint transaction читает live parent, создает ровно двух children с **тем же opaque cursor**, durable retirement mark parent и удаляет/retire parent checkpoint. Новый runner на retired parent closed-refuses; child рядом с live parent тоже refused. Split сохраняет принадлежность каждого key; merge, `% N` remap и редактирование count/config на живой topology не входят в GA.
+
+Topology имеет own durable fingerprint и max member limit. `projection-status` показывает cover, retirement lineage и watermark каждого member; cutover/rebuild измеряет barrier по minimum watermark полного checked cover, никогда по одной partition или предполагаемому count.
+
 ### 15.2 Durable schema
 
 projection_catalog:
 
-- name, topology fingerprint, active generation, partition count, status.
+- name, projection contract revision, topology fingerprint, active generation, status.
 
 projection_checkpoint:
 
@@ -1011,7 +1112,13 @@ projection_generation:
 - barrier cursor/position;
 - state BUILDING, READY, ACTIVE, RETIRED, FAILED;
 - created/cutover/retired timestamps;
-- topology fingerprint.
+- projection contract revision и topology fingerprint;
+- immutable `effect_after_position` (nullable только при effects disabled), recorded effect-policy digest.
+
+projection_topology_member / projection_topology_retirement:
+
+- projection/generation, canonical partition/hash identity, topology fingerprint, state;
+- for retirement: parent identity, two child identities, inherited cursor, fence and timestamp.
 
 projection_hold:
 
@@ -1054,6 +1161,8 @@ Flow одной page:
 
 Фактически claim и final cursor находятся в одной uncommitted transaction; competing instance блокируется/CAS loses. Любое exception выходит наружу и откатывает все writes. Нельзя catch handler exception и commit attempt bookkeeping в этой transaction.
 
+`Unit` вызывает supplied work не более одного раза. JDBC/Spring retry template внутри Unit запрещен: после rollback rain-jobs повторяет весь fenced pass с прежним checkpoint, а handler видит page снова только как новую delivery attempt. Projection engine передает handler'у `ProjectionBatch` и scoped destination context, но не `EventStore`, `EventRepository` или append capability; runner принимает `CommittedLogReader`/read-only wrapper, а не mutable store.
+
 Если authority нельзя доказать, startup/pass получает projection_authority_mismatch. Нет fallback на AFTER_APPLY.
 
 ### 15.4 AFTER_APPLY
@@ -1066,6 +1175,12 @@ Flow одной page:
 - UI/docs называют semantics at-least-once;
 - external effect нельзя объявить SAME_UNIT;
 - Wait подтверждает checkpoint, а не физическую консистентность внешней системы сверх ее adapter contract.
+
+### 15.4a ProjectionMark и bounded wait
+
+Успешный append возвращает `CommitRange` с durable global positions; application может получить из него opaque `ProjectionMark`. `ProjectionWaiter.await(projection, mark, deadline)` — convenience API для read-your-writes через asynchronous view: он повторно читает durable active-generation/checkpoint watermark, учитывает full checked cover и возвращает typed `Reached`, `TimedOut`, `Halted`, `Parked` или `GenerationUnavailable`.
+
+Wait имеет hard maximum deadline и cancellation, не держит transaction/connection/worker lease, не poll'ит без паузы и использует realtime wake-up только для раннего next check. Он не обещает, что Elasticsearch/HTTP/broker destination уже physically consistent сверх adapter's own acknowledgement, и не превращается в WebSocket/SSE subscription API. Последний, если понадобится, остается отдельным `rain-realtime` design с собственными backpressure/auth/lifecycle contracts.
 
 ### 15.5 Failure, park и redrive
 
@@ -1097,9 +1212,9 @@ Permanent PARK_SEQUENCE:
 
 Rebuild protocol:
 
-1. зарегистрировать generation N+1 и immutable topology;
+1. зарегистрировать generation N+1 с immutable contract revision/topology и persisted effect policy;
 2. создать shadow destination namespace/tables;
-3. зафиксировать origin и затем barrier cursor;
+3. зафиксировать origin и затем barrier cursor active generation; если effects включены, persist `effect_after_position=barrier.position` до первого delivery N+1;
 4. replay bounded pages без external effects;
 5. live events либо dual-apply по generation-aware adapter, либо catch up после barrier; стратегия декларируется;
 6. дождаться barrier/watermark;
@@ -1112,6 +1227,8 @@ Rebuild protocol:
 
 Никакого TRUNCATE live read model. Empty page при unsettled xmin gap не означает completion.
 
+Rebuild получает отдельный `read_pace`: максимум один log-read за declared interval, пока есть backlog; это IO throttle, а не concurrency limit. Он защищает live generation от starvation и снимается только после catch-up перед cutover. Общий `run_budget` и worker concurrency не заменяют этот contract.
+
 ### 15.7 Effects и rain-jobs
 
 Projection handler не выполняет внешний effect.
@@ -1119,7 +1236,8 @@ Projection handler не выполняет внешний effect.
 - SAME_UNIT записывает projection_effect и/или WorkQueue order в той же transaction.
 - Effect id stable; job handler idempotent.
 - Rebuild suppresses effects.
-- Только active generation может dispatch effect.
+- `effect_after_position` хранится в `projection_generation`, immutable после create и сравнивается per envelope: generation никогда не stage effect для position at-or-before barrier. Deployment property не может lower/drop этот barrier.
+- Только active generation может stage/dispatch effect: pass читает active-generation pointer locking read (`FOR KEY SHARE` либо documented equivalent) в той же SAME_UNIT transaction. Cutover CAS берет конфликтующий lock и поэтому не может пропустить commit effect от уже retired generation.
 - Database-per-tenant использует TenantOutbox relay.
 - AFTER_APPLY external adapter самостоятельно реализует idempotency.
 
@@ -1133,7 +1251,7 @@ Projection handler не выполняет внешний effect.
 - если backlog остается, pass enqueues successor;
 - recurring sweep восстанавливает потерянный kick;
 - realtime hint только ускоряет enqueue;
-- configured concurrency и tenant PartitionPermit дают fairness;
+- configured concurrency, rebuild `read_pace` и tenant PartitionPermit дают fairness;
 - shutdown/drain следует rain-jobs lifecycle.
 
 ## 16. Tenancy-event adapter
@@ -1190,6 +1308,11 @@ rain.tenancy и rain.event регистрируют Presence.OPTIONAL sections.
 - rain.tenancy.mode = shared-row | database;
 - rain.tenancy.origin;
 - rain.tenancy.revalidate;
+- rain.tenancy.magic.enabled = true при rain.tenancy.enabled=true;
+- rain.tenancy.magic.runtime-tasks.<stable-id>.enabled;
+- rain.tenancy.magic.async.executors;
+- rain.tenancy.magic.cache.enabled/cache-names;
+- rain.tenancy.magic.settings.cache-ttl;
 - rain.tenancy.durable-key и retired-durable-keys — environment-only в prod;
 - rain.tenancy.admission;
 - rain.tenancy.control.statement-budget;
@@ -1207,6 +1330,12 @@ rain.tenancy и rain.event регистрируют Presence.OPTIONAL sections.
 
 Cross-section rules:
 
+- `rain.tenancy.mode` deployment-wide: все active tenant descriptors должны соответствовать ему; mixed-mode routing и migration между modes не являются GA behavior;
+- выключение magic убирает route/service advice и built-in runtime tasks, но никогда не убирает authority/RLS/data-plane checks; application тогда использует explicit SDK;
+- каждая enabled runtime task имеет один declared stable id и acyclic dependency graph; disabled required task делает зависимую magic feature unavailable на startup;
+- magic async затрагивает только named `TaskExecutor` beans; unregistered executors, schedulers и foreign thread pools не декорируются молча;
+- tenant cache требует один явно configured provider и namespace policy; global cache name нельзя случайно объявить tenant-aware;
+- каждый stored tenant setting key имеет startup-registered `TenantSettingsSpec`; raw map/config-to-Environment mapping запрещен;
 - pool product/budget согласован;
 - lease renew interval достаточно меньше ttl;
 - durable key обязателен, если jobs/outbox используются;
@@ -1215,6 +1344,7 @@ Cross-section rules:
 - prod не допускает in-memory control plane;
 - migration locations не пересекаются с control-plane schema;
 - receipt retention покрывает job retry+dead-letter/redrive horizon.
+- active projection topology меняется только `projection-split`; property reload/edit не может заменить persisted cover или поднять max member limit без startup validation.
 
 ### 17.3 Event keys
 
@@ -1224,7 +1354,9 @@ Cross-section rules:
 - rain.event.snapshots.enabled/threshold/keep/sweep-batch;
 - rain.event.global.max-xmin-stall;
 - rain.event.projections.required;
-- rain.event.projections.<name>.partitions/page/advance/failure/concurrency/run-budget;
+- rain.event.projections.<name>.topology.max-members/page/advance/failure/concurrency/run-budget;
+- rain.event.projections.<name>.rebuild.read-pace;
+- rain.event.projections.wait.max-deadline/poll-interval;
 - rain.event.projections.<name>.effects;
 - rain.event.projections.<name>.generation;
 - rain.event.realtime-hint.enabled/channel;
@@ -1264,6 +1396,8 @@ Validation сверяет properties с bean declarations и hard ceilings. Не
 - projection_authority_mismatch;
 - projection_capacity;
 - projection_generation_not_ready.
+- projection_contract_drift;
+- projection_topology_invalid.
 
 FaultTranslator не включает key, tenant, payload, JDBC URL, event body или cursor bytes в public detail. Internal logs используют operation id и closed outcome labels.
 
@@ -1281,6 +1415,7 @@ FaultTranslator не включает key, tenant, payload, JDBC URL, event body
 - generation state;
 - failure class;
 - role.
+- declared runtime task id.
 
 Запрещенные tags:
 
@@ -1295,6 +1430,7 @@ FaultTranslator не включает key, tenant, payload, JDBC URL, event body
 Metrics:
 
 - tenant resolve/borrow/open/evict/capacity latency and counts;
+- magic runtime/task enter/close/failure and settings/cache-generation CAS outcomes;
 - open pools, borrowed pools, total configured connection capacity;
 - lifecycle/refusal outcomes;
 - outbox backlog oldest age;
@@ -1302,8 +1438,8 @@ Metrics:
 - stream/global page size;
 - xmin bound age;
 - receipt repeat/collision/unresolved;
-- projection lag/watermark/pass/retry/hold/hole/redrive;
-- generation progress/cutover;
+- projection lag/watermark/pass/retry/hold/hole/redrive/topology-split;
+- generation progress/cutover/effect-barrier;
 - snapshot hit/miss/invalid.
 
 ### 19.2 Health checks
@@ -1328,10 +1464,13 @@ Metrics:
 - tenant-provision;
 - tenant-migrate-one;
 - tenant-migrate-fleet;
+- tenant-settings-get/set;
+- tenant-cache-invalidate;
 - tenant-outbox-reconcile;
 - event-catalogue;
 - event-receipt-resolve;
 - projection-status;
+- projection-split;
 - projection-rebuild;
 - projection-cutover;
 - projection-redrive;
@@ -1344,7 +1483,10 @@ Commands имеют machine-readable stdout, progress на stderr, bounded argum
 | Угроза | Контроль |
 |---|---|
 | forged tenant id in application code | opaque authority-bound scope |
+| magic/custom runtime task bypasses tenancy | task gets only minted scope/runtime, capability restrictions, startup graph validation and contract tests |
+| mutable singleton leaks tenant A into tenant B | no global DataSource/DSLContext/Environment/CacheManager mutation; scoped runtime and concurrent two-tenant tests |
 | header spoofing | application TrustedTenantHeaderVerifier, mismatch refusal |
+| stateful session used under another tenant host | principal/host agreement plus optional rain-access TenantSessionBinding and session-switch tests |
 | confused deputy principal vs host | authoritative candidate agreement |
 | connection reuse after tenant switch | unit/transaction pin before connection |
 | stale job after restore | epoch in signed job context и lookup |
@@ -1361,8 +1503,12 @@ Commands имеют machine-readable stdout, progress на stderr, bounded argum
 | late event skipped by projector | xid settlement cursor |
 | partial projection commit | SameUnit authority and rollback |
 | rebuild sends emails twice | effects suppressed outside active generation |
+| old or retired generation stages an effect | persisted effect barrier plus locking active-generation gate in same Unit |
 | dead letter breaks sequence | ParkSequence |
+| partition scale skips or double-applies a sequence | checked exact cover and durable parent-to-children split |
 | secrets/tenant in telemetry | redaction and low-cardinality rules |
+| cache key or object path crosses tenant boundary | digest+epoch namespace, explicit GlobalCache/GlobalObjectStore, generation invalidation and path traversal refusal |
+| tenant setting changes security/routing | startup-declared typed setting spec; protected keys and control-plane CAS/audit |
 | malicious oversized payload/cursor | byte ceilings before allocation/SQL |
 
 Провести отдельный security review до GA database mode и до GA cross-tenant grants.
@@ -1388,6 +1534,13 @@ Commands имеют machine-readable stdout, progress на stderr, bounded argum
 - nested same scope, different scope, unbind/rebind, suspended outer transaction;
 - Clock-driven grant expiry/key rotation;
 - resolver precedence/mismatch/no fallback;
+- application `TenantResolutionSource` order/replacement preserves provenance and can never mint a scope;
+- tenant/central/universal route matrix, including malformed/conflicting candidate never falling through to central;
+- stateful session binding, allowed multi-tenant membership and host/session switch refusal;
+- TenantRuntimeTask duplicate id/dependency/cycle/replacement validation, enter order and reverse close after success, exception, cancellation and nested runtime;
+- custom task capability refusal: no raw scope mint, operation widening or global singleton mutation;
+- TenantSettingsSpec codec/bounds/default/protected-key validation and settings/cache-generation CAS/idempotency;
+- TenantCache namespace contains digest+epoch+generation, GlobalCache stays explicit, and TenantObjectStore rejects traversal/prefix escape;
 - host IPv4/IPv6/IDN/port/trailing-dot/forwarded policy;
 - closed error rendering;
 - configuration problem aggregation;
@@ -1402,6 +1555,10 @@ Commands имеют machine-readable stdout, progress на stderr, bounded argum
 - direct DSL outside TenantDataPlane sees none/refuses writes;
 - transaction tenant-switch exploit is refused before SQL;
 - lifecycle flips between resolve and borrow;
+- `@TenantRead`/`@TenantWrite` advice opens the correct single unit while ordinary `@Transactional` remains control-plane; explicit SDK yields the same contract;
+- two simultaneous tenant requests/jobs prove runtime task/cache/settings state never crosses through Spring singletons;
+- named TaskExecutor propagation restores/clears scope while unregistered executor stays unscoped;
+- central, tenant and universal servlet routes have the declared data-plane access and no central fallback on a bad tenant candidate;
 - two physically separate PostgreSQL databases;
 - wrong URL/secret points at other tenant and fence refuses;
 - one tenant database outage leaves other tenant usable;
@@ -1410,8 +1567,9 @@ Commands имеют machine-readable stdout, progress на stderr, bounded argum
 - total connection budget never exceeded;
 - credential rotation while borrower runs;
 - restore epoch invalidates pool/job/cache/event namespace;
-- provisioning crash at every step resumes once;
+- provisioning crash at every built-in/custom step resumes once; custom prerequisite blocks activation and after-commit lifecycle listener cannot alter transition;
 - fleet migration two databases, partial failure, lease takeover и resume;
+- TenantFleet accepts only grant-bound cohort and returns resumable partial outcomes; arbitrary all-tenant iteration is unavailable;
 - control mutation rolls audit back together;
 - prod refuses in-memory registry.
 
@@ -1426,6 +1584,7 @@ Commands имеют machine-readable stdout, progress на stderr, bounded argum
 ### 21.4 Durable job tests
 
 - context capture exact bytes;
+- INHERIT captures a current scope and remains central without one; REQUIRED refuses missing scope; CENTRAL never captures one;
 - token tamper in tenant/epoch/definition/invocation/payload;
 - token transplant;
 - current+retired key rotation;
@@ -1451,6 +1610,7 @@ Sections:
 - receipts;
 - snapshots;
 - projections/checkpoints;
+- exact covers, topology handoff and retired-partition refusal;
 - park/redrive;
 - generations/effects;
 - close/lifecycle.
@@ -1470,6 +1630,7 @@ Fuzz/property tests:
 - encoded payload ownership/copying;
 - receipt fingerprints;
 - arbitrary interleavings append/read.
+- aggregate fixture scenarios: given facts / typed decision / exact emitted facts, deterministic time/id/random and no-write failure.
 
 ### 21.6 Event PostgreSQL integration tests
 
@@ -1503,7 +1664,10 @@ Global walk:
 - SAME_UNIT crash after claim, during first/middle/last handler write, before commit;
 - competing workers: loser handler never runs;
 - different destination database refused before handler;
+- handler has no append-capable store/repository and a read-only log wrapper rejects append;
+- retrying `Unit` is refused before handler can run twice; outer retry rolls back and redelivers the full page;
 - AFTER_APPLY duplicate window is observed and documented;
+- `ProjectionWaiter` reaches a durable mark across a full cover, wakes early on hint, and returns typed timeout/halt/park without holding a transaction;
 - lost LISTEN notification still polls;
 - transient retry leaves checkpoint;
 - permanent halt;
@@ -1514,8 +1678,12 @@ Global walk:
 - queue byte/count limit halts;
 - rebuild with simultaneous live events;
 - barrier does not complete on unsettled empty page;
+- cover with gap/overlap/foreign hasher is refused; every sample key maps exactly once;
+- split writes two child cursors and parent retirement atomically; live parent/child and an old deployment resuming parent are refused;
+- contract-revision drift cannot advance checkpoint without explicit generation/rebuild;
 - cutover CAS, failed validation, rollback;
-- effects only active generation;
+- effects only active generation, are suppressed through durable `effect_after_position`, and cutover races cannot commit an effect from retired generation;
+- paced rebuild cannot monopolize log reads while live generation makes progress;
 - retired cleanup bounded.
 
 ### 21.8 Tenancy-event tests
@@ -1557,11 +1725,12 @@ Set maximum touched rows and plan nodes. A plan proof uses ANALYZE only in integ
 
 Добавить:
 
-- docs/adr/0004-explicit-tenant-data-plane.md;
+- docs/adr/0004-magic-tenant-runtime-and-explicit-escape-hatch.md;
 - docs/adr/0005-event-store-and-global-order.md;
 - docs/adr/0006-projection-delivery-semantics.md;
 - docs/adr/0007-no-destructive-event-archive.md;
 - docs/concepts/tenancy-authority.md;
+- docs/concepts/tenant-runtime.md;
 - docs/concepts/event-sourcing.md;
 - docs/modules/tenancy.md;
 - docs/modules/event.md;
@@ -1571,6 +1740,7 @@ Set maximum touched rows and plan nodes. A plan proof uses ANALYZE only in integ
 - docs/runbooks/tenant-restore-and-epoch.md;
 - docs/runbooks/event-xmin-stall.md;
 - docs/runbooks/projection-park-redrive.md;
+- docs/runbooks/projection-topology-split.md;
 - docs/runbooks/event-uncertain-outcome.md;
 - обновления port-inventory, dependency-notes, getting-started и README.
 
@@ -1578,12 +1748,18 @@ Set maximum touched rows and plan nodes. A plan proof uses ANALYZE only in integ
 
 - guarantee matrix, а не только API;
 - diagrams request → authority → data plane и append → log → projection → effect;
+- magic-first route/service/job/cache/settings path next to its exact low-level equivalent;
+- CentralRoute, TenantRoute and UniversalRoute examples, including stateful-session and principal/host mismatch outcomes;
+- runtime task authoring/replacement, lifecycle provisioning step and TenantFleet cookbook;
 - полный configuration example;
 - copy-paste aggregate/fact/service/projection;
 - shared-row RLS migration example;
 - database-per-tenant secret/fence example;
 - rolling codec upgrade;
+- aggregate fixture `given / when / then` example;
 - projection rebuild/cutover;
+- projection cover/split, durable effect barrier and rebuild pacing;
+- async read-your-writes через `ProjectionMark`/`ProjectionWaiter`, включая explicit limit его guarantees;
 - uncertain receipt reconciliation;
 - failure injection recipes;
 - список unsupported promises.
@@ -1597,6 +1773,9 @@ samples/rain-sample:
 - external notification через staged job;
 - projection rebuild command;
 - tenant suspend/restore demonstration.
+- `@TenantWrite` service plus one explicit `TenantDataPlane` escape-hatch example with identical outcome;
+- tenant-aware inherited job, required job and central job examples;
+- tenant cache/settings generation invalidation and one custom runtime/provisioning task.
 
 Database-per-tenant scenario дать отдельным documented sample profile или новым sample только если verifyDocsCoverage и compose остаются поддерживаемыми. Он поднимает control PostgreSQL плюс две tenant databases и показывает outage/restore.
 
@@ -1612,16 +1791,17 @@ samples/rain-sample-minimal не подключает новые модули и
 
 - новые ADR и module docs skeleton;
 - package-level contract docs;
-- test inventory с IDs T1..T14 и E1..E18.
+- test inventory с IDs T1..T14, E1..E23 и M1..M6.
 
 Работа:
 
 1. Зафиксировать terminology и guarantee matrix.
 2. Утвердить module graph и public package roots.
-3. Зафиксировать PostgreSQL minimum version для xid8.
+3. Добавить PostgreSQL 14 и pinned `postgres:18` в compatibility matrix, schema verifier и adapter integration suite.
 4. Зафиксировать hard limits и public fault codes.
-5. Создать threat model и rollout compatibility table.
-6. Написать compile-only API examples до implementation.
+5. Зафиксировать magic runtime task ids, built-in dependency graph, magic/low-level equivalence и protected settings keys.
+6. Создать threat model и rollout compatibility table.
+7. Написать compile-only magic и low-level API examples до implementation.
 
 Exit:
 
@@ -1693,15 +1873,17 @@ Exit:
 Работа:
 
 1. Реализовать resolution/scope/admission/origin binding.
-2. Реализовать context pin и propagation adapters.
-3. Реализовать closed lifecycle command graph.
-4. Реализовать JDBC control plane, operation receipt и audit atomicity.
-5. Реализовать grants и redaction.
-6. Добавить dev/test in-memory implementation только через explicit bean.
+2. Реализовать scoped `TenantRuntime`, `TenantRuntimeTask` graph, low-level `with(scope)`/`TenantFleet` contracts и их startup validation.
+3. Реализовать context pin и propagation adapters.
+4. Реализовать closed lifecycle command graph, runtime state/settings/cache-generation commands.
+5. Реализовать JDBC control plane, operation receipt и audit atomicity.
+6. Реализовать grants и redaction.
+7. Добавить dev/test in-memory implementation только через explicit bean.
 
 Exit:
 
 - lifecycle/security tests green;
+- magic runtime task failures/reverse cleanup and low-level equivalence tests green;
 - prod configuration cannot select memory fallback;
 - no raw credentials/control upsert API.
 
@@ -1709,16 +1891,19 @@ Exit:
 
 Работа:
 
-1. Route tenancy declarations и startup surface verification.
-2. Principal/host/trusted-header resolver pipeline.
-3. Shared-row TenantDataPlane, SET LOCAL и RLS verifier.
-4. Database directory, secret SPI, pool budgets, leases и source fence.
-5. Tenant migration catalogue/one-tenant command.
-6. Two-database integration and failure rehearsals.
+1. Central/Tenant/Universal route declarations и startup surface verification.
+2. Principal/host/trusted-header resolver pipeline и stateful session binding adapter.
+3. `@TenantRead`/`@TenantWrite` service advice, selected executor propagation и runtime task wiring.
+4. Shared-row TenantDataPlane, SET LOCAL и RLS verifier.
+5. Database directory, secret SPI, pool budgets, leases и source fence.
+6. TenantCache, typed TenantSettings и TenantObjectStore port/test kit.
+7. Tenant migration catalogue/one-tenant command.
+8. Two-database integration and failure rehearsals.
 
 Exit:
 
 - transaction-switch exploit test fails before SQL;
+- magic route/service/cache/settings behavior is equivalent to its scoped SDK and cannot cross concurrent tenant requests;
 - shared-row direct bypass tests fail closed;
 - two DB isolation/outage/restore green;
 - connection budget test never exceeds configured maximum.
@@ -1728,11 +1913,11 @@ Exit:
 Работа:
 
 1. Добавить neutral DurableJobContextProvider и migrations в rain-jobs.
-2. Реализовать signed tenant job provider и key rotation.
+2. Реализовать signed tenant job provider, INHERIT/REQUIRED/CENTRAL modes и key rotation.
 3. Добавить PartitionPermit.
 4. Добавить AuditScopeContributor/migration/query narrowing.
 5. Реализовать tenant-local outbox, central delivery receipt и relay.
-6. Реализовать provisioning/fleet migration state machines.
+6. Реализовать custom provisioning steps, after-commit lifecycle notifications и provisioning/fleet migration state machines.
 
 Exit:
 
@@ -1741,19 +1926,21 @@ Exit:
 - tamper/transplant/stale job tests green;
 - relay crash matrix green;
 - fleet partial failure resumes.
+- custom lifecycle task cannot activate early or mutate a committed transition.
 
 ### Phase 6 — projections и snapshots
 
 Работа:
 
 1. Projection declaration/catalog/checkpoint schema.
-2. SAME_UNIT и AFTER_APPLY engines.
-3. Worker scheduling through rain-jobs и optional realtime hint.
-4. ParkSequence/redrive/hole.
-5. Generations/barrier/cutover/rollback.
-6. Effect staging.
-7. Snapshot codecs/store/verification.
-8. Projection conformance/defect suites.
+2. Projection exact-cover/one-way Split protocol and contract-revision drift checks.
+3. SAME_UNIT и AFTER_APPLY engines, including read-only projector capability, no retry-inside-Unit guard и `ProjectionMark`/bounded waiter.
+4. Worker scheduling through rain-jobs, rebuild read pacing и optional realtime hint.
+5. ParkSequence/redrive/hole.
+6. Generations/barrier/cutover/rollback.
+7. Persisted effect barrier and locking active-generation effect gate.
+8. Snapshot codecs/store/verification and typed aggregate fixture.
+9. Projection conformance/defect suites.
 
 Exit:
 
@@ -1761,6 +1948,7 @@ Exit:
 - authority mismatch cannot run handler;
 - rebuild never mutates live generation;
 - external effects absent during rebuild;
+- exact cover/split and effect-barrier race tests green;
 - lost notifications do not stall correctness.
 
 ### Phase 7 — tenancy-event composition
@@ -1785,7 +1973,7 @@ Exit:
 
 Работа:
 
-1. Samples, full docs, runbooks и configuration tables.
+1. Samples, full docs, runbooks и configuration tables, including magic-first and low-level escape-hatch paths.
 2. Metrics/health dashboards examples.
 3. Fault/redaction snapshot tests.
 4. 10M/100M performance and vacuum report.
@@ -1866,9 +2054,11 @@ Exit:
 
 Работа считается завершенной только если:
 
-- выполнены T1..T14 и E1..E18 с тестами;
+- выполнены T1..T14, E1..E23 и M1..M6 с тестами;
 - optionality доказана minimal sample;
 - shared-row и database-per-tenant прошли isolation/outage/restore drills;
+- magic route/service/job/cache/settings flows проходят те же contracts, что и scoped low-level SDK, а custom runtime tasks не могут изменить global Spring state;
+- runtime task/provisioning extension graphs, reverse cleanup и custom failure paths покрыты;
 - event memory и PostgreSQL implementations проходят один conformance suite;
 - deliberately broken implementations подтверждают чувствительность suite;
 - все growing-table operations bounded и имеют plan proof;
