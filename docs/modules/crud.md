@@ -36,6 +36,7 @@ The query model (`com.gd.rain.crud.query`), the resource (`com.gd.rain.crud`) an
 | Bean | What it is |
 |---|---|
 | `rainCrudErrorCodes` | the catalog `RainCrudErrorCodes` |
+| `crudDatabaseViolationMapper` | lowest-precedence `DatabaseViolationMapper`; exact PostgreSQL schema/table/column provenance becomes a wire field only when every matching resource agrees |
 
 rain-crud declares no resource and mounts no route. A resource is the application's bean, declared where its table is,
 and its routes are the application's request mappings.

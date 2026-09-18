@@ -40,8 +40,10 @@ one `ProblemRenderer`, so the same refusal is the same bytes wherever it happene
   | `INTERNAL` | 500 | `internal` |
   | `RETRYABLE` | 503 | `unavailable` |
 
-- **`Violation`** — one thing wrong with the input: a path of steps (rendered as an RFC 6901 JSON pointer), a code
-  and an optional message. A `VALIDATION` fault without violations cannot be constructed.
+- **`Violation`** — one thing wrong with the input or stored state: a path of steps (rendered as an RFC 6901 JSON
+  pointer), a code, an optional message and bounded typed presentation parameters. Parameters are server-side message
+  inputs; they are never copied into the problem body without an explicit localization binding. A `VALIDATION` fault
+  without violations cannot be constructed.
 - **`ErrorCode`** — `^[a-z][a-z0-9_]{0,63}$` with a default message.
 
 ```kotlin
@@ -76,6 +78,8 @@ client as is: it renders as `500 internal`, and the unregistered code is logged.
 - `type` is `about:blank`, `title` is the status's reason phrase, `detail` is the fault's detail.
 - `errors` is present only when the fault names violations; sorted deterministically, at most 100 entries, each
   `{pointer, code, message}` (the code's default message when the violation has none).
+- violation parameters are not protocol fields. They participate in deterministic ordering and are rendered only
+  through a declared `ViolationMessageBinding`.
 - `partial: true` is present when the fault said its violations are partial or when violations were cut at 100.
 - `Retry-After` is sent **only** when the fault carries `retryAfter` (whole seconds, rounded up). Only `RETRYABLE`
   and `TOO_MANY_REQUESTS` may carry one; nothing invents a delay.
@@ -95,6 +99,14 @@ status outside the table is not guessed at — it renders as `500 unmapped_statu
 
 Two refusals take precedence over whatever Spring chose: a request whose budget ran out is `503 deadline_exceeded`,
 and a request whose body went over `rain.web.body-limit` is `413 too_large`.
+
+Bean Validation field errors keep their Spring property path and map standard Jakarta constraints to stable codes:
+`NotNull`/`NotBlank`/`NotEmpty` to `required`, `Email`/`Pattern`/`Digits` and binding failures to `invalid_format`,
+numeric/date bounds to `out_of_range`, and an over-maximum `Size` to `too_long`. Known constraint attributes (`min`,
+`max`, `inclusive`, `integer`, `fraction`) become closed typed parameters for localization. An ordered
+`ValidationViolationMapper` bean may replace one decision; it sees no rejected value, only the path, constraint,
+bounded parameters, message, binding-failure flag and, where applicable, the value's size. A mapper that declines or
+fails leaves the next mapper and then the safe standard mapping in place.
 
 ## Data access
 
@@ -123,3 +135,10 @@ is 409 `unique`.
 
 A state that is not in the table (including 42P01 undefined_table and 42703 undefined_column, which mean the schema
 and the code disagree) is not classified: the fault is 500 `internal` and the cause is logged.
+
+For an integrity or data refusal, `rain-persistence` also reads PostgreSQL's structured schema, table, column and
+constraint fields. They never enter a problem body. Ordered `DatabaseViolationMapper` beans may turn that internal
+`DatabaseError` into a public path/domain code; the first answer wins, and a mapper failure continues to the next
+mapper or the general safe refusal. `rain-crud` contributes the lowest-precedence mapper: when exact
+schema/table/column provenance resolves through all matching `ResourceSchema`s to one wire field, it supplies that
+field's path. It declines constraint-name inference and ambiguous resource mappings.

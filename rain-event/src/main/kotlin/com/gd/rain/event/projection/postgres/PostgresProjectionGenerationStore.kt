@@ -100,6 +100,14 @@ public class PostgresProjectionGenerationStore(
     override fun active(projection: ProjectionName): ProjectionGenerationRecord? =
         dsl.fetchOne(FETCH_ACTIVE, projection.text())?.let(::record)
 
+    override fun runnable(
+        projection: ProjectionName,
+        limit: Int,
+    ): List<ProjectionGenerationRecord> {
+        require(limit in 1..MAX_RUNNABLE_GENERATIONS) { "projection runnable generation limit is outside 1..$MAX_RUNNABLE_GENERATIONS" }
+        return dsl.fetch(FETCH_RUNNABLE, projection.text(), limit).map(::record)
+    }
+
     override fun markReady(
         plan: ProjectionGenerationPlan,
         cover: ProjectionCover,
@@ -289,6 +297,14 @@ public class PostgresProjectionGenerationStore(
               ON generation.projection_name = catalog.projection_name AND generation.generation = catalog.active_generation
             WHERE catalog.projection_name = ?
             """
+        const val FETCH_RUNNABLE: String = """
+            SELECT projection_name, generation, log_id, contract_revision, topology_fingerprint, source_position,
+                   barrier_position, effect_policy, effect_after_position, state, created_at, cutover_at, retired_at
+            FROM rain_event.projection_generation
+            WHERE projection_name = ? AND state IN ('building', 'active')
+            ORDER BY generation
+            LIMIT ?
+            """
         const val CHECKPOINTS: String = """
             SELECT partition_depth, partition_prefix, log_id, contract_revision, topology_fingerprint, cursor_position
             FROM rain_event.projection_checkpoint WHERE projection_name = ? AND generation = ?
@@ -331,5 +347,6 @@ public class PostgresProjectionGenerationStore(
             WHERE catalog.projection_name = ?
             FOR KEY SHARE OF catalog
             """
+        const val MAX_RUNNABLE_GENERATIONS: Int = 128
     }
 }

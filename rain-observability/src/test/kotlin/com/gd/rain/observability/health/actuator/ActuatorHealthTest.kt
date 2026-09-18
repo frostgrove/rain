@@ -107,6 +107,15 @@ class HealthContributionStatusTest {
         }
     }
 
+    @Test
+    fun `a contribution without a code does not publish an empty Actuator detail`() {
+        registryOf(failing("database", code = null)).use {
+            val details = HealthContributionIndicator(it.contributions().single(), it).health().details
+
+            assertThat(details).doesNotContainKey("code").containsEntry("importance", "required")
+        }
+    }
+
     private fun statusOf(contribution: HealthContribution): Status =
         registryOf(contribution).use { HealthContributionIndicator(contribution, it).health().status }
 }

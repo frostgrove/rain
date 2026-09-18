@@ -8,6 +8,7 @@ import com.gd.rain.core.id.IdGenerator
 import com.gd.rain.persistence.LockProperties
 import com.gd.rain.persistence.PersistenceProperties
 import com.gd.rain.persistence.fault.DataAccessFaultTranslator
+import com.gd.rain.persistence.fault.DatabaseViolationMapper
 import com.gd.rain.persistence.id.UuidV7Ids
 import com.gd.rain.persistence.jdbc.StatementTimeout
 import com.gd.rain.persistence.jdbc.StatementTimeoutAgreementCheck
@@ -52,7 +53,8 @@ public class RainPersistenceAutoConfiguration {
         TransactionRetry(properties.retry.attempts, properties.retry.initialDelay, properties.retry.maxDelay)
 
     @Bean
-    public fun dataAccessFaultTranslator(): FaultTranslator = DataAccessFaultTranslator
+    public fun dataAccessFaultTranslator(mappers: ObjectProvider<DatabaseViolationMapper>): FaultTranslator =
+        FaultTranslator { failure -> DataAccessFaultTranslator.translate(failure, mappers.orderedStream().toList()) }
 
     @Bean
     public fun statementTimeout(properties: PersistenceProperties): StatementTimeout = StatementTimeout(properties.statementTimeout)

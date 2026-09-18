@@ -29,8 +29,9 @@ receives `Retired`; it cannot recreate or resume the parent checkpoint. Verify b
 cursor and that the durable live members equal the new exact cover.
 
 `Busy(retryAt)` means the parent still has a live lease. `Blocked` reports the bounded counts of holds, holes and
-halts that must be resolved. `ParentMissing`, `ParentRetired` and `ContractDrift` are not retry signals: reload durable
-topology and reconcile the caller's declaration or deployment before taking another action.
+halts that must be resolved. `ParentMissing` and `ContractDrift` are not retry signals: reload durable topology and
+reconcile the caller's declaration or deployment before taking another action. A repeated command with the old
+pre-split declaration is deliberately `ContractDrift`, because the durable generation fingerprint has changed.
 
 ## Never do this manually
 

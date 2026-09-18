@@ -15,6 +15,7 @@ import com.gd.rain.web.config.MultipartLimitsCheck
 import com.gd.rain.web.config.RainWebProperties
 import com.gd.rain.web.error.RainErrorController
 import com.gd.rain.web.error.RainExceptionHandler
+import com.gd.rain.web.error.ValidationViolationMapper
 import com.gd.rain.web.filter.BodyLimitFilter
 import com.gd.rain.web.filter.CrossSiteFilter
 import com.gd.rain.web.filter.ProbeOnlyFilter
@@ -100,7 +101,8 @@ public class RainWebErrorAutoConfiguration {
             renderer: ProblemRenderer,
             statuses: StatusTable,
             translators: ObjectProvider<FaultTranslator>,
-        ): RainExceptionHandler = RainExceptionHandler(renderer, statuses, translators)
+            validationMappers: ObjectProvider<ValidationViolationMapper>,
+        ): RainExceptionHandler = RainExceptionHandler(renderer, statuses, translators, validationMappers)
 
         @Bean
         @ConditionalOnMissingBean(ErrorController::class)

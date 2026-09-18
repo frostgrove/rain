@@ -96,6 +96,11 @@ class ProjectionWaiterTest {
 
         override fun active(projection: ProjectionName): ProjectionGenerationRecord? = if (projection == plan.projection) record else null
 
+        override fun runnable(
+            projection: ProjectionName,
+            limit: Int,
+        ): List<ProjectionGenerationRecord> = emptyList()
+
         override fun markReady(
             plan: ProjectionGenerationPlan,
             cover: ProjectionCover,

@@ -13,6 +13,7 @@ dependencies {
     api("org.springframework.boot:spring-boot-jackson")
     implementation("org.springframework.boot:spring-boot-servlet")
     implementation("org.slf4j:slf4j-api")
+    implementation("jakarta.validation:jakarta.validation-api")
 
     // The servlet API is the container's; rain-web does not choose one for the application.
     compileOnly("jakarta.servlet:jakarta.servlet-api")

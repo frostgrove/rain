@@ -71,7 +71,8 @@ public data class ProjectionTopologyRetirement(
     public val retiredAt: Instant,
 ) {
     init {
-        require(firstChild in parent.split().toList() && secondChild in parent.split().toList() && firstChild != secondChild) {
+        val children = parent.split()
+        require(setOf(firstChild, secondChild) == setOf(children.first, children.second)) {
             "projection topology retirement children do not exactly split their parent"
         }
         require(parentFence > 0) { "projection topology retirement parent fence is positive" }
@@ -107,8 +108,6 @@ public sealed interface ProjectionTopologySplit {
     ) : ProjectionTopologySplit
 
     public data object ParentMissing : ProjectionTopologySplit
-
-    public data object ParentRetired : ProjectionTopologySplit
 
     public data object ContractDrift : ProjectionTopologySplit
 }

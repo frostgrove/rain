@@ -3,12 +3,19 @@ package com.gd.rain.web.error
 import com.gd.rain.core.error.Fault
 import com.gd.rain.core.error.FaultTranslator
 import com.gd.rain.core.error.PathStep
+import com.gd.rain.core.error.RainErrorCodes
+import com.gd.rain.core.error.Violation
 import com.gd.rain.web.mockMvcOf
 import com.gd.rain.web.problem
 import com.gd.rain.web.problem.ProblemWriter
 import com.gd.rain.web.problemCode
 import com.gd.rain.web.webRunner
+import io.mockk.every
+import io.mockk.mockk
 import jakarta.servlet.RequestDispatcher
+import jakarta.validation.ConstraintViolation
+import jakarta.validation.constraints.Size
+import jakarta.validation.metadata.ConstraintDescriptor
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.webmvc.autoconfigure.error.BasicErrorController
@@ -29,6 +36,11 @@ import java.time.Duration
 
 /** The handler's order of decisions, the error dispatch, and one set of bytes for both MVC and filters. */
 class RainExceptionHandlerTest {
+    private class Sized(
+        @field:Size(min = 1, max = 3)
+        val name: String,
+    )
+
     @RestController
     class Failures {
         @GetMapping("/fault")
@@ -96,6 +108,77 @@ class RainExceptionHandlerTest {
                 )
             assertThat((0 until errors.size()).map { errors[it]["code"].asString() }).containsOnly("check")
         }
+    }
+
+    @Test
+    fun `standard Jakarta constraints keep machine codes and bounded typed parameters`() {
+        val result = MapBindingResult(mutableMapOf<String, Any>(), "form")
+        result.addError(FieldError("form", "email", "", false, arrayOf("NotBlank.form.email"), emptyArray(), "must not be blank"))
+        result.addError(FieldError("form", "backup", "bad", false, arrayOf("Email.form.backup"), emptyArray(), "must be an email"))
+        val size = FieldError("form", "name", "four", false, arrayOf("Size.form.name"), emptyArray(), "size must be at most 3")
+        val descriptor = mockk<ConstraintDescriptor<Size>>()
+        every { descriptor.annotation } returns Sized::class.java.getDeclaredField("name").getAnnotation(Size::class.java)
+        every { descriptor.attributes } returns mapOf("min" to 1, "max" to 3)
+        val constraint = mockk<ConstraintViolation<Any>>()
+        every { constraint.constraintDescriptor } returns descriptor
+        size.wrap(constraint)
+        result.addError(size)
+
+        val fault = FieldViolations.faultOf(result, IllegalArgumentException("invalid"))
+        val byPointer = fault.violations.associateBy(Violation::pointer)
+
+        assertThat(byPointer.getValue("/email").code).isEqualTo(RainErrorCodes.REQUIRED)
+        assertThat(byPointer.getValue("/backup").code).isEqualTo(RainErrorCodes.INVALID_FORMAT)
+        assertThat(byPointer.getValue("/name").code).isEqualTo(RainErrorCodes.TOO_LONG)
+        assertThat(byPointer.getValue("/name").parameters.integer("min")).isEqualTo(1)
+        assertThat(byPointer.getValue("/name").parameters.integer("max")).isEqualTo(3)
+    }
+
+    @Test
+    fun `an ordered validation mapper replaces one decision without replacing the handler`() {
+        val result = MapBindingResult(mutableMapOf<String, Any>(), "form")
+        result.addError(FieldError("form", "email", "bad", false, arrayOf("Email.form.email"), emptyArray(), "must be an email"))
+        val mapper =
+            ValidationViolationMapper { failure ->
+                if (failure.constraint?.endsWith("Email") == true) {
+                    Violation.at(failure.path, RainErrorCodes.INVALID_ENUM, "application mapping")
+                } else {
+                    null
+                }
+            }
+
+        val fault = FieldViolations.faultOf(result, IllegalArgumentException("invalid"), listOf(mapper))
+
+        assertThat(fault.violations.single().code).isEqualTo(RainErrorCodes.INVALID_ENUM)
+        assertThat(fault.violations.single().message).isEqualTo("application mapping")
+    }
+
+    @Test
+    fun `validation mapper beans are used by the contributed exception handler`() {
+        val mapper =
+            ValidationViolationMapper { failure ->
+                if (failure.path == listOf(PathStep.Name("name"))) {
+                    Violation.at(failure.path, RainErrorCodes.INVALID_ENUM, "application mapping")
+                } else {
+                    null
+                }
+            }
+
+        webRunner()
+            .withUserConfiguration(Failures::class.java)
+            .withBean(ValidationViolationMapper::class.java, { mapper })
+            .run { context ->
+                val errors =
+                    mockMvcOf(context)
+                        .perform(post("/invalid"))
+                        .andReturn()
+                        .response
+                        .problem()["errors"]
+                val codes = (0 until errors.size()).associate { errors[it]["pointer"].asString() to errors[it]["code"].asString() }
+
+                assertThat(codes["/name"]).isEqualTo("invalid_enum")
+                assertThat(codes["/items/0/email"]).isEqualTo("check")
+            }
     }
 
     @Test

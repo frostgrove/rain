@@ -46,8 +46,10 @@ public class RainExceptionHandler(
     private val renderer: ProblemRenderer,
     private val statuses: StatusTable,
     translators: ObjectProvider<FaultTranslator>,
+    validationMappers: ObjectProvider<ValidationViolationMapper>,
 ) : ResponseEntityExceptionHandler() {
     private val translators: List<FaultTranslator> by lazy { translators.orderedStream().toList() }
+    private val validationMappers: List<ValidationViolationMapper> by lazy { validationMappers.orderedStream().toList() }
 
     @ExceptionHandler(Fault::class)
     public fun handleFault(
@@ -66,7 +68,8 @@ public class RainExceptionHandler(
         headers: HttpHeaders,
         status: HttpStatusCode,
         request: WebRequest,
-    ): ResponseEntity<Any>? = respond(transportRefusal(request) ?: FieldViolations.faultOf(ex.bindingResult, ex), request = request)
+    ): ResponseEntity<Any>? =
+        respond(transportRefusal(request) ?: FieldViolations.faultOf(ex.bindingResult, ex, validationMappers), request = request)
 
     override fun handleExceptionInternal(
         ex: Exception,
@@ -120,21 +123,43 @@ public class RainErrorController(
 
 /**
  * Bean validation failures as violations: one per field error, pointing at the field, plus one general
- * violation per object error, each with code `check` and the constraint's message.
+ * violation per object error. Ordered targeted mappers answer first; the standard Jakarta mapping is
+ * the total fallback.
  */
 public object FieldViolations {
     public fun faultOf(
         result: BindingResult,
         cause: Throwable,
+        mappers: List<ValidationViolationMapper> = emptyList(),
     ): Fault {
         val violations =
-            result.fieldErrors.map { Violation.at(FieldPaths.parse(it.field), RainErrorCodes.CHECK, usable(it.defaultMessage)) } +
-                result.globalErrors.map { Violation.general(RainErrorCodes.CHECK, usable(it.defaultMessage)) }
+            result.fieldErrors.map { mapped(ValidationFailures.of(it), mappers) } +
+                result.globalErrors.map { mapped(ValidationFailures.of(it), mappers) }
         val named = violations.ifEmpty { listOf(Violation.general(RainErrorCodes.VALIDATION_FAILED)) }
         return Fault(FaultKind.VALIDATION, violations = named, cause = cause)
     }
 
-    private fun usable(message: String?): String? = message?.takeIf(Violation::isValidMessage)
+    private fun mapped(
+        failure: ValidationFailure,
+        mappers: List<ValidationViolationMapper>,
+    ): Violation {
+        for (mapper in mappers) {
+            try {
+                mapper.map(failure)?.let { return it }
+            } catch (mapperFailure: RuntimeException) {
+                log
+                    .atWarn()
+                    .setMessage("a validation violation mapper failed; the next mapper or standard mapping is used")
+                    .addKeyValue("mapper", mapper.javaClass.name)
+                    .addKeyValue("constraint", failure.constraint)
+                    .setCause(mapperFailure)
+                    .log()
+            }
+        }
+        return StandardValidationViolationMapper.map(failure)
+    }
+
+    private val log = org.slf4j.LoggerFactory.getLogger(FieldViolations::class.java)
 }
 
 /**

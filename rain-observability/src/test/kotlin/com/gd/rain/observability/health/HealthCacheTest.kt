@@ -7,6 +7,7 @@ import java.time.Duration
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 
 /** The freshness window and the shared flight: scrapes inside one window cost one evaluation. */
@@ -51,6 +52,9 @@ class HealthCacheTest {
             val first = threads.submit<Int> { cache.get() }
             check(arrived.await(5, TimeUnit.SECONDS)) { "the first pass never started" }
             val joined = threads.submit<Int> { cache.get() }
+
+            assertThatThrownBy { joined.get(250, TimeUnit.MILLISECONDS) }.isInstanceOf(TimeoutException::class.java)
+            assertThat(passes).hasValue(1)
             release.countDown()
 
             assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo(1)

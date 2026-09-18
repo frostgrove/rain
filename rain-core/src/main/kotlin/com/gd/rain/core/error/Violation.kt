@@ -30,7 +30,7 @@ public fun path(vararg steps: Any): List<PathStep> =
 public enum class ViolationOrigin { INPUT, STATE }
 
 /**
- * One thing wrong with a request.
+ * One thing wrong with a request or the state it met.
  *
  * A violation with a [path] points at a member of the request (rendered as an RFC 6901 pointer); one
  * without points at the request as a whole.
@@ -40,6 +40,7 @@ public data class Violation(
     public val code: ErrorCode,
     public val message: String? = null,
     public val origin: ViolationOrigin = ViolationOrigin.INPUT,
+    public val parameters: ViolationParameters = ViolationParameters.EMPTY,
 ) {
     init {
         require(message == null || isValidMessage(message)) {
@@ -56,13 +57,17 @@ public data class Violation(
         public fun general(
             code: ErrorCode,
             message: String? = null,
-        ): Violation = Violation(code = code, message = message)
+            parameters: ViolationParameters = ViolationParameters.EMPTY,
+            origin: ViolationOrigin = ViolationOrigin.INPUT,
+        ): Violation = Violation(code = code, message = message, origin = origin, parameters = parameters)
 
         public fun at(
             path: List<PathStep>,
             code: ErrorCode,
             message: String? = null,
-        ): Violation = Violation(path = path, code = code, message = message)
+            parameters: ViolationParameters = ViolationParameters.EMPTY,
+            origin: ViolationOrigin = ViolationOrigin.INPUT,
+        ): Violation = Violation(path = path, code = code, message = message, origin = origin, parameters = parameters)
 
         public fun isValidMessage(message: String): Boolean =
             message.isNotEmpty() && message.toByteArray(Charsets.UTF_8).size <= MAX_MESSAGE_BYTES
@@ -77,8 +82,8 @@ public data class Violation(
 
         /**
          * A total order, so two faults assembled in a different sequence render the same bytes: by path
-         * (a prefix before its extensions, names before indexes at the same depth), then origin, code and
-         * message.
+         * (a prefix before its extensions, names before indexes at the same depth), then origin, code,
+         * message and typed presentation parameters.
          */
         public val ORDER: Comparator<Violation> =
             Comparator { first, second ->
@@ -87,7 +92,8 @@ public data class Violation(
                     byPath != 0 -> byPath
                     first.origin != second.origin -> first.origin.compareTo(second.origin)
                     first.code.value != second.code.value -> first.code.value.compareTo(second.code.value)
-                    else -> (first.message ?: "").compareTo(second.message ?: "")
+                    first.message != second.message -> (first.message ?: "").compareTo(second.message ?: "")
+                    else -> first.parameters.compareTo(second.parameters)
                 }
             }
 

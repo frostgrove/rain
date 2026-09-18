@@ -44,28 +44,104 @@
 - Обновлены `docs/modules/event.md`, `docs/modules/event-test.md` и новый
   `docs/runbooks/projection-park-redrive.md`.
 
+## Durable topology/split continuation
+
+- Добавлены public topology declaration/store contracts, durable live/retired member lineage и bounded split
+  blockers. Topology declaration связывает checked cover с contract fingerprint до первого SQL statement.
+- V7 создаёт `projection_topology`, members и retirement records. Generation topology fingerprint остаётся
+  immutable для обычных updates; его может изменить только transaction-local split protocol.
+- `PostgresProjectionTopologyStore` не открывает transaction: он в caller-owned checkpoint/control transaction
+  берёт generation/topology/parent locks, отказывает при live lease, hold, hole или halt, создаёт оба child
+  checkpoint с exact settled cursor, fenced-retire/delete parent и меняет durable cover/generation fingerprint
+  одним commit.
+- `PostgresProjectionCheckpointStore` допускает только live durable member с matching topology contract. Старый
+  parent получает `ProjectionClaim.Retired`; `AFTER_APPLY` и `SAME_UNIT` возвращают typed `Retired` без вызова
+  handler. Повтор старой pre-split команды является `ContractDrift`, поскольку fingerprint поколения уже изменён.
+- PostgreSQL integration proofs покрывают first и consecutive split с inherited cursor, refusal старого runner,
+  live checkpoint lease и parked sequence blocker. Добавлен `docs/runbooks/projection-topology-split.md`.
+
+## Projection worker scheduling continuation
+
+- Добавлен explicit `ProjectionPassWorker`: JSON-safe request содержит lane и SHA-256 observed checkpoint digest;
+  stale request не вызывает handler, а повторно ставит fresh durable pass. Он адаптирует `AFTER_APPLY` и `SAME_UNIT`
+  runners, не создаёт private projection transaction/retry loop и превращает missing runner в permanent jobs refusal.
+- Active generation выполняет максимум declared page budget одного job attempt. `BUILDING` всегда выполняет одну
+  страницу и ставит successor только после `checkpoint.updated_at + rebuildReadPace`; pace — IO throttle, не замена
+  checkpoint lease или worker concurrency.
+- Successor использует `Dedupe.Collapse`: `Unique` удерживается до terminal jobs state и поэтому поглотил бы
+  successor, созданный ещё во время active handler. Checkpoint lease остаётся единственной concurrency authority;
+  collapse только coalesces queued kick.
+- `ProjectionPassSweep` — bounded cluster recurring recovery с keyset cursor. `DurableProjectionPassLaneSource`
+  читает только live members registered durable topology и bounded `BUILDING`/`ACTIVE` generations; V8 добавляет
+  partial index для этого query.
+- Optional `ProjectionPassHintPublisher`/consumer передают только lane identity через `rain-realtime`; malformed,
+  duplicate или lost hint не влияют на correctness и всегда fallback'ятся на sweep/polling.
+- Добавлены deterministic tests stale digest, active page bound, rebuild pace, hint и cyclic bounded sweep, а также
+  PostgreSQL proof runnable generation query (`BUILDING` + `ACTIVE`, order и limit).
+
+## Начало reusable conformance continuation
+
+- `rain-event-test` теперь экспортирует bounded `ProjectionCheckpointConformance`: stable section report различает
+  `PASSED`, `FAILED` и `NOT_CERTIFIED`, а `requireCertified()` не превращает unsupported contract в ложный успех.
+  Проверяются lease exclusivity, stale fenced advance/release, contract drift и monotonic cursor.
+- Один launcher запускается против deterministic `InMemoryProjectionCheckpointStore` и PostgreSQL adapter в отдельном
+  integration test. Public `UnfencedProjectionCheckpointStore` — намеренно broken fixture: тест доказывает, что
+  launcher отмечает только `projection.checkpoint.fenced-advance`, поэтому suite является defect-sensitive, а не
+  набором self-fulfilling green checks.
+- Добавлен отдельный `ProjectionHoldConformance` для ParkSequence/redrive state machine: live append behind active
+  redrive, redrive fence, head-only acknowledgement, capacity refusal и two-step operator hole. Target сам задаёт
+  caller-owned transaction boundary; один launcher green против memory и PostgreSQL. Он намеренно **не** объявляет
+  SAME_UNIT destination authority certified — это свойство полного runner integration. Deliberately broken
+  `UnfencedProjectionHoldStore` пропускает stale acknowledgement через replacement lease и падает ровно в
+  `projection.hold.redrive-fence`.
+- Добавлен PostgreSQL SAME_UNIT crash-window proof для первого, middle и last destination write в одном page. Любое
+  падение откатывает все writes и ещё не созданный checkpoint; только внешний новый attempt получает исходный полный
+  page, и handler вызывается один раз на каждый pass (без retry внутри `Unit`).
+- Добавлен two-transaction PostgreSQL effect-gate race proof без sleep: active generation получает `ALLOWED` и
+  записывает staged effect под locking read; concurrent cutover обязан ждать этого commit. После cutover effect
+  остается committed, active pointer указывает на новую generation, а retired generation получает
+  `INACTIVE_GENERATION`.
+
 ## Проверки
 
 - Passed: `./gradlew :rain-event:integrationTest --tests '*same-unit park rolls back*'`.
 - Passed: `./gradlew :rain-event:integrationTest --tests '*same-unit redrive rolls back*'`.
 - Passed: `./gradlew :rain-event:integrationTest --tests '*PostgresEventStoreIT'`.
 - Passed: `./gradlew :rain-event:integrationTest --tests '*park queue capacity*' :rain-event-test:test`.
-- Passed final scope gate:
+- Passed topology focused integration: `./gradlew :rain-event:integrationTest --tests '*PostgresProjectionTopologyIT'`.
+- Passed final topology scope gate:
 
   ```bash
   ./gradlew :rain-event:check :rain-event-test:check verifyModuleGraph verifyDocsCoverage
   ```
 
+- Passed final scheduler scope gate:
+
+  ```bash
+  ./gradlew :rain-event:check :rain-event-test:check verifyModuleGraph verifyDocsCoverage
+  ```
+
+- Passed focused conformance tests (с исключением чужой broken `:rain-persistence:compileKotlin` task):
+
+  ```bash
+  ./gradlew :rain-event-test:test --tests '*ProjectionHoldConformanceTest' -x :rain-persistence:compileKotlin
+  ./gradlew :rain-event:integrationTest --tests '*PostgresProjectionHoldConformanceIT' -x :rain-persistence:compileKotlin
+  ./gradlew :rain-event:integrationTest --tests '*PostgresSameUnitProjectionCrashIT' -x :rain-persistence:compileKotlin
+  ./gradlew :rain-event:integrationTest --tests '*PostgresProjectionEffectGateRaceIT' -x :rain-persistence:compileKotlin
+  ```
+
+- Full gate после conformance additions пока не green: несвязанная dirty правка
+  `rain-persistence/.../DataAccessFaultTranslator.kt` использует inferred Checker Framework `@Nullable` на line 94,
+  однако соответствующая annotation отсутствует в compile classpath. Не менять этот чужой production code в рамках
+  event continuation; после её завершения повторить полный gate.
+
 ## Текущая точка и порядок продолжения
 
-1. Реализовать durable live topology/split полностью: immutable exact-cover members, parent retirement,
-   children with inherited cursor in one transaction, old parent refusal и runner admission only for live member.
-   Учесть contract/generation topology fingerprint без ослабления existing drift/cutover invariants.
-2. Добавить worker scheduling through `rain-jobs`, rebuild read pacing и optional realtime hint. Никаких
-   private transaction/retry loops в projection adapters; polling остаётся correctness source.
-3. Построить настоящий reusable projection conformance launcher и defect implementations; текущие memory tests
-   являются reference protocol tests, не сертификатом PostgreSQL SAME_UNIT authority.
-4. Продолжить Phase 6 generation/rebuild crash-window tests и затем Phase 7 tenancy-event composition. Не делать
+1. Продолжить reusable projection conformance: checkpoint и hold/redrive state-machine subsets уже certification
+   against memory/PostgreSQL с defect implementations. SAME_UNIT atomicity и effect-gate race имеют PostgreSQL proofs,
+   но ещё нет reusable launcher/defect sections для authority, topology, generation/effect и event-store. Текущая
+   certification не является сертификатом PostgreSQL SAME_UNIT destination authority.
+2. Продолжить Phase 6 generation/rebuild crash-window tests и затем Phase 7 tenancy-event composition. Не делать
    cross-product модулей: event/jobs/i18n/tenancy composition остаётся отдельными линейными пакетами.
 
 ## Важные границы

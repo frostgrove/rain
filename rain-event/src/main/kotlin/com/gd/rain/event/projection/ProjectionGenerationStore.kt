@@ -90,6 +90,17 @@ public interface ProjectionGenerationStore {
     /** Returns the durable active generation pointer, not a deployment property or inferred maximum id. */
     public fun active(projection: ProjectionName): ProjectionGenerationRecord?
 
+    /**
+     * Returns at most [limit] durable generations that require projection passes for [projection].
+     *
+     * Only `BUILDING` and `ACTIVE` are runnable. The bounded query exists for the recurring worker sweeper; it must
+     * not be replaced with a scan of every historical generation after a process loses an enqueue hint.
+     */
+    public fun runnable(
+        projection: ProjectionName,
+        limit: Int,
+    ): List<ProjectionGenerationRecord>
+
     public fun markReady(
         plan: ProjectionGenerationPlan,
         cover: ProjectionCover,

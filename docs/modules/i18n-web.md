@@ -24,7 +24,10 @@ streams before rendering owns its representation metadata and must state it befo
 `I18nLocaleContextTaskDecorator` may additionally bridge legacy Spring locale consumers, but it does
 not create an inheritable or authoritative i18n thread-local. `LocalizedProblemMessages` is the
 allowlist for localizing RFC 9457 human text without changing status, code, JSON pointer, retry or
-internal-error redaction contracts.
+internal-error redaction contracts. A `ViolationMessageBinding` may explicitly read the violation's
+bounded `ViolationParameters` and bind them to its exact generated message contract; the raw parameters
+are never added to problem JSON.
+
 ## Local artifact bootstrap
 
 `rain.i18n` is an optional validated configuration section. With `enabled=false`, its local

@@ -183,8 +183,11 @@ not stated). With `spring.servlet.multipart.enabled=false` multipart bodies are 
 1. a refusal the transport already decided wins: an expired budget is `503 deadline_exceeded`, a body over the limit is
    `413 too_large`;
 2. a `Fault` renders as it is;
-3. `MethodArgumentNotValidException` is a validation fault: one `check` violation per field error, pointing at the
-   field (`items[0].email` becomes `/items/0/email`), and one general `check` violation per object error;
+3. `MethodArgumentNotValidException` is a validation fault with one violation per field/object error. Property paths
+   are preserved (`items[0].email` becomes `/items/0/email`); standard Jakarta constraints map to `required`,
+   `invalid_format`, `too_long`, `out_of_range` or the `check` fallback and carry bounded typed constraint parameters;
+   ordered `ValidationViolationMapper` beans get the first chance to replace one mapping without replacing the
+   exception handler;
 4. Spring's own exceptions render with the status Spring chose, through the status table;
 5. anything else is offered to every `FaultTranslator` bean in order, and the first answer renders;
 6. otherwise the failure is `500 internal`.

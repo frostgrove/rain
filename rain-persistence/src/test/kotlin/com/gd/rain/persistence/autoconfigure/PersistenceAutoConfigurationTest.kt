@@ -2,7 +2,10 @@ package com.gd.rain.persistence.autoconfigure
 
 import com.gd.rain.boot.autoconfigure.RainRuntimeAutoConfiguration
 import com.gd.rain.core.error.FaultTranslator
+import com.gd.rain.core.error.Violation
+import com.gd.rain.core.error.path
 import com.gd.rain.core.id.IdGenerator
+import com.gd.rain.persistence.fault.DatabaseViolationMapper
 import com.gd.rain.persistence.id.UuidV7Ids
 import com.gd.rain.persistence.lock.AdvisoryLocks
 import com.gd.rain.persistence.schema.RainSchemaMigrationStrategy
@@ -16,6 +19,7 @@ import org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration
 import org.springframework.boot.jooq.autoconfigure.JooqAutoConfiguration
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.jdbc.core.JdbcTemplate
+import java.sql.SQLException
 import java.util.UUID
 import javax.sql.DataSource
 
@@ -60,6 +64,17 @@ class PersistenceAutoConfigurationTest {
 
         runner.withBean(IdGenerator::class.java, { fixed }).run { context ->
             assertThat(context.getBean(IdGenerator::class.java)).isSameAs(fixed)
+        }
+    }
+
+    @Test
+    fun `ordered database violation mappers are part of the contributed translator`() {
+        val mapper = DatabaseViolationMapper { Violation.at(path("email"), it.defaultCode) }
+
+        runner.withBean(DatabaseViolationMapper::class.java, { mapper }).run { context ->
+            val fault = context.getBean(FaultTranslator::class.java).translate(SQLException("duplicate", "23505"))
+
+            assertThat(fault!!.violations.single().pointer).isEqualTo("/email")
         }
     }
 

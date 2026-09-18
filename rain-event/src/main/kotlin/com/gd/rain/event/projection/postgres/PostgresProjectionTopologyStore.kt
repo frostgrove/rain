@@ -103,7 +103,7 @@ public class PostgresProjectionTopologyStore(
         val current = lockTopology(declaration) ?: return ProjectionTopologySplit.ContractDrift
         if (!matches(current, declaration)) return ProjectionTopologySplit.ContractDrift
         val parentMember = current.members.singleOrNull { it.partition == parent } ?: return ProjectionTopologySplit.ContractDrift
-        if (parentMember.state == ProjectionTopologyMemberState.RETIRED) return ProjectionTopologySplit.ParentRetired
+        if (parentMember.state != ProjectionTopologyMemberState.LIVE) return ProjectionTopologySplit.ContractDrift
         val nextCover = declaration.cover.split(parent)
         val children = parent.split()
         val parentCheckpoint =

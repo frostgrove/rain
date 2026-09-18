@@ -88,6 +88,21 @@ compare-and-set over the durable active-generation pointer. A `STAGED_DURABLE` g
 only for the active generation and positions strictly after the barrier. Jobs/outbox adapters consume an already
 admitted durable effect; they do not decide whether a historical generation may emit one.
 
+`ProjectionPassWorker` is the explicit `rain-jobs` adapter for either runner mode. Its JSON-safe lane request contains
+only the lane and a checkpoint digest; a stale request is requeued without invoking the handler, while the checkpoint
+lease remains the concurrency authority. An active generation consumes at most its declared page budget per job. A
+`BUILDING` generation consumes exactly one page, then schedules its next read no earlier than the persisted checkpoint
+timestamp plus declared `rebuildReadPace`; this is an IO throttle, not a concurrency setting. The worker opens neither
+a projection transaction nor an in-handler retry loop. It uses `Dedupe.Collapse` rather than `Unique` because a pass
+must place its successor before the current jobs attempt becomes terminal; the checkpoint lease still prevents
+concurrent projection writes. `ProjectionPassSweep` is the bounded recurring recovery path and reads live lanes from
+durable topology, never from a stale deployment cover.
+
+`ProjectionPassHintPublisher` and `ProjectionPassHintConsumer` optionally bridge one lane identity through
+`rain-realtime`: publish happens in the relevant caller transaction, malformed hints are ignored, and a received hint
+only creates the normal durable jobs kick. A missing notification therefore changes latency only; the sweeper and
+durable polling remain the correctness source.
+
 `ProjectionWaiter` is an asynchronous bounded read-your-writes convenience. It compares the requested `ProjectionMark`
 with durable checkpoints of **every** member in the active checked cover and returns `Reached`, `TimedOut`,
 `GenerationUnavailable`, or `ContractDrift`. It owns no transaction, connection or lease while waiting. A caller can

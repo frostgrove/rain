@@ -3,6 +3,7 @@ package com.gd.rain.crud.autoconfigure
 import com.gd.rain.core.error.ErrorCodeRegistry
 import com.gd.rain.core.error.RainErrorCodes
 import com.gd.rain.crud.error.RainCrudErrorCodes
+import com.gd.rain.persistence.fault.DatabaseViolationMapper
 import com.gd.rain.web.autoconfigure.RainWebErrorAutoConfiguration
 import com.gd.rain.web.problem.ErrorCodeRegistrar
 import com.gd.rain.web.problem.RainWebErrorCodes
@@ -21,6 +22,7 @@ class RainCrudAutoConfigurationTest {
                 val registry = context.getBean(ErrorCodeRegistry::class.java)
 
                 RainCrudErrorCodes.codes.forEach { assertThat(registry.ownerOf(it)).describedAs(it.value).isEqualTo("rain-crud") }
+                assertThat(context).hasSingleBean(DatabaseViolationMapper::class.java)
             }
     }
 

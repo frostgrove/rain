@@ -31,3 +31,17 @@ test to prove a real destination write, queue mutation and transaction commit/ro
 declared facts; `whenDecide` invokes the supplied lambda exactly once and returns its exact emitted facts, metadata and
 commit range, or a closed failure. It deliberately has no command annotations, handler discovery, reflection, retries,
 or production auto-configuration.
+
+`ProjectionCheckpointConformance` is the reusable, bounded certification launcher for a checkpoint-store adapter. It
+reports each stable protocol section as `PASSED`, `FAILED`, or `NOT_CERTIFIED`; `requireCertified()` rejects both a
+failure and an unsupported section. The in-memory store is the deterministic protocol reference, while
+`PostgresProjectionCheckpointConformanceIT` runs the same launcher against the PostgreSQL adapter. The public
+`UnfencedProjectionCheckpointStore` is deliberately defective test-only evidence: it proves the launcher detects a
+stale lease advancing a checkpoint rather than merely reporting a green reference implementation.
+
+`ProjectionHoldConformance` applies the same reporting contract to the ParkSequence/redrive state machine: live
+append behind an active redrive, fenced ownership, head-only acknowledgement, capacity refusal, and the two-step
+operator-hole policy. A target supplies its caller-owned transaction boundary, so the exact same launcher runs against
+memory and PostgreSQL. It deliberately does not certify a SAME_UNIT destination's transaction authority; that remains
+an integration proof of the complete runner. `UnfencedProjectionHoldStore` is a defect fixture that lets a stale
+redrive acknowledgement operate through a replacement lease and must fail only the redrive-fence section.

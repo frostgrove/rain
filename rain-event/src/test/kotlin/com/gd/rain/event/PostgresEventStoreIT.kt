@@ -869,8 +869,20 @@ class PostgresEventStoreIT {
                 ProjectionEffectPolicy.STAGED_DURABLE,
             )
         val generations = PostgresProjectionGenerationStore(dsl)
+        val later =
+            ProjectionGenerationPlan.create(
+                spec.name,
+                ProjectionGeneration(2),
+                ProjectionCheckpointContract(events.origin, spec.revision, spec.cover.fingerprint),
+                source,
+                barrier,
+                ProjectionEffectPolicy.DISABLED,
+            )
 
         assertThat(generations.register(plan)).isInstanceOf(ProjectionGenerationRegistration.Created::class.java)
+        assertThat(generations.register(later)).isInstanceOf(ProjectionGenerationRegistration.Created::class.java)
+        assertThat(generations.runnable(spec.name, 1).map { it.plan.generation })
+            .containsExactly(ProjectionGeneration(1))
         assertThat(generations.markReady(plan, spec.cover)).isEqualTo(ProjectionGenerationReadiness.Behind(1, 0))
 
         val checkpoints = PostgresProjectionCheckpointStore(dsl, events.origin)
@@ -890,6 +902,11 @@ class PostgresEventStoreIT {
         assertThat(
             generations.cutover(spec.name, null, ProjectionGeneration(1)),
         ).isInstanceOf(com.gd.rain.event.projection.ProjectionCutover.Activated::class.java)
+        assertThat(generations.runnable(spec.name, 2).map { it.plan.generation to it.state })
+            .containsExactly(
+                ProjectionGeneration(1) to com.gd.rain.event.projection.ProjectionGenerationState.ACTIVE,
+                ProjectionGeneration(2) to com.gd.rain.event.projection.ProjectionGenerationState.BUILDING,
+            )
         val gate = PostgresProjectionGenerationStore(dsl, transactions)
         TransactionTemplate(transactions).execute {
             assertThat(gate.admitEffect(spec.name, ProjectionGeneration(1), 1))

@@ -4,6 +4,7 @@ import com.gd.rain.core.error.Fault
 import com.gd.rain.core.error.FaultKind
 import com.gd.rain.core.error.RainErrorCodes
 import com.gd.rain.core.error.Violation
+import com.gd.rain.core.error.ViolationParameters
 import com.gd.rain.i18n.ArgumentSpec
 import com.gd.rain.i18n.ArgumentType
 import com.gd.rain.i18n.CatalogCompilation
@@ -167,8 +168,11 @@ class I18nRequestFilterTest {
                     fault(RainErrorCodes.VALIDATION_FAILED) {
                         snapshot.bind(greeting, MessageArguments.build { text("name", "проверьте поля") })
                     }
-                    violation(RainErrorCodes.REQUIRED) {
-                        snapshot.bind(greeting, MessageArguments.build { text("name", "обязательно") })
+                    violation(RainErrorCodes.REQUIRED) { violation ->
+                        snapshot.bind(
+                            greeting,
+                            MessageArguments.build { text("name", checkNotNull(violation.parameters.text("field_label"))) },
+                        )
                     }
                 },
             )
@@ -180,6 +184,7 @@ class I18nRequestFilterTest {
                         com.gd.rain.core.error
                             .path("email"),
                         RainErrorCodes.REQUIRED,
+                        parameters = ViolationParameters.build { text("field_label", "почта") },
                     ),
                 ),
             )
@@ -193,7 +198,7 @@ class I18nRequestFilterTest {
             assertThat(rendered.problem.detail).contains("Привет", "проверьте поля")
             assertThat(error["pointer"]).isEqualTo("/email")
             assertThat(error["code"]).isEqualTo("required")
-            assertThat(error["message"] as String).contains("Привет", "обязательно")
+            assertThat(error["message"] as String).contains("Привет", "почта")
             assertThat(rendered.problem.properties?.get(ProblemFormat.CODE)).isEqualTo("validation_failed")
         }
 

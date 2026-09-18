@@ -29,7 +29,7 @@ role:
 |---|---|---|
 | `idGenerator` | no other `IdGenerator` bean | `UuidV7Ids` |
 | `transactionRetry` | — | `TransactionRetry` from `rain.persistence.retry` |
-| `dataAccessFaultTranslator` | — | `DataAccessFaultTranslator`, a `FaultTranslator` |
+| `dataAccessFaultTranslator` | — | `DataAccessFaultTranslator` with every ordered `DatabaseViolationMapper`, as a `FaultTranslator` |
 | `statementTimeout` | — | `StatementTimeout` from `rain.persistence.statement-timeout` |
 | `statementTimeoutJooqCustomizer` | — | sets jOOQ's `queryTimeout` on the `DSLContext` Boot builds |
 | `statementTimeoutJdbcTemplatePostProcessor` | — | sets `queryTimeout` on every `JdbcTemplate` bean, which Spring Data JDBC executes through |
@@ -110,6 +110,24 @@ exception once; `SqlStates.retryable(failure)` answers whether it is one of the 
 `DataAccessFaultTranslator` answers for a `DataAccessException` or any failure with a `SQLException` in its cause
 chain, from a declared table; the table is in [errors](../concepts/errors.md#data-access). A state outside the table is
 `500 internal`, never a guess.
+
+For classified integrity/data states it offers `DatabaseError(sqlState, kind, defaultCode, source)` to every ordered
+`DatabaseViolationMapper`. `source` is PostgreSQL's structured schema/table/column/constraint provenance, never parsed
+from message text and never serialized. A mapper returns a complete public `Violation` or `null`; the first answer
+wins, a failed mapper is logged and skipped, and no answer preserves the safe general refusal. This is the targeted
+override path between automatic SQLSTATE classification and replacing the full `FaultTranslator`:
+
+```kotlin
+@Bean
+@Order(0)
+fun ticketConstraints() = DatabaseViolationMapper { error ->
+    if (error.source?.constraint == "uq_ticket_slug") {
+        Violation.at(path("slug"), TicketErrorCodes.SLUG_TAKEN, origin = ViolationOrigin.STATE)
+    } else {
+        null
+    }
+}
+```
 
 ### Advisory locks
 

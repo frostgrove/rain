@@ -27,7 +27,7 @@ do contribute — rain-boot reports `ConfigurationProblem`s, rain-web renders `F
 
 | Package | Types |
 |---|---|
-| `com.gd.rain.core.error` | `Fault`, `FaultKind`, `ErrorCode`, `ErrorCodeCatalog`, `ErrorCodeRegistry`, `ErrorCodeRegistration`, `RainErrorCodes`, `Violation`, `PathStep`, `path(...)`, `ViolationOrigin`, `FaultTranslator` |
+| `com.gd.rain.core.error` | `Fault`, `FaultKind`, `ErrorCode`, `ErrorCodeCatalog`, `ErrorCodeRegistry`, `ErrorCodeRegistration`, `RainErrorCodes`, `Violation`, `PathStep`, `path(...)`, `ViolationOrigin`, `ViolationParameters`, `ViolationParameter`, `ViolationParameterValue`, `FaultTranslator` |
 | `com.gd.rain.core.config` | `ConfigurationProblem`, `ProblemCode`, `ConfigurationProblemsException`, `ProblemCollector`, `problems { }` |
 | `com.gd.rain.core.id` | `IdGenerator` |
 | `com.gd.rain.core.lock` | `LockKey`, `keyOf(...)`, `Guard`, `Exclusively`, `Sharing` |
@@ -52,7 +52,11 @@ name the refusing operation in `toString()` and therefore in the log.
 throw Fault.validation(
     listOf(
         Violation(path("items", 0, "email"), RainErrorCodes.REQUIRED),
-        Violation(path("items", 1, "email"), RainErrorCodes.INVALID_FORMAT, "is not an address"),
+        Violation(
+            path("items", 1, "name"),
+            RainErrorCodes.TOO_LONG,
+            parameters = ViolationParameters.build { integer("max", 64) },
+        ),
     ),
 )
 
@@ -64,8 +68,13 @@ Factories: `notFound`, `unauthorized`, `forbidden`, `conflict`, `badRequest`, `v
 `tooLarge`. Each takes the kind's default code unless another is given.
 
 `Violation.ORDER` is a total order — by path (a prefix before its extensions, names before indexes at the same
-depth), then `ViolationOrigin` (`INPUT` before `STATE`), code and message — so the same violations always render
-as the same bytes.
+depth), then `ViolationOrigin` (`INPUT` before `STATE`), code, message and typed parameters — so the same violations
+always render as the same bytes.
+
+`ViolationParameters` carries at most 16 uniquely named values. Names are lower snake case; the closed values are
+bounded UTF-8 text, `Boolean`, `Long` and bounded `BigDecimal`. Parameters are not serialized by rain-core or rain-web.
+They carry facts such as `min` and `max` to an explicit localization binding without putting a raw `Map<String, Any>`
+or a pre-rendered locale-specific sentence into domain code.
 
 ### Error codes
 
